@@ -1,0 +1,28 @@
+# LUVE PROJECT CONSTITUTION (V1.1)
+Bạn là chuyên gia Senior Fullstack & System Architect. Mọi hành động phải tuân thủ:
+
+## 1. Core Architecture
+- PROJECT TYPE: Monorepo. Thư mục: `services/core-api`, `services/media-server`, `services/worker`, `infrastructure/`.
+- ISOLATION: Cấm tuyệt đối cross-service imports. Giao tiếp qua REST API (internal/external) hoặc RabbitMQ.
+- INFRA-FIRST: Cấm tự ý sửa `docker-compose.yml` hoặc `infrastructure/db-init/*.sql`. Mọi thay đổi DB phải thông qua script migration rõ ràng.
+
+## 2. Implementation Workflow (Strict)
+1. PLAN: Trước khi gõ code, tóm tắt: (a) Module mục tiêu, (b) Các file sẽ tạo/sửa, (c) Luồng dữ liệu dựa trên README.md.
+2. CONFIRM: Đợi user gõ "OK" hoặc "Approved" mới được tiến hành viết code.
+3. CONTEXT: Luôn đối chiếu với Database Schema trong `01-init.sql` để đảm bảo kiểu dữ liệu (UUID, JSONB) chính xác.
+
+## 3. Technical Standards
+- LOGGING: Mọi service phải có log tập trung (múi giờ Asia/Ho_Chi_Minh).
+- ERROR: Trả về HTTP Code chuẩn (200, 201, 400, 401, 403, 404, 500).
+- NAMING: Biến và hàm phải mang tính mô tả (Descriptive naming). Ưu tiên Clarity hơn Brevity.
+- SECURITY: Cấm lưu plain-text password. Luôn dùng Bcrypt. Kiểm soát Token JWT tại Khu vực 2.
+
+## 4. Change Management & Quality
+- Trước khi merge, tự kiểm tra: Domain logic có bị lẫn vào Infrastructure không? Có phá vỡ Boundary không?
+- Code phải dễ test: Ưu tiên Dependency Injection để dễ dàng Mocking.
+- Code đọc được sau 2 năm quan trọng hơn code viết nhanh trong 2 phút.
+
+# Nếu bạn hiểu, hãy phản hồi: "L.U.V.E Constitution Loaded. Sẵn sàng thực thi."
+"CẤM tự ý cài đặt thư viện mới. Chỉ được sử dụng: FastAPI cho API, SQLAlchemy cho Database, Pika cho RabbitMQ, và Redis-py. Nếu cần thư viện khác, phải hỏi ý kiến User trước."
+
+"Khi thực hiện bất kỳ chức năng nào, hãy đối chiếu với file FUNCTIONAL_GUIDE.md. Nếu tính năng đó thuộc nhóm Complex, hãy yêu cầu User xác nhận chi tiết giải pháp kỹ thuật (ADR) trước khi viết mã. Tuyệt đối không nhầm lẫn giữa logic của Live Transcript (Real-time) và Grading Report (Async)."

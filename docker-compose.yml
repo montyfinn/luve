@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # KHU VỰC 5A: POSTGRESQL
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: luve_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dat_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-luve_database}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/db-init/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - luve_network
+
+  # KHU VỰC 5B: REDIS (Dùng cho Rate Limiting & Real-time Transcript)
+  redis_cache:
+    image: redis:7-alpine
+    container_name: luve_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning # Lưu data xuống ổ cứng mỗi 60s nếu có thay đổi
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - luve_network
+
+  # KHU VỰC 4: RABBITMQ
+  rabbitmq_queue:
+    image: rabbitmq:3-management-alpine
+    container_name: luve_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - luve_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  luve_network:
+    driver: bridge
