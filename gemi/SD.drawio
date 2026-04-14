@@ -1,0 +1,91 @@
+sequenceDiagram
+    autonumber
+    
+    %% Định nghĩa các Actor và Participant
+    actor U as Thuy (Người học)
+    participant C as KHU 1: App L.U.V.E
+    participant API as KHU 2: Core API (HTTP)
+    participant D as KHU 5: PostgreSQL
+    participant G as KHU 3: TEN Gateway (WebRTC)
+    participant AI as KHU 3: Node STT (Whisper)
+    participant R as KHU 5: Redis (RAM)
+    participant W as KHU 4: Worker (Async)
+    participant L as External LLM API
+
+    %% ========================================================
+    %% GIAI ĐOẠN 1: KHỞI TẠO PHIÊN HỌC (REST API)
+    %% ========================================================
+    rect rgb(255, 242, 204)
+        Note over U, G: GIAI ĐOẠN 1: KHỞI TẠO PHIÊN HỌC (HTTP REST)
+        U->>C: Mở App, chọn "Bắt đầu học"
+        C->>API: POST /sessions (Gửi JWT Token)
+        
+        API->>D: Truy vấn Level & Quota người dùng
+        D-->>API: Trả về (Level: 2, Quota: OK)
+        
+        API->>G: Lệnh: Khởi tạo Session (Nạp Prompt & Param VAD)
+        G-->>API: Trả về Session Token (Chìa khóa phòng)
+        
+        API-->>C: Trả Session ID + Token + VAD Config
+    end
+    
+    %% ========================================================
+    %% GIAI ĐOẠN 2: REAL-TIME CASCADE LOOP
+    %% ========================================================
+    rect rgb(213, 232, 212)
+        Note over U, G: GIAI ĐOẠN 2: REAL-TIME CASCADE LOOP (< 300ms)
+        C->>G: Kết nối WebRTC (Audio) & WebSocket (Control)
+        U->>G: Stream Audio (WebRTC UDP - Hỏa tốc)
+        
+        rect rgb(240, 240, 240)
+            Note right of G: [VÒNG LẶP XỬ LÝ SONG SONG DỰA VÀO VAD]
+            par Xử lý Tai (STT)
+                G->>AI: Đẩy Audio Chunks
+                AI->>AI: Faster-Whisper: Giọng nói -> Văn bản (0.56s)
+                AI->>R: Append Word Metadata (Conf, Time)
+                AI-->>C: Trả Phụ đề User (WebSocket TCP)
+            and Xử lý Não (LLM) & Miệng (TTS)
+                AI->>G: Trả Văn bản hoàn chỉnh (1 câu)
+                G->>L: Gửi Context + Text (Hỏi đáp nhanh)
+                L-->>G: Trả Văn bản phản hồi (AI Reply)
+                G->>G: Node TTS: Chuyển Văn bản -> Audio
+                G-->>U: Trả âm thanh AI (WebRTC UDP)
+            end
+        end
+    end
+
+    %% ========================================================
+    %% GIAI ĐOẠN 3: HẬU KIỂM & PHÂN TÍCH
+    %% ========================================================
+    rect rgb(218, 232, 252)
+        Note over U, D: GIAI ĐOẠN 3: HẬU KIỂM BẤT ĐỒNG BỘ (ASYNCHRONOUS)
+        U->>C: Bấm "Kết thúc Cuộc Gọi"
+        C->>G: Gửi lệnh End Session (WS)
+        G->>R: Đóng file nháp (Unified JSON)
+        G->>W: Webhook: Đẩy Session ID vào Queue
+        
+        W->>R: Lấy toàn bộ Transcripts & Conf Scores
+        W->>L: Gửi Prompt + Transcripts (Chấm điểm sư phạm)
+        Note right of L: Phân tích các từ Conf < 60% (vd: 'closest' 11.96%)
+        L-->>W: Trả về Điểm số & Nhận xét chi tiết
+        W->>D: Lưu kết quả vào bảng GRADING_RESULTS
+        W->>R: Xóa dữ liệu tạm (Clean VRAM/RAM)
+    end
+
+    %% ========================================================
+    %% GIAI ĐOẠN 4: TRƯNG BÀY KẾT QUẢ
+    %% ========================================================
+    rect rgb(225, 213, 231)
+        Note over C, D: GIAI ĐOẠN 4: TRƯNG BÀY KẾT QUẢ (UX Loop)
+        C->>API: GET /sessions/{id}/report
+        
+        alt Kết quả đã sẵn sàng
+            API->>D: Lấy dữ liệu từ bảng GRADING_RESULTS
+            D-->>API: Trả về điểm & nhận xét
+            API-->>C: HTTP 200 OK (Data JSON)
+            C-->>U: Hiển thị Dashboard: "Bạn cần chú ý từ 'closest' (11.96%)"
+        else Đang chấm điểm
+            API-->>C: HTTP 202 Accepted (Trạng thái: Processing)
+            C-->>U: Hiển thị màn hình "Đang phân tích..."
+        end
+    end

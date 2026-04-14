@@ -91,3 +91,15 @@ temp/
 node_modules/
 __pycache__/
 *.pyc
+
+# Media & Audio test files
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.m4a
+*.drawio
+
+# Audio Processing temporary files
+temp_audio/
+*.spectrogram

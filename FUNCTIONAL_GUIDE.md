@@ -1,3 +1,11 @@
+### File `FUNCTIONAL_GUIDE.md` (Chỉ dẫn chức năng)
+
+Dùng để đối chiếu khi code các tính năng phức tạp.
+
+* **Core:** Real-time Voice Engine, Session Handshake, Async Grading.
+* **Complex:** Hybrid EOS Logic (**$Latency = VAD_{timeout} + STT + LLM + TTS$**), Word-level Timestamping.
+* **X-Factors:** AI Backchanneling ("Uhm", "I see"), Auto-leveling logic.
+
 ## 🏆 L.U.V.E PROJECT: THE MASTER INVENTORY (100% COMPLETE)
 
 ## 1. PHÂN CẤP CHỨC NĂNG (FEATURE HIERARCHY)

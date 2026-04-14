@@ -1,0 +1,86 @@
+<mxfile host="app.diagrams.net" modified="2026-04-13T10:30:00.000Z" agent="L.U.V.E_Architect_V3" version="20.0.0" type="device">
+  <diagram name="L.U.V.E_Clean_Cascade" id="cascade_final_01">
+    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <mxCell id="zone_1" value="KHU VỰC 1: CLIENT (Tiền tuyến)" style="whiteSpace=wrap;strokeWidth=2;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="200" width="580" x="720" y="1320" as="geometry" />
+        </mxCell>
+        <mxCell id="node_app" value="App/Web L.U.V.E" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry height="54" width="160" x="970" y="1360" as="geometry" />
+        </mxCell>
+        <mxCell id="node_vad" value="VAD Engine (Client-side)&#xa;Cảm biến tiếng người" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry height="60" width="200" x="740" y="1440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone_3" value="KHU VỰC 3: MEDIA BACKEND (Chiến trường GPU)" style="whiteSpace=wrap;strokeWidth=2;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="380" width="500" x="720" y="1560" as="geometry" />
+        </mxCell>
+        <mxCell id="node_ten" value="TEN Gateway (C++/Go)&#xa;Điều phối Streaming" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="60" width="220" x="760" y="1620" as="geometry" />
+        </mxCell>
+        <mxCell id="node_stt" value="Node STT (Faster-Whisper)&#xa;0.56s Latency Benchmark" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="60" width="220" x="760" y="1840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone_2" value="KHU VỰC 2: CORE API" style="whiteSpace=wrap;strokeWidth=2;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="120" width="400" x="890" y="2040" as="geometry" />
+        </mxCell>
+        <mxCell id="node_auth" value="Auth &amp; Session Service" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry height="50" width="180" x="1090" y="2085" as="geometry" />
+        </mxCell>
+        <mxCell id="node_scoring" value="Level &amp; Progress" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry height="50" width="160" x="910" y="2085" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone_4" value="KHU VỰC 4: ASYNC WORKER (Hậu cần)" style="whiteSpace=wrap;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="540" width="280" x="420" y="1740" as="geometry" />
+        </mxCell>
+        <mxCell id="node_mq" value="Message Queue&#xa;(RabbitMQ/Redis)" style="rhombus;strokeWidth=2;whiteSpace=wrap;fillColor=#eeeeee;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry height="150" width="180" x="470" y="1810" as="geometry" />
+        </mxCell>
+        <mxCell id="node_worker" value="Worker: Feedback Engine&#xa;Phân tích Phoneme/Conf" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=13;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry height="60" width="220" x="450" y="2050" as="geometry" />
+        </mxCell>
+        <mxCell id="node_llm" value="External LLM API&#xa;(Gemini/GPT)" style="rounded=1;arcSize=20;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry height="54" width="180" x="470" y="2190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="zone_5" value="KHU VỰC 5: STORAGE" style="whiteSpace=wrap;strokeWidth=2;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry height="150" width="500" x="790" y="2230" as="geometry" />
+        </mxCell>
+        <mxCell id="node_redis" value="REDIS&#xa;(Hot Metadata &amp; Timestamps)" style="shape=cylinder3;boundedLbl=1;size=10;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=15;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry height="90" width="180" x="820" y="2270" as="geometry" />
+        </mxCell>
+        <mxCell id="node_db" value="PostgreSQL&#xa;(Permanent Records)" style="shape=cylinder3;boundedLbl=1;size=10;strokeWidth=2;fillColor=#eeeeee;strokeColor=#999999;fontSize=15;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry height="90" width="200" x="1070" y="2270" as="geometry" />
+        </mxCell>
+
+        <mxCell id="flow_webrtc" value="WebRTC UDP (Âm thanh hỏa tốc)" style="curved=1;strokeWidth=3;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=12;fontColor=#FF0000" edge="1" source="node_vad" target="node_ten" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_audio_push" value="Audio Chunks" style="curved=1;startArrow=block;endArrow=block;strokeWidth=3;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=12;" edge="1" source="node_ten" target="node_stt" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_metadata" value="Conf &amp; Word Timestamps (Append)" style="dashed=1;dashPattern=2 3;endArrow=block;exitX=0.5;exitY=1;fontSize=12;edgeStyle=orthogonalEdgeStyle;" edge="1" source="node_stt" target="node_redis" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="1960" />
+              <mxPoint x="870" y="2270" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="flow_ws" value="WebSocket (TCP) Phụ đề &amp; Feedback" style="curved=1;startArrow=block;endArrow=block;strokeWidth=2;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontSize=12;" edge="1" source="node_ten" target="node_app" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1100" y="1580" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="flow_trigger" value="End Session -> Trigger Job" style="curved=1;endArrow=block;exitX=0;exitY=0.5;entryX=1;entryY=0.5;fontSize=12;" edge="1" source="node_ten" target="node_mq" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

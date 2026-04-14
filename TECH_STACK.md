@@ -1,3 +1,11 @@
+
+### File `TECH_STACK.md` (Kho vũ khí)
+
+* **Backend:** FastAPI (Async), SQLAlchemy, Pydantic.
+* **Real-time:** WebRTC, WebSockets, TEN Framework.
+* **Messaging:** RabbitMQ (Pika).
+* **Security:** JWT, Bcrypt.
+
 1. **Ngôn ngữ & Runtime (Languages)
    Core API (Khu vực 2): Python 3.11+ (FastAPI).**
 

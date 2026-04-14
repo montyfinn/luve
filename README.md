@@ -6,9 +6,13 @@
 LUVE_Workspace/
 ├── .git/                        # Hệ thống quản lý cỗ máy thời gian
 ├── .gitignore                   # Chặn file rác và .env
-├── README.md                    # Bản hướng dẫn này
+├── fullpro.md                    # tổng quan dự án
+├──   workflow.md			# chi tiết workflow
 ├── docker-compose.yml           # Bảng giao hưởng: chạy toàn bộ backend 1 lệnh
-│
+├── .rules              # Hiến pháp cho AI (Tuyệt đối quan trọng)
+├── README.md                # Bản đồ chỉ dẫn dự án
+├── TECH_STACK.md            # Đặc tả kỹ thuật (Stack)
+├── FUNCTIONAL_GUIDE.md      # Danh mục chức năng & Độ phức tạp
 ├── clients/                     # FRONTEND
 │   └── mobile-app/
 │       ├── src/
@@ -37,7 +41,6 @@ LUVE_Workspace/
     └── config/                  # Config Redis, RabbitMQ, v.v.
 ```
 
-
 # 🏛️ Kiến Trúc Hệ Thống L.U.V.E (Architecture Diagram)
 
 Dưới đây là sơ đồ luồng dữ liệu thời gian thực (Real-time Data Flow) của dự án, được chia thành 5 khu vực độc lập để tối ưu hóa hiệu năng và khả năng mở rộng:
@@ -60,16 +63,28 @@ docker compose up -d
 docker compose ps
 ```
 
-### 3. Xem log của một service
+### 3. Xem log của một service 
 
 ```bash
-docker compose logs -f core-api
+docker compose logs -f core-api # Xem log trạm kiểm soát chính
 ```
 
 ### 4. Dừng toàn bộ hệ thống
 
 ```bash
 docker compose down
+```
+
+## 5. Xem log nhà máy xử lý âm thanh
+
+```bash
+docker compose logs -f media-server
+```
+
+### 6. Xem log hội đồng giám khảo chấm điểm
+
+```bash
+docker compose logs -f grading-worker
 ```
 
 ## ⚙️ Cấu hình môi trường
