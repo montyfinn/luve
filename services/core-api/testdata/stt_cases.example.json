@@ -1,0 +1,11 @@
+{
+  "cases": [
+    {
+      "id": "intro_clear_001",
+      "audio_path": "audio/intro_clear_001.wav",
+      "expected_text": "Hello, my name is Minh and I want to practice English today.",
+      "notes": "Clear microphone, quiet room, single utterance."
+    }
+  ]
+}
+
