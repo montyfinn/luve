@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.v1 import auth, stream
+from src.api.v1 import auth, sessions, stream
 from src.api.v1.stream import WebSocketHandshakeTimingMiddleware
 
 app = FastAPI(
@@ -22,6 +22,7 @@ app.add_middleware(WebSocketHandshakeTimingMiddleware)
 
 # Kết nối các "tuyến đường" đã xây dựng ở Phase 2
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(stream.router)
 
 
