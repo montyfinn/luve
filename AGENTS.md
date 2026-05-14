@@ -44,7 +44,7 @@ Kết luận thực dụng:
    - `FUNCTIONAL_GUIDE.md`
    - `fullpro.md`
    - `workflow.md`
-   - `continue`
+   - `docs/notes/legacy/continue.md`
 
 Lưu ý:
 
@@ -192,7 +192,7 @@ source venv/bin/activate
 python run_ten.py
 ```
 
-Production-ish command cho API đã được ghi trong file `run`:
+Production-ish command cho API đã được ghi trong file `docs/tooling/local-dev-commands.example.md`:
 
 ```bash
 python -m gunicorn src.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
@@ -348,39 +348,39 @@ Trước khi kết luận một tính năng “đã có”:
 
 Nếu chưa xác nhận đủ 4 điểm trên, hãy mô tả tính năng là “chưa khép kín”.
 
-## 13. Dùng AI_MEMORY.md thế nào
+## 13. Dùng docs/ai/AI_MEMORY.md thế nào
 
-`AI_MEMORY.md` chỉ dùng để giữ các fact vận hành đã xác minh, các bẫy đã gặp, và các quyết định thực dụng đã chốt qua nhiều phiên.
+`docs/ai/AI_MEMORY.md` chỉ dùng để giữ các fact vận hành đã xác minh, các bẫy đã gặp, và các quyết định thực dụng đã chốt qua nhiều phiên.
 
-Không dùng `AI_MEMORY.md` để thay source of truth.
+Không dùng `docs/ai/AI_MEMORY.md` để thay source of truth.
 
 Thứ tự ưu tiên vẫn là:
 
 1. code đang chạy
 2. schema và env contract
 3. `AGENTS.md`
-4. `AI_MEMORY.md`
+4. `docs/ai/AI_MEMORY.md`
 
-Nếu `AI_MEMORY.md` mâu thuẫn với code hiện tại, tin code trước và cập nhật lại `AI_MEMORY.md` sau.
+Nếu `docs/ai/AI_MEMORY.md` mâu thuẫn với code hiện tại, tin code trước và cập nhật lại `docs/ai/AI_MEMORY.md` sau.
 
-## 13.1. Dùng CODEX.md và EXPERIENCE.md thế nào
+## 13.1. Dùng docs/ai/CODEX.md và docs/ai/EXPERIENCE.md thế nào
 
-`CODEX.md` là checklist luật làm việc bắt buộc cho Codex/agent trong mỗi phiên.
+`docs/ai/CODEX.md` là checklist luật làm việc bắt buộc cho Codex/agent trong mỗi phiên.
 
-`EXPERIENCE.md` là file kinh nghiệm thực chiến: các lỗi đã từng gặp, nguyên nhân thật, cách kiểm tra, và cách tránh lặp lại.
+`docs/ai/EXPERIENCE.md` là file kinh nghiệm thực chiến: các lỗi đã từng gặp, nguyên nhân thật, cách kiểm tra, và cách tránh lặp lại.
 
 Khi bắt đầu task đủ lớn hoặc liên quan runtime/audio/session, đọc theo thứ tự:
 
 1. `AGENTS.md`
-2. `CODEX.md`
-3. `AI_MEMORY.md`
-4. `EXPERIENCE.md`
+2. `docs/ai/CODEX.md`
+3. `docs/ai/AI_MEMORY.md`
+4. `docs/ai/EXPERIENCE.md`
 
-Không dùng `CODEX.md`, `AI_MEMORY.md`, hoặc `EXPERIENCE.md` để thay code đang chạy. Nếu mâu thuẫn, tin code/runtime trước rồi cập nhật tài liệu sau.
+Không dùng `docs/ai/CODEX.md`, `docs/ai/AI_MEMORY.md`, hoặc `docs/ai/EXPERIENCE.md` để thay code đang chạy. Nếu mâu thuẫn, tin code/runtime trước rồi cập nhật tài liệu sau.
 
 ## 14. Trước Khi Compact
 
-Trước khi `/compact`, tạo một handoff summary ngắn nhưng đủ.
+Trước khi `/compact`, tạo một handoff summary ngắn nhưng đủ theo `docs/ai/PRE_COMPACT_PROMPT.md`.
 
 Phải gồm:
 

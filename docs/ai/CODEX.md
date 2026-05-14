@@ -7,8 +7,8 @@ File này là rule vận hành bắt buộc cho Codex/agent khi làm việc tron
 Đọc file này ở đầu mỗi phiên cùng với:
 
 1. `AGENTS.md`
-2. `AI_MEMORY.md`
-3. `EXPERIENCE.md`
+2. `docs/ai/AI_MEMORY.md`
+3. `docs/ai/EXPERIENCE.md`
 4. Code/runtime liên quan đến task hiện tại
 
 Nếu các file memory/rule mâu thuẫn với code đang chạy, tin code và runtime evidence trước.
@@ -61,8 +61,8 @@ Không thêm DB/network/blocking IO vào hot path audio frame.
 2. Schema trong `infrastructure/db-init/01-init.sql`
 3. Env contract trong `services/core-api/.env.example`
 4. `AGENTS.md`
-5. `AI_MEMORY.md`
-6. `EXPERIENCE.md`
+5. `docs/ai/AI_MEMORY.md`
+6. `docs/ai/EXPERIENCE.md`
 7. Docs vision như `README.md`, `workflow.md`, `fullpro.md`
 
 Docs vision không được dùng để khẳng định tính năng đã có.
@@ -94,7 +94,7 @@ Nếu user paste secret vào chat, không lặp lại giá trị đó trong fina
 
 ## Quy Trình Bắt Đầu Mỗi Task
 
-1. Đọc `AGENTS.md`, `CODEX.md`, `AI_MEMORY.md`, `EXPERIENCE.md` nếu task đủ lớn hoặc liên quan audio/session/runtime.
+1. Đọc `AGENTS.md`, `docs/ai/CODEX.md`, `docs/ai/AI_MEMORY.md`, `docs/ai/EXPERIENCE.md` nếu task đủ lớn hoặc liên quan audio/session/runtime.
 2. Kiểm tra `git status --short`.
 3. Xác định file hot path có bị đụng không.
 4. Nêu ngắn gọn giả định và bước kiểm tra đầu tiên.
@@ -192,10 +192,9 @@ Không tranh luận với review nếu có thể chứng minh bằng code rằng
 
 ## Khi Trước Compact
 
-Tạo handoff summary theo `PRE_COMPACT_PROMPT.md`.
+Tạo handoff summary theo `docs/ai/PRE_COMPACT_PROMPT.md`.
 
 Không ghi secret.
 Không paste log dài.
 Không đưa lịch sử chat không liên quan.
 Chỉ ghi fact đã xác minh và việc còn lại.
-
