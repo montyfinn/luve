@@ -31,8 +31,8 @@ class AudioBuffer:
         self._silence_ttl_seconds = silence_ttl_seconds
         self._sweep_interval_seconds = min(sweep_interval_seconds, silence_ttl_seconds)
 
-        self._ordered_chunks: deque[bytes] = deque()
-        self._pending_by_sequence: dict[int, bytes] = {}
+        self._ordered_chunks: deque[memoryview] = deque()
+        self._pending_by_sequence: dict[int, memoryview] = {}
         self._next_expected_sequence: int | None = None
 
         self._total_bytes = 0
@@ -102,6 +102,9 @@ class AudioBuffer:
             self._pending_by_sequence[sequence_number] = normalized_chunk
             self._flush_contiguous_unlocked()
 
+    async def push(self, sequence_number: int, chunk: bytes | bytearray | memoryview) -> None:
+        await self.add_chunk(sequence_number, chunk)
+
     async def get_flat_audio(self) -> bytes:
         async with self._lock:
             self._ensure_open_unlocked()
@@ -159,13 +162,15 @@ class AudioBuffer:
                     self._clear_unlocked()
 
     @staticmethod
-    def _normalize_chunk(chunk: bytes | bytearray | memoryview) -> bytes:
+    def _normalize_chunk(chunk: bytes | bytearray | memoryview) -> memoryview:
         if isinstance(chunk, bytes):
-            return chunk
+            return memoryview(chunk)
         if isinstance(chunk, bytearray):
-            return bytes(chunk)
+            # bytearray may be mutable by caller; freeze to keep deterministic audio ordering.
+            return memoryview(bytes(chunk))
         if isinstance(chunk, memoryview):
-            return chunk.tobytes()
+            # memoryview may be backed by a mutable/reused buffer; freeze it on enqueue.
+            return memoryview(chunk.tobytes())
         raise TypeError("chunk must be bytes-like (bytes, bytearray, memoryview)")
 
     def _flush_contiguous_unlocked(self) -> None:
