@@ -1,3 +1,5 @@
+> Historical note: nội dung này là ghi chú kiến trúc cũ, có thể đã lệch với code/runtime hiện tại. Không dùng làm source of truth.
+
 ## 🏛️ TỔNG QUAN KIẾN TRÚC 5 LỚP (LAYERED ARCHITECTURE)
 
 Mục tiêu cốt lõi của việc chia này là  **Sự cô lập (Isolation)** . Một thay đổi ở Database không được làm hỏng API, và một logic nghiệp vụ mới không được làm xáo trộn cách bảo mật.
