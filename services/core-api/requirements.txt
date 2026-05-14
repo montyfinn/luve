@@ -3,6 +3,9 @@ uvicorn[standard]
 sqlalchemy[asyncio]
 asyncpg
 redis
+numpy
+av
+faster-whisper
 pydantic[email]
 pydantic-settings
 python-jose[cryptography]

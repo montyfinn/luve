@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     rabbitmq_user: str | None = Field(default=None, alias="RABBITMQ_USER")
     rabbitmq_pass: str | None = Field(default=None, alias="RABBITMQ_PASS")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    stt_model_size: str = Field(default="small.en", alias="STT_MODEL_SIZE")
+    stt_beam_size: int = Field(default=3, alias="STT_BEAM_SIZE")
+    stt_final_beam_size: int = Field(default=3, alias="STT_FINAL_BEAM_SIZE")
+    stt_initial_prompt: str = Field(
+        default="This is a spoken English conversation between a learner and an AI tutor.",
+        alias="STT_INITIAL_PROMPT",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
