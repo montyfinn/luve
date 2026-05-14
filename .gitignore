@@ -72,6 +72,7 @@ docker-compose.override.yml
 # Logs
 logs/
 *.log
+services/core-api/ten.out
 
 # Temporary files
 *.tmp
@@ -100,6 +101,10 @@ __pycache__/
 *.ogg
 *.m4a
 *.drawio
+output/
+services/core-api/testdata/audio/*
+!services/core-api/testdata/audio/.gitkeep
+services/core-api/testdata/stt_cases.json
 
 # Audio Processing temporary files
 temp_audio/
