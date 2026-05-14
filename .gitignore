@@ -4,6 +4,7 @@
 .env.*.local
 .env.prod
 .env.dev
+login.json
 
 # Node.js
 node_modules/
