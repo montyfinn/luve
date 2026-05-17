@@ -1,0 +1,44 @@
+{
+  "graph_name": "luve-ten-gateway",
+  "version": "0.1.0",
+  "nodes": [
+    {
+      "id": "webrtc_gateway",
+      "type": "WebRTC_Extension",
+      "properties": {
+        "listen_host": "0.0.0.0",
+        "listen_port": 8080,
+        "offer_path": "/rtc/offer",
+        "ice_path": "/rtc/ice",
+        "cmd_path": "/rtc/cmd"
+      }
+    },
+    {
+      "id": "luve_extension",
+      "type": "PythonExtension",
+      "entry": {
+        "module": "src.ten_ext.luve_extension",
+        "class": "LUVEExtension"
+      },
+      "properties_file": "src/ten_ext/property.json"
+    }
+  ],
+  "edges": [
+    {
+      "from": "webrtc_gateway.audio_out",
+      "to": "luve_extension.audio_in"
+    },
+    {
+      "from": "luve_extension.audio_out",
+      "to": "webrtc_gateway.audio_in"
+    },
+    {
+      "from": "luve_extension.json_out",
+      "to": "webrtc_gateway.data_channel_out"
+    },
+    {
+      "from": "luve_extension.log_out",
+      "to": "webrtc_gateway.data_channel_out"
+    }
+  ]
+}

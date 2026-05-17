@@ -1,0 +1,46 @@
+{
+  "type": "extension",
+  "name": "luve_core_media_extension",
+  "version": "0.1.0",
+  "description": "L.U.V.E TEN Extension: STT -> LLM -> TTS realtime graph node",
+  "language": "python",
+  "entry": {
+    "module": "src.ten_ext.luve_extension",
+    "class": "LUVEExtension"
+  },
+  "inputs": [
+    {
+      "name": "audio_in",
+      "type": "audio/pcm",
+      "sample_rate": 16000,
+      "channels": 1,
+      "sample_format": "s16le"
+    },
+    {
+      "name": "cmd_in",
+      "type": "application/json"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "audio_out",
+      "type": "audio/pcm",
+      "sample_rate": 16000,
+      "channels": 1,
+      "sample_format": "s16le"
+    },
+    {
+      "name": "json_out",
+      "type": "application/json"
+    },
+    {
+      "name": "log_out",
+      "type": "text/plain"
+    }
+  ],
+  "threading": {
+    "mode": "multi-thread",
+    "requires_locking": true
+  },
+  "latency_budget_ms": 50
+}
