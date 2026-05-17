@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy[asyncio]
 asyncpg
 redis
+aio-pika
 numpy
 av
 faster-whisper

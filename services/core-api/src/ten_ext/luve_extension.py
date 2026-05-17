@@ -22,6 +22,7 @@ from src.media.stt_postprocess import sanitize_transcript
 from src.media.stt_worker import WhisperInference
 from src.media.tts import TTSAudioChunk, TTSProcessor
 from src.schemas.ai_logic import STTAnalysis
+from src.services.session_event_publisher import publish_session_completed
 
 try:
     import ten  # type: ignore
@@ -1661,6 +1662,7 @@ class LUVEExtension(ten.Extension):
         if not self._session_id:
             return
 
+        session_id = self._session_id
         logger.info(
             "Phase 1: Attempting to save %d events to DB", len(self._event_log)
         )
@@ -1679,7 +1681,7 @@ class LUVEExtension(ten.Extension):
                         ),
                         {
                             "logs": json.dumps(self._event_log),
-                            "sid": self._session_id,
+                            "sid": session_id,
                         },
                     )
                 else:
@@ -1690,14 +1692,15 @@ class LUVEExtension(ten.Extension):
                             "WHERE id = :sid"
                         ),
                         {
-                            "sid": self._session_id,
+                            "sid": session_id,
                         },
                     )
                 await session.commit()
                 logger.info(
                     "Phase 1: SUCCESS - Blackbox logs saved to DB for session %s",
-                    self._session_id,
+                    session_id,
                 )
+                await publish_session_completed(session_id)
         except Exception:
             logger.exception("Phase 1: FAILED - Could not save logs to DB")
 
