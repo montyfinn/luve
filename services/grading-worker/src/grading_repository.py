@@ -14,7 +14,7 @@ class GradingRepository:
     def __init__(self, database_url: str) -> None:
         if not database_url.strip():
             raise ValueError("database_url must not be empty")
-        self._database_url = database_url
+        self._database_url = _normalize_asyncpg_database_url(database_url.strip())
 
     async def fetch_session_row(self, session_id: UUID) -> Mapping[str, Any] | None:
         connection = await asyncpg.connect(self._database_url)
@@ -73,3 +73,9 @@ class GradingRepository:
             )
         finally:
             await connection.close()
+
+
+def _normalize_asyncpg_database_url(database_url: str) -> str:
+    if database_url.startswith("postgresql+asyncpg://"):
+        return database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    return database_url
