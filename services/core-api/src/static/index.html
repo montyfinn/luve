@@ -1,0 +1,1156 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>L.U.V.E Control Center</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M18 16h8v24h20v8H18z' fill='%2338bdf8'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <main class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6">
+     <header class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+       <div class="flex flex-wrap items-center justify-between gap-3">
+         <div>
+           <h1 class="text-xl font-semibold">L.U.V.E - Control Center</h1>
+           <p class="text-sm text-slate-400">TEN Gateway E2E Validation Lab</p>
+         </div>
+         <div class="flex items-center gap-4">
+           <div id="status-monitor"
+             class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors">
+             <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+             <span id="status-text">Disconnected</span>
+           </div>
+           <div id="api-status"
+             class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors">
+             <span id="api-status-dot" class="h-2.5 w-2.5 rounded-full bg-gray-500"></span>
+             <span id="api-status-text">API: Ready</span>
+           </div>
+         </div>
+       </div>
+     </header>
+
+    <section class="grid gap-4 lg:grid-cols-3">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4 lg:col-span-2">
+        <h2 class="mb-3 text-base font-semibold">Signaling</h2>
+        <div class="grid gap-3 md:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm">
+            Core API Base URL
+            <input id="core-api-url" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Gateway Base URL
+            <input id="gateway-url" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              value="http://localhost:8080" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm md:col-span-2">
+            Bearer Token
+            <input id="auth-token" type="password" autocomplete="off"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              placeholder="Paste access_token here to create a session automatically" />
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
+            <input id="remember-token" type="checkbox" />
+            <span>Remember token on this browser</span>
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
+            <input id="stt-only" type="checkbox" />
+            <span>STT-only test mode (disable LLM and TTS)</span>
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
+            <input id="mute-tts" type="checkbox" />
+            <span>Mute TTS output (keep LLM text on screen)</span>
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Current Session ID
+            <input id="session-id" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              placeholder="Auto-created if token is present" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Last Session ID
+            <input id="last-session-id" type="text" readonly
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
+              placeholder="Most recent disconnected session" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Offer Endpoint
+            <input id="offer-endpoint" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              value="/rtc/offer" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            ICE Endpoint
+            <input id="ice-endpoint" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              value="/rtc/ice" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Command Endpoint (fallback)
+            <input id="cmd-endpoint" type="text"
+              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+              value="/rtc/cmd" />
+          </label>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button id="create-session-btn"
+            class="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
+            Create Session
+          </button>
+          <button id="connect-btn"
+            class="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
+            Connect
+          </button>
+          <button id="disconnect-btn"
+            class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600">
+            Disconnect
+          </button>
+          <button id="barge-btn"
+            class="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold transition hover:bg-rose-500">
+            Push-to-Talk / Barge-in (Space)
+          </button>
+        </div>
+        <p class="mt-2 text-xs text-slate-400">
+          Tip: Press and release <span class="font-semibold text-slate-200">Space</span> to send instant
+          <code>{ "cmd": "BARGE_IN" }</code> + local audio stop.
+        </p>
+      </div>
+
+      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+        <h2 class="mb-2 text-base font-semibold">Pedagogical Zone</h2>
+        <div id="pedagogical-zone"
+          class="pointer-events-none rounded-lg border border-transparent bg-transparent p-3 opacity-0 transition-all duration-300">
+          <p id="pedagogical-text" class="text-sm"></p>
+        </div>
+        <p class="mt-3 text-xs text-slate-400">
+          Perfect -> green micro-tick (3s). Error -> yellow coaching card (8s).
+        </p>
+      </div>
+    </section>
+
+    <section class="grid gap-4 lg:grid-cols-2">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+        <h2 class="mb-2 text-base font-semibold">Subtitle Area</h2>
+        <div class="space-y-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-500">Final</p>
+            <div id="subtitle-final" class="max-h-32 min-h-24 overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 text-base font-semibold"></div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-500">Partial</p>
+            <div id="subtitle-partial" class="min-h-16 rounded-md bg-slate-950 p-3 text-sm text-slate-400"></div>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+        <h2 class="mb-2 text-base font-semibold">Assistant Stream</h2>
+        <div id="assistant-meta" class="mb-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
+          LLM source: not received yet
+        </div>
+        <div id="assistant-stream" class="min-h-24 rounded-md bg-slate-950 p-3 text-sm text-slate-200"></div>
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <h3 class="text-sm font-semibold text-slate-300">STT Diagnostics</h3>
+          <button id="copy-stt-summary-btn"
+            class="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-600">
+            Copy Summary
+          </button>
+        </div>
+        <pre id="stt-diagnostics" class="mt-2 max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-400">No final STT yet.</pre>
+        <h3 class="mb-2 mt-4 text-sm font-semibold text-slate-300">Event Log</h3>
+        <pre id="event-log" class="max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-400"></pre>
+      </div>
+    </section>
+
+    <audio id="remote-audio" autoplay playsinline class="hidden"></audio>
+  </main>
+
+  <script>
+    const ui = {
+      statusMonitor: document.getElementById("status-monitor"),
+      statusDot: document.getElementById("status-dot"),
+      statusText: document.getElementById("status-text"),
+      apiStatus: document.getElementById("api-status"),
+      apiStatusDot: document.getElementById("api-status-dot"),
+      apiStatusText: document.getElementById("api-status-text"),
+      coreApiUrl: document.getElementById("core-api-url"),
+      gatewayUrl: document.getElementById("gateway-url"),
+      authTokenInput: document.getElementById("auth-token"),
+      rememberTokenInput: document.getElementById("remember-token"),
+      sttOnlyInput: document.getElementById("stt-only"),
+      muteTtsInput: document.getElementById("mute-tts"),
+      sessionIdInput: document.getElementById("session-id"),
+      lastSessionIdInput: document.getElementById("last-session-id"),
+      offerEndpoint: document.getElementById("offer-endpoint"),
+      iceEndpoint: document.getElementById("ice-endpoint"),
+      cmdEndpoint: document.getElementById("cmd-endpoint"),
+      createSessionBtn: document.getElementById("create-session-btn"),
+      connectBtn: document.getElementById("connect-btn"),
+      disconnectBtn: document.getElementById("disconnect-btn"),
+      bargeBtn: document.getElementById("barge-btn"),
+      copySttSummaryBtn: document.getElementById("copy-stt-summary-btn"),
+      subtitleFinal: document.getElementById("subtitle-final"),
+      subtitlePartial: document.getElementById("subtitle-partial"),
+      assistantStream: document.getElementById("assistant-stream"),
+      assistantMeta: document.getElementById("assistant-meta"),
+      sttDiagnostics: document.getElementById("stt-diagnostics"),
+      pedagogicalZone: document.getElementById("pedagogical-zone"),
+      pedagogicalText: document.getElementById("pedagogical-text"),
+      eventLog: document.getElementById("event-log"),
+      remoteAudio: document.getElementById("remote-audio"),
+    };
+
+    const state = {
+      peerConnection: null,
+      controlChannel: null,
+      jsonChannel: null,
+      sessionId: null,
+      micStream: null,
+      audioContext: null,
+      pendingIceCandidates: [],
+      activeSources: new Set(),
+      scheduledPlaybackTime: 0,
+      feedbackTimeout: null,
+      audioQueuePromise: Promise.resolve(),
+      eventLogLines: [],
+      assistantAudioMeta: new Map(),
+      lastFinalSttResult: null,
+    };
+
+    const storageKeys = {
+      coreApiUrl: "luve.control.coreApiUrl",
+      gatewayUrl: "luve.control.gatewayUrl",
+      sessionId: "luve.control.sessionId",
+      lastSessionId: "luve.control.lastSessionId",
+      rememberToken: "luve.control.rememberToken",
+      authToken: "luve.control.authToken",
+    };
+
+    const eventLogLimits = {
+      maxLines: 180,
+    };
+
+     const statusThemes = {
+       disconnected: {
+         monitor: "border-rose-500/40 bg-rose-500/10",
+         dot: "bg-rose-500",
+         text: "Disconnected",
+       },
+       thinking: {
+         monitor: "border-amber-400/40 bg-amber-400/10",
+         dot: "bg-amber-400",
+         text: "AI Thinking",
+       },
+       ready: {
+         monitor: "border-emerald-500/40 bg-emerald-500/10",
+         dot: "bg-emerald-500",
+         text: "Ready",
+       },
+       "llm-error": {
+         monitor: "border-red-500/40 bg-red-500/10",
+         dot: "bg-red-500",
+         text: "LLM Error",
+       },
+     };
+
+    const apiStatusThemes = {
+      idle: {
+        monitor: "border-slate-700 bg-slate-900/80",
+        dot: "bg-gray-500",
+      },
+      busy: {
+        monitor: "border-amber-400/40 bg-amber-400/10",
+        dot: "bg-amber-400",
+      },
+      ready: {
+        monitor: "border-emerald-500/40 bg-emerald-500/10",
+        dot: "bg-emerald-500",
+      },
+      error: {
+        monitor: "border-red-500/40 bg-red-500/10",
+        dot: "bg-red-500",
+      },
+    };
+
+    function setStatus(mode, customText = null) {
+      const theme = statusThemes[mode] || statusThemes.disconnected;
+      ui.statusMonitor.classList.remove(
+        "border-rose-500/40",
+        "bg-rose-500/10",
+        "border-amber-400/40",
+        "bg-amber-400/10",
+        "border-emerald-500/40",
+        "bg-emerald-500/10",
+      );
+      ui.statusMonitor.classList.add(...theme.monitor.split(" "));
+
+      ui.statusDot.classList.remove("bg-rose-500", "bg-amber-400", "bg-emerald-500");
+      ui.statusDot.classList.add(theme.dot);
+
+      ui.statusText.textContent = customText || theme.text;
+    }
+
+    function setApiStatus(mode, text) {
+      const theme = apiStatusThemes[mode] || apiStatusThemes.idle;
+      ui.apiStatus.classList.remove(
+        "border-slate-700",
+        "bg-slate-900/80",
+        "border-amber-400/40",
+        "bg-amber-400/10",
+        "border-emerald-500/40",
+        "bg-emerald-500/10",
+        "border-red-500/40",
+        "bg-red-500/10",
+      );
+      ui.apiStatus.classList.add(...theme.monitor.split(" "));
+
+      ui.apiStatusDot.classList.remove("bg-gray-500", "bg-amber-400", "bg-emerald-500", "bg-red-500");
+      ui.apiStatusDot.classList.add(theme.dot);
+      ui.apiStatusText.textContent = text;
+    }
+
+    function sanitizeLogPayload(payload) {
+      if (payload === null || payload === undefined) return payload;
+      if (typeof payload !== "object") return payload;
+      if (Array.isArray(payload)) return payload.map((item) => sanitizeLogPayload(item));
+
+      const sanitized = {};
+      for (const [key, value] of Object.entries(payload)) {
+        if (key === "audio_b64" && typeof value === "string") {
+          sanitized[key] = `<base64:${value.length} chars>`;
+          continue;
+        }
+        sanitized[key] = sanitizeLogPayload(value);
+      }
+      return sanitized;
+    }
+
+    function renderEventLog() {
+      ui.eventLog.textContent = state.eventLogLines.join("\n");
+    }
+
+    function logEvent(label, payload = null) {
+      const time = new Date().toLocaleTimeString();
+      const sanitizedPayload = sanitizeLogPayload(payload);
+      const line =
+        sanitizedPayload === null ? `[${time}] ${label}` : `[${time}] ${label} ${JSON.stringify(sanitizedPayload)}`;
+      state.eventLogLines.unshift(line);
+      if (state.eventLogLines.length > eventLogLimits.maxLines) {
+        state.eventLogLines.length = eventLogLimits.maxLines;
+      }
+      renderEventLog();
+    }
+
+    function buildAudioMetaKey(data) {
+      return `${String(data.session_id || "")}:${String(data.phrase_id ?? "unknown")}`;
+    }
+
+    function logAssistantAudioMeta(data) {
+      const phraseId = data.phrase_id ?? "unknown";
+      const key = buildAudioMetaKey(data);
+      const existing = state.assistantAudioMeta.get(key) || {
+        chunkCount: 0,
+        maxChunkIndex: -1,
+        phraseId,
+        sessionId: data.session_id || null,
+      };
+
+      existing.chunkCount += 1;
+      if (Number.isFinite(Number(data.chunk_index))) {
+        existing.maxChunkIndex = Math.max(existing.maxChunkIndex, Number(data.chunk_index));
+      }
+      state.assistantAudioMeta.set(key, existing);
+
+      if (existing.chunkCount === 1) {
+        logEvent("assistant_audio_meta:start", {
+          phraseId: existing.phraseId,
+          sessionId: existing.sessionId,
+        });
+      }
+
+      if (data.is_last_chunk) {
+        logEvent("assistant_audio_meta:complete", {
+          phraseId: existing.phraseId,
+          sessionId: existing.sessionId,
+          chunks: Math.max(existing.chunkCount, existing.maxChunkIndex + 1),
+          lastSequenceNumber: data.sequence_number ?? null,
+          sampleRate: data.sample_rate ?? null,
+          channels: data.channels ?? null,
+        });
+        state.assistantAudioMeta.delete(key);
+      }
+    }
+
+    function buildSttSummary(data) {
+      const stt = data.stt || {};
+      const audio = data.audio || {};
+      const latency = data.latency || {};
+      return {
+        session_id: data.session_id || state.sessionId || null,
+        spoken_reference: "<fill in what you said>",
+        stt_only: ui.sttOnlyInput.checked,
+        mute_tts: ui.muteTtsInput.checked,
+        tts_enabled: !ui.sttOnlyInput.checked && !ui.muteTtsInput.checked,
+        trigger: data.trigger || null,
+        final_text: String(stt.raw_text || ""),
+        audio,
+        latency,
+      };
+    }
+
+    function renderSttDiagnostics(summary) {
+      ui.sttDiagnostics.textContent = JSON.stringify(summary, null, 2);
+    }
+
+    async function copyLastSttSummary() {
+      if (!state.lastFinalSttResult) {
+        logEvent("No final STT summary to copy");
+        return;
+      }
+      const text = JSON.stringify(state.lastFinalSttResult, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        logEvent("Final STT summary copied");
+        return;
+      }
+      logEvent("Clipboard API unavailable", state.lastFinalSttResult);
+    }
+
+    function buildUrl(path) {
+      const base = ui.gatewayUrl.value.trim().replace(/\/+$/, "");
+      const suffix = path.trim().startsWith("/") ? path.trim() : `/${path.trim()}`;
+      return `${base}${suffix}`;
+    }
+
+    function buildCoreApiUrl(path) {
+      const base = ui.coreApiUrl.value.trim().replace(/\/+$/, "");
+      const suffix = path.trim().startsWith("/") ? path.trim() : `/${path.trim()}`;
+      return `${base}${suffix}`;
+    }
+
+    function getDefaultCoreApiUrl() {
+      const url = new URL(window.location.href);
+      if (url.port === "8080") {
+        return `${url.protocol}//${url.hostname}:8000`;
+      }
+      return `${url.protocol}//${url.host}`;
+    }
+
+    function getDefaultGatewayUrl() {
+      const url = new URL(window.location.href);
+      if (url.port === "8000") {
+        return `${url.protocol}//${url.hostname}:8080`;
+      }
+      return `${url.protocol}//${url.host}`;
+    }
+
+    function persistControlSettings() {
+      localStorage.setItem(storageKeys.coreApiUrl, ui.coreApiUrl.value.trim());
+      localStorage.setItem(storageKeys.gatewayUrl, ui.gatewayUrl.value.trim());
+      localStorage.setItem(storageKeys.sessionId, ui.sessionIdInput.value.trim());
+      localStorage.setItem(storageKeys.lastSessionId, ui.lastSessionIdInput.value.trim());
+      localStorage.setItem(storageKeys.rememberToken, ui.rememberTokenInput.checked ? "1" : "0");
+      if (ui.rememberTokenInput.checked) {
+        localStorage.setItem(storageKeys.authToken, ui.authTokenInput.value);
+      } else {
+        localStorage.removeItem(storageKeys.authToken);
+      }
+    }
+
+    function restoreControlSettings() {
+      ui.coreApiUrl.value = localStorage.getItem(storageKeys.coreApiUrl) || getDefaultCoreApiUrl();
+      ui.gatewayUrl.value = localStorage.getItem(storageKeys.gatewayUrl) || getDefaultGatewayUrl();
+      ui.sessionIdInput.value = localStorage.getItem(storageKeys.sessionId) || "";
+      ui.lastSessionIdInput.value = localStorage.getItem(storageKeys.lastSessionId) || "";
+      ui.rememberTokenInput.checked = localStorage.getItem(storageKeys.rememberToken) === "1";
+      ui.sttOnlyInput.checked = false;
+      ui.muteTtsInput.checked = false;
+      ui.authTokenInput.value = ui.rememberTokenInput.checked
+        ? localStorage.getItem(storageKeys.authToken) || ""
+        : "";
+    }
+
+    function getAuthToken() {
+      return ui.authTokenInput.value.trim();
+    }
+
+    function setCurrentSessionId(sessionId) {
+      state.sessionId = sessionId || null;
+      ui.sessionIdInput.value = sessionId || "";
+      persistControlSettings();
+    }
+
+    function setLastSessionId(sessionId) {
+      ui.lastSessionIdInput.value = sessionId || "";
+      persistControlSettings();
+    }
+
+    function archiveCurrentSessionId() {
+      const currentSessionId = ui.sessionIdInput.value.trim();
+      if (currentSessionId) {
+        setLastSessionId(currentSessionId);
+      }
+      setCurrentSessionId("");
+    }
+
+    function getJsonHeaders({ includeAuth = false } = {}) {
+      const headers = { "Content-Type": "application/json" };
+      if (includeAuth) {
+        const token = getAuthToken();
+        if (!token) {
+          throw new Error("Bearer token is required to create a session.");
+        }
+        headers.Authorization = `Bearer ${token}`;
+      }
+      return headers;
+    }
+
+    async function createSession() {
+      setApiStatus("busy", "API: Creating session...");
+      const response = await fetch(buildCoreApiUrl("/api/v1/sessions"), {
+        method: "POST",
+        headers: getJsonHeaders({ includeAuth: true }),
+        body: JSON.stringify({
+          metadata: {
+            source: "control_center",
+            transport: "webrtc_ten",
+            stt_only: ui.sttOnlyInput.checked,
+            mute_tts: ui.muteTtsInput.checked,
+          },
+        }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const detail = payload?.detail || `HTTP ${response.status}`;
+        setApiStatus("error", "API: Session create failed");
+        throw new Error(`Session create failed: ${detail}`);
+      }
+
+      const sessionId = String(payload?.id || "").trim();
+      if (!sessionId) {
+        setApiStatus("error", "API: Invalid session response");
+        throw new Error("Session create failed: missing session id in response.");
+      }
+
+      const previousCurrent = ui.sessionIdInput.value.trim();
+      if (previousCurrent && previousCurrent !== sessionId) {
+        setLastSessionId(previousCurrent);
+      }
+      setCurrentSessionId(sessionId);
+      setApiStatus("ready", "API: Session ready");
+      logEvent("Session created", { sessionId });
+      return sessionId;
+    }
+
+    async function ensureAudioContext() {
+      if (!state.audioContext) {
+        state.audioContext = new AudioContext({
+          sampleRate: 16000,
+          latencyHint: "interactive",
+        });
+      }
+      if (state.audioContext.state === "suspended") {
+        await state.audioContext.resume();
+      }
+      return state.audioContext;
+    }
+
+    function clearLocalAudioQueue() {
+      for (const source of state.activeSources) {
+        try {
+          source.stop();
+        } catch {
+          // ignore invalid state
+        }
+      }
+      state.activeSources.clear();
+      if (state.audioContext) {
+        state.scheduledPlaybackTime = state.audioContext.currentTime;
+      } else {
+        state.scheduledPlaybackTime = 0;
+      }
+    }
+
+    // Bọc toàn bộ logic cũ vào trong một Promise Queue để ép chạy Tuần tự (FIFO)
+    function playPcmBase64(base64Payload, sampleRate = 16000, channels = 1) {
+      if (!base64Payload) return;
+
+      state.audioQueuePromise = state.audioQueuePromise.then(async () => {
+        const audioContext = await ensureAudioContext();
+        const raw = Uint8Array.from(atob(base64Payload), (c) => c.charCodeAt(0));
+        const int16 = new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 2));
+        const frameCount = Math.floor(int16.length / channels);
+        if (frameCount <= 0) return;
+
+        const audioBuffer = audioContext.createBuffer(channels, frameCount, sampleRate);
+        for (let channel = 0; channel < channels; channel += 1) {
+          const channelData = audioBuffer.getChannelData(channel);
+          for (let i = 0; i < frameCount; i += 1) {
+            const sample = int16[i * channels + channel] || 0;
+            channelData[i] = sample / 32768;
+          }
+        }
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        state.activeSources.add(source);
+        source.onended = () => state.activeSources.delete(source);
+
+        const duration = audioBuffer.duration;
+        const currentTime = audioContext.currentTime;
+        if (state.scheduledPlaybackTime < currentTime) {
+          state.scheduledPlaybackTime = currentTime + 0.05;
+        }
+        source.start(state.scheduledPlaybackTime);
+        state.scheduledPlaybackTime += duration;
+      }).catch(err => console.error("Audio Playback Error:", err));
+    }
+
+    async function ensureMicrophone() {
+      if (state.micStream) return state.micStream;
+      state.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+        video: false,
+      });
+      return state.micStream;
+    }
+
+    async function sendIceCandidate(candidate) {
+      if (!state.sessionId) {
+        state.pendingIceCandidates.push(candidate);
+        return;
+      }
+
+      const response = await fetch(buildUrl(ui.iceEndpoint.value), {
+        method: "POST",
+        headers: getJsonHeaders({ includeAuth: true }),
+        body: JSON.stringify({
+          session_id: state.sessionId,
+          candidate,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`ICE failed: HTTP ${response.status}`);
+      }
+    }
+
+    async function flushPendingIceCandidates() {
+      if (!state.sessionId || state.pendingIceCandidates.length === 0) return;
+
+      const pending = [...state.pendingIceCandidates];
+      state.pendingIceCandidates = [];
+
+      for (const candidate of pending) {
+        try {
+          await sendIceCandidate(candidate);
+        } catch (error) {
+          logEvent("Queued ICE send failed", { error: String(error) });
+        }
+      }
+    }
+
+     function bindDataChannel(channel) {
+       channel.onopen = () => {
+         logEvent(`DataChannel open: ${channel.label}`);
+         // Auto-send START command when control channel opens to initialize session
+         if (channel.label === "luve-control") {
+           sendCommand({
+             cmd: "START",
+             stt_only: ui.sttOnlyInput.checked,
+             tts_enabled: !ui.sttOnlyInput.checked && !ui.muteTtsInput.checked,
+           });
+         }
+       };
+       channel.onclose = () => logEvent(`DataChannel close: ${channel.label}`);
+       channel.onerror = (err) => logEvent(`DataChannel error: ${channel.label}`, { message: String(err) });
+       channel.onmessage = async (event) => {
+         let payload = event.data;
+         if (payload instanceof Blob) {
+           payload = await payload.text();
+         }
+         if (typeof payload !== "string") return;
+         try {
+           const parsed = JSON.parse(payload);
+           dispatchJsonEvent(parsed);
+         } catch {
+           logEvent("Non-JSON channel message", { label: channel.label, payload: String(payload) });
+         }
+       };
+
+       if (channel.label.toLowerCase().includes("json")) {
+         state.jsonChannel = channel;
+       }
+     }
+
+    async function connect() {
+      if (state.peerConnection) {
+        logEvent("Already connected");
+        return;
+      }
+
+      try {
+        state.pendingIceCandidates = [];
+        ui.assistantMeta.textContent = "LLM source: waiting for assistant_final";
+        ui.assistantStream.textContent = "";
+        await ensureAudioContext();
+        const micStream = await ensureMicrophone();
+        let providedSessionId = ui.sessionIdInput.value.trim();
+        if (!providedSessionId) {
+          providedSessionId = await createSession();
+        }
+        setCurrentSessionId(providedSessionId);
+
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+        state.peerConnection = pc;
+
+        micStream.getAudioTracks().forEach((track) => pc.addTrack(track, micStream));
+
+        pc.ontrack = async (event) => {
+          const [remoteStream] = event.streams;
+          ui.remoteAudio.srcObject = remoteStream;
+          try {
+            await ensureAudioContext();
+            await ui.remoteAudio.play();
+          } catch {
+            logEvent("Remote audio autoplay blocked until interaction");
+          }
+          setStatus("thinking", "Remote audio connected");
+        };
+
+        pc.onconnectionstatechange = () => {
+          switch (pc.connectionState) {
+            case "connected":
+              setStatus("thinking", "Connected - preparing speech...");
+              break;
+            case "connecting":
+              setStatus("thinking", "Connecting...");
+              break;
+            case "disconnected":
+            case "failed":
+            case "closed":
+              setStatus("disconnected");
+              break;
+            default:
+              break;
+          }
+          logEvent("Peer state", { state: pc.connectionState });
+        };
+
+        pc.ondatachannel = (event) => bindDataChannel(event.channel);
+
+        pc.onicecandidate = async (event) => {
+          if (!event.candidate) return;
+          const candidate =
+            typeof event.candidate.toJSON === "function" ? event.candidate.toJSON() : event.candidate;
+
+          if (!state.sessionId) {
+            state.pendingIceCandidates.push(candidate);
+            logEvent("ICE queued", { pending: state.pendingIceCandidates.length });
+            return;
+          }
+
+          try {
+            await sendIceCandidate(candidate);
+          } catch (error) {
+            logEvent("ICE send failed", { error: String(error) });
+          }
+        };
+
+        const controlChannel = pc.createDataChannel("luve-control", { ordered: true });
+        state.controlChannel = controlChannel;
+       bindDataChannel(controlChannel);
+
+        const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        await pc.setLocalDescription(offer);
+        setStatus("thinking", "Initializing speech session...");
+
+        const offerPayload = {
+          type: offer.type,
+          sdp: offer.sdp,
+          session_id: state.sessionId,
+          stt_only: ui.sttOnlyInput.checked,
+          tts_enabled: !ui.sttOnlyInput.checked && !ui.muteTtsInput.checked,
+          extension: "luve_core_media_extension",
+          ports: {
+            audio_in: "audio_in",
+            audio_out: "audio_out",
+            json_out: "json_out",
+            log_out: "log_out",
+          },
+        };
+        logEvent("Offer mode", {
+          stt_only: offerPayload.stt_only,
+          tts_enabled: offerPayload.tts_enabled,
+          mute_tts: ui.muteTtsInput.checked,
+        });
+
+        const response = await fetch(buildUrl(ui.offerEndpoint.value), {
+          method: "POST",
+          headers: getJsonHeaders({ includeAuth: true }),
+          body: JSON.stringify(offerPayload),
+        });
+        if (!response.ok) {
+          throw new Error(`Offer failed: HTTP ${response.status}`);
+        }
+        const answerEnvelope = await response.json();
+        setCurrentSessionId(answerEnvelope.session_id || state.sessionId);
+        await flushPendingIceCandidates();
+
+        const answer = answerEnvelope.answer || answerEnvelope;
+        await pc.setRemoteDescription(answer);
+
+        if (Array.isArray(answerEnvelope.candidates)) {
+          for (const candidate of answerEnvelope.candidates) {
+            await pc.addIceCandidate(candidate);
+          }
+        }
+
+        setStatus("thinking", "Mic warming up...");
+        setApiStatus("ready", "API: Session ready");
+        logEvent("SDP handshake complete", { sessionId: state.sessionId });
+      } catch (error) {
+        await disconnect();
+        throw error;
+      }
+    }
+
+    async function disconnect() {
+      clearLocalAudioQueue();
+
+      if (state.controlChannel) {
+        try {
+          state.controlChannel.close();
+        } catch { }
+        state.controlChannel = null;
+      }
+      if (state.jsonChannel) {
+        try {
+          state.jsonChannel.close();
+        } catch { }
+        state.jsonChannel = null;
+      }
+      if (state.peerConnection) {
+        state.peerConnection.getSenders().forEach((sender) => {
+          try {
+            sender.track?.stop();
+          } catch { }
+        });
+        state.peerConnection.close();
+        state.peerConnection = null;
+      }
+      if (state.micStream) {
+        state.micStream.getTracks().forEach((track) => track.stop());
+        state.micStream = null;
+      }
+      const currentSessionId = state.sessionId || ui.sessionIdInput.value.trim();
+      state.sessionId = null;
+      state.pendingIceCandidates = [];
+      state.assistantAudioMeta.clear();
+      ui.assistantMeta.textContent = "LLM source: disconnected";
+      ui.remoteAudio.srcObject = null;
+      if (currentSessionId) {
+        setLastSessionId(currentSessionId);
+      }
+      setCurrentSessionId("");
+      setStatus("disconnected");
+      logEvent("Disconnected");
+    }
+
+    async function sendCommand(commandObj) {
+      const commandPayload = {
+        ...(state.sessionId ? { session_id: state.sessionId } : {}),
+        ...commandObj,
+      };
+      const payload = JSON.stringify(commandPayload);
+      let sent = false;
+
+      if (state.controlChannel && state.controlChannel.readyState === "open") {
+        state.controlChannel.send(payload);
+        sent = true;
+      } else if (state.jsonChannel && state.jsonChannel.readyState === "open") {
+        state.jsonChannel.send(payload);
+        sent = true;
+      }
+
+      if (!sent) {
+        try {
+          await fetch(buildUrl(ui.cmdEndpoint.value), {
+            method: "POST",
+            headers: getJsonHeaders({ includeAuth: true }),
+            body: payload,
+          });
+          sent = true;
+        } catch (error) {
+          logEvent("Command fallback failed", { error: String(error) });
+        }
+      }
+
+      if (!sent) {
+        logEvent("Command not sent", commandPayload);
+      } else {
+        logEvent("Command sent", commandPayload);
+      }
+    }
+
+    function showPedagogicalPerfect() {
+      if (state.feedbackTimeout) clearTimeout(state.feedbackTimeout);
+      ui.pedagogicalZone.className =
+        "rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 opacity-100 transition-all duration-300";
+      ui.pedagogicalText.className = "text-sm font-medium text-emerald-300";
+      ui.pedagogicalText.textContent = "🟢 Perfect";
+      state.feedbackTimeout = setTimeout(() => {
+        ui.pedagogicalZone.className =
+          "pointer-events-none rounded-lg border border-transparent bg-transparent p-3 opacity-0 transition-all duration-300";
+        ui.pedagogicalText.textContent = "";
+      }, 3000);
+    }
+
+    function showPedagogicalError(feedback) {
+      if (state.feedbackTimeout) clearTimeout(state.feedbackTimeout);
+      ui.pedagogicalZone.className =
+        "rounded-lg border border-amber-400/60 bg-amber-400/10 p-3 opacity-100 transition-all duration-300";
+      ui.pedagogicalText.className = "text-sm font-medium text-amber-200";
+      ui.pedagogicalText.textContent = feedback;
+      state.feedbackTimeout = setTimeout(() => {
+        ui.pedagogicalZone.className =
+          "pointer-events-none rounded-lg border border-transparent bg-transparent p-3 opacity-0 transition-all duration-300";
+        ui.pedagogicalText.textContent = "";
+      }, 8000);
+    }
+
+    function dispatchJsonEvent(data) {
+      const eventName = String(data.event || "").toLowerCase();
+      const assistantOutputEvents = new Set([
+        "assistant_stream",
+        "assistant_final",
+        "assistant_audio",
+        "assistant_audio_meta",
+      ]);
+      if (ui.sttOnlyInput.checked && assistantOutputEvents.has(eventName)) {
+        logEvent("STT-only violation: assistant output suppressed", {
+          event: eventName,
+          session_id: data.session_id || state.sessionId || null,
+        });
+        return;
+      }
+
+      switch (eventName) {
+        case "subtitle":
+        case "stt_result": {
+          const stt = data.stt || {};
+          const text = String(stt.raw_text || "");
+          if (data.is_final) {
+            logEvent("stt_final", {
+              trigger: data.trigger || null,
+              text_preview: text.slice(0, 120),
+              audio_ms: data.audio?.audio_ms ?? null,
+              speech_ms: data.audio?.speech_ms ?? null,
+              noise_floor_db: data.audio?.noise_floor_db ?? null,
+              effective_threshold_db: data.audio?.effective_threshold_db ?? null,
+              stt_inference_ms: data.latency?.stt_inference_ms ?? null,
+              decode: data.decode || null,
+            });
+          } else {
+            logEvent("stt_partial", {
+              text_preview: text.slice(0, 120),
+              audio_ms: data.audio?.audio_ms ?? null,
+              speech_ms: data.audio?.speech_ms ?? null,
+              noise_floor_db: data.audio?.noise_floor_db ?? null,
+              effective_threshold_db: data.audio?.effective_threshold_db ?? null,
+              stt_inference_ms: data.latency?.stt_inference_ms ?? null,
+              decode: data.decode || null,
+            });
+          }
+          if (data.is_final) {
+            if (text) {
+              const currentText = ui.subtitleFinal.textContent;
+              ui.subtitleFinal.textContent = currentText ? currentText + "\n" + text : text;
+              ui.subtitleFinal.scrollTop = ui.subtitleFinal.scrollHeight;
+            }
+            ui.subtitlePartial.textContent = "";
+            state.lastFinalSttResult = buildSttSummary(data);
+            renderSttDiagnostics(state.lastFinalSttResult);
+          } else {
+            ui.subtitlePartial.textContent = text;
+          }
+          break;
+        }
+        case "stt_vad_ignored": {
+          logEvent("stt_vad_ignored", data);
+          break;
+        }
+        case "stt_result_suppressed": {
+          logEvent("stt_result_suppressed", data);
+          break;
+        }
+        case "assistant_stream": {
+          const delta = String(data.delta || "");
+          const source = String(data.source || "").trim();
+          if (source) {
+            ui.assistantMeta.textContent = `LLM source: ${source} (streaming)`;
+          }
+          ui.assistantStream.textContent += delta;
+          setStatus("thinking");
+          break;
+        }
+        case "assistant_final": {
+          const response = String(data.response_text || "");
+          const feedback = String(data.pedagogical_feedback || "").trim();
+          const source = String(data.source || "unknown").trim();
+          ui.assistantMeta.textContent = `LLM source: ${source} | TTS: ${ui.muteTtsInput.checked ? "muted" : "enabled"}`;
+          logEvent("assistant_final", {
+            source,
+            response_preview: response.slice(0, 120),
+            has_feedback: Boolean(feedback),
+          });
+          if (response) {
+            ui.assistantStream.textContent = response;
+          }
+
+          if (!feedback || /^perfect|none|ok$/i.test(feedback)) {
+            showPedagogicalPerfect();
+          } else {
+            showPedagogicalError(feedback);
+          }
+          setStatus("ready");
+          break;
+        }
+        case "pedagogical_feedback": {
+          const feedback = String(data.feedback || data.text || "").trim();
+          if (!feedback || /^perfect|none|ok$/i.test(feedback)) {
+            showPedagogicalPerfect();
+          } else {
+            showPedagogicalError(feedback);
+          }
+          break;
+        }
+        case "assistant_audio": {
+          playPcmBase64(String(data.audio_b64 || ""), Number(data.sample_rate || 16000), Number(data.channels || 1));
+          break;
+        }
+        case "assistant_audio_meta": {
+          logAssistantAudioMeta(data);
+          return;
+        }
+        case "assistant_audio_aborted": {
+          clearLocalAudioQueue();
+          setStatus("ready", "Barge-in acknowledged");
+          break;
+        }
+        case "assistant_generation_aborted": {
+          setStatus("ready", "Assistant response interrupted");
+          break;
+        }
+        case "stt_only_final": {
+          setStatus("ready", "STT-only final received");
+          break;
+        }
+        case "flush_ack":
+        case "barge_in_ack":
+        case "ten_started":
+        case "session_ended":
+          if (data.session_id) {
+            setCurrentSessionId(data.session_id);
+            logEvent(`Session ID received: ${state.sessionId}`);
+          }
+          if (eventName === "ten_started") {
+            setStatus("ready", "Ready - speak now");
+          }
+          break;
+        case "llm_error":
+          setStatus("llm-error", data.message || "LLM service unavailable");
+          break;
+        default:
+          break;
+      }
+
+      if (eventName === "assistant_audio") {
+        return;
+      }
+      logEvent(`json_out:${eventName || "unknown"}`, data);
+    }
+
+    async function triggerBargeIn(source) {
+      await ensureAudioContext();
+      clearLocalAudioQueue();
+      await sendCommand({ cmd: "BARGE_IN", source });
+      setStatus("thinking", "Barge-in sent");
+    }
+
+    ui.connectBtn.addEventListener("click", async () => {
+      try {
+        await connect();
+      } catch (error) {
+        setStatus("disconnected");
+        logEvent("Connect failed", { error: String(error) });
+      }
+    });
+
+    ui.createSessionBtn.addEventListener("click", async () => {
+      try {
+        await createSession();
+      } catch (error) {
+        logEvent("Create session failed", { error: String(error) });
+      }
+    });
+
+    ui.disconnectBtn.addEventListener("click", async () => {
+      await disconnect();
+    });
+
+    ui.bargeBtn.addEventListener("mousedown", async () => {
+      await triggerBargeIn("button");
+    });
+    ui.bargeBtn.addEventListener("touchstart", async (event) => {
+      event.preventDefault();
+      await triggerBargeIn("touch");
+    });
+    ui.copySttSummaryBtn.addEventListener("click", async () => {
+      try {
+        await copyLastSttSummary();
+      } catch (error) {
+        logEvent("Copy STT summary failed", { error: String(error) });
+      }
+    });
+
+    document.addEventListener("keydown", async (event) => {
+      if (event.code !== "Space" || event.repeat) return;
+      if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName || "")) return;
+      event.preventDefault();
+      clearLocalAudioQueue();
+      await sendCommand({ cmd: "BARGE_IN", source: "spacebar" });
+      setStatus("thinking", "Barge-in sent");
+    });
+
+    restoreControlSettings();
+    ui.coreApiUrl.addEventListener("change", persistControlSettings);
+    ui.gatewayUrl.addEventListener("change", persistControlSettings);
+    ui.sessionIdInput.addEventListener("change", persistControlSettings);
+    ui.rememberTokenInput.addEventListener("change", persistControlSettings);
+    ui.authTokenInput.addEventListener("change", persistControlSettings);
+
+    setStatus("disconnected");
+    setApiStatus("idle", getAuthToken() ? "API: Token ready" : "API: Waiting for token");
+  </script>
+</body>
+
+</html>
