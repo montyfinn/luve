@@ -28,16 +28,30 @@ class Settings(BaseSettings):
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     groqcloud_api_key: str | None = Field(default=None, alias="GROQCLOUD_API_KEY")
     groq_model: str = Field(default="llama-3.1-8b-instant", alias="GROQ_MODEL")
+    tts_enabled: bool = Field(default=True, alias="TTS_ENABLED")
     edge_tts_voice: str = Field(default="en-US-AnaNeural", alias="EDGE_TTS_VOICE")
     tts_phrase_min_chars: int = Field(default=28, alias="TTS_PHRASE_MIN_CHARS")
     tts_queue_maxsize: int = Field(default=24, alias="TTS_QUEUE_MAXSIZE")
     tts_chunk_ms: int = Field(default=120, alias="TTS_CHUNK_MS")
+    tts_force_flush_timeout_ms: int = Field(
+        default=700, alias="TTS_FORCE_FLUSH_TIMEOUT_MS"
+    )
     local_tts_enabled: bool = Field(default=False, alias="LOCAL_TTS_ENABLED")
     piper_model_path: str | None = Field(default=None, alias="PIPER_MODEL_PATH")
     piper_sample_rate: int = Field(default=22050, alias="PIPER_SAMPLE_RATE")
+    vad_energy_threshold_db: float = Field(default=-42.0, alias="VAD_ENERGY_THRESHOLD_DB")
+    vad_silence_timeout_ms: int = Field(default=900, alias="VAD_SILENCE_TIMEOUT_MS")
+    vad_pre_roll_ms: int = Field(default=300, alias="VAD_PRE_ROLL_MS")
     stt_model_size: str = Field(default="small.en", alias="STT_MODEL_SIZE")
     stt_beam_size: int = Field(default=3, alias="STT_BEAM_SIZE")
+    stt_partial_beam_size: int = Field(default=1, alias="STT_PARTIAL_BEAM_SIZE")
     stt_final_beam_size: int = Field(default=3, alias="STT_FINAL_BEAM_SIZE")
+    stt_partial_emit_interval_ms: int = Field(
+        default=700, alias="STT_PARTIAL_EMIT_INTERVAL_MS"
+    )
+    stt_partial_min_audio_ms: int = Field(default=900, alias="STT_PARTIAL_MIN_AUDIO_MS")
+    stt_partial_window_ms: int = Field(default=4000, alias="STT_PARTIAL_WINDOW_MS")
+    stt_final_min_audio_ms: int = Field(default=700, alias="STT_FINAL_MIN_AUDIO_MS")
     stt_initial_prompt: str = Field(
         default="This is a spoken English conversation between a learner and an AI tutor.",
         alias="STT_INITIAL_PROMPT",
