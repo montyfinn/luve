@@ -1,0 +1,330 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+import json
+import logging
+import urllib.error
+import urllib.request
+from collections.abc import Awaitable, Callable
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.schemas.ai_logic import STTAnalysis
+
+
+logger = logging.getLogger(__name__)
+
+TokenCallback = Callable[[str], Awaitable[None]]
+
+
+class PedagogicalReply(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    response_text: str = Field(min_length=1)
+    pedagogical_feedback: str = Field(default="")
+    source: str = Field(default="gemini")
+
+
+class LLMProcessor:
+    GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+    SYSTEM_PROMPT = (
+        "You are L.U.V.E, an enthusiastic English speaking coach. "
+        "Keep the conversation natural, warm, and short. "
+        "When you detect grammar or pronunciation issues, provide a gentle coaching note. "
+        "Never sound robotic, never shame the learner, and never output markdown.\n"
+        "Output format (exactly 2 lines):\n"
+        "RESPONSE_TEXT: <short conversational response in English>\n"
+        "PEDAGOGICAL_FEEDBACK: <brief coaching note, or None if no issue>"
+    )
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model_name: str = "gemini-2.0-flash",
+        provider: str = "gemini",
+        timeout_seconds: float = 20.0,
+    ) -> None:
+        if not api_key.strip():
+            raise ValueError("LLM API key must not be empty")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0")
+
+        self._api_key = api_key
+        self._model_name = model_name
+        self._provider = provider.strip().lower()
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def source(self) -> str:
+        return self._provider
+
+    async def stream_response(
+        self,
+        *,
+        session_id: UUID,
+        stt: STTAnalysis,
+        on_token: TokenCallback,
+    ) -> PedagogicalReply:
+        transcript = stt.raw_text.strip()
+        if not transcript:
+            return PedagogicalReply(
+                response_text="Could you say that one more time?",
+                pedagogical_feedback="",
+                source="local_fallback",
+            )
+
+        prompt = self._build_user_prompt(stt)
+        try:
+            if self._provider == "groq":
+                raw_output = await self._complete_from_groq(
+                    prompt=prompt,
+                    on_token=on_token,
+                    session_id=session_id,
+                )
+            elif self._provider == "gemini":
+                raw_output = await self._stream_from_gemini(
+                    prompt=prompt,
+                    on_token=on_token,
+                    session_id=session_id,
+                )
+            else:
+                raise ValueError(f"Unsupported LLM provider: {self._provider}")
+            return self._parse_output(raw_output, source=self._provider)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "llm.timeout session_id=%s timeout_seconds=%.2f",
+                session_id,
+                self._timeout_seconds,
+            )
+        except Exception:
+            logger.warning("llm.failure session_id=%s", session_id, exc_info=True)
+
+        fallback = self.build_fallback_reply(stt)
+        await on_token(fallback.response_text)
+        return fallback
+
+    async def _complete_from_groq(
+        self,
+        *,
+        prompt: str,
+        on_token: TokenCallback,
+        session_id: UUID,
+    ) -> str:
+        raw_output = await asyncio.wait_for(
+            asyncio.to_thread(self._request_groq_completion, prompt),
+            timeout=self._timeout_seconds,
+        )
+        raw_output = raw_output.strip()
+        if raw_output:
+            await on_token(raw_output)
+        return raw_output
+
+    def _request_groq_completion(self, prompt: str) -> str:
+        payload = {
+            "model": self._model_name,
+            "messages": [
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.35,
+            "max_tokens": 220,
+            "stream": False,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            self.GROQ_CHAT_COMPLETIONS_URL,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": "luve-core-api/0.1",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=self._timeout_seconds
+            ) as response:
+                response_body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(f"Groq API error HTTP {exc.code}: {error_body}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Groq API request failed: {exc.reason}") from exc
+
+        data = json.loads(response_body)
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("Groq returned no choices")
+        message = choices[0].get("message") or {}
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("Groq returned empty content")
+        return content
+
+    async def _stream_from_gemini(
+        self,
+        *,
+        prompt: str,
+        on_token: TokenCallback,
+        session_id: UUID,
+    ) -> str:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as exc:
+            raise RuntimeError(
+                "google-genai package is required for LLMProcessor"
+            ) from exc
+
+        client = genai.Client(api_key=self._api_key)
+        config = types.GenerateContentConfig(
+            system_instruction=self.SYSTEM_PROMPT,
+            temperature=0.35,
+            max_output_tokens=220,
+        )
+
+        pieces: list[str] = []
+        try:
+            await asyncio.wait_for(
+                self._collect_gemini_stream(
+                    client=client,
+                    prompt=prompt,
+                    config=config,
+                    pieces=pieces,
+                    on_token=on_token,
+                ),
+                timeout=self._timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "llm.timeout session_id=%s timeout_seconds=%.2f",
+                session_id,
+                self._timeout_seconds,
+            )
+            raise  # Re-raise to be handled by the outer exception handler in stream_response
+        finally:
+            await self._close_client(client)
+
+        return "".join(pieces).strip()
+
+    async def _collect_gemini_stream(
+        self,
+        *,
+        client: object,
+        prompt: str,
+        config: object,
+        pieces: list[str],
+        on_token: TokenCallback,
+    ) -> None:
+        stream_candidate = client.aio.models.generate_content_stream(
+            model=self._model_name,
+            contents=prompt,
+            config=config,
+        )
+        stream = (
+            stream_candidate
+            if not inspect.isawaitable(stream_candidate)
+            else await stream_candidate
+        )
+
+        async for chunk in stream:
+            delta = self._extract_chunk_text(chunk)
+            if not delta:
+                continue
+            pieces.append(delta)
+            await on_token(delta)
+
+    @staticmethod
+    def _extract_chunk_text(chunk: object) -> str:
+        text = getattr(chunk, "text", None)
+        if isinstance(text, str):
+            return text
+        return ""
+
+    @staticmethod
+    async def _close_client(client: object) -> None:
+        aio_client = getattr(client, "aio", None)
+        for candidate in (aio_client, client):
+            if candidate is None:
+                continue
+            for closer_name in ("aclose", "close"):
+                closer = getattr(candidate, closer_name, None)
+                if closer is None:
+                    continue
+                result = closer()
+                if inspect.isawaitable(result):
+                    await result
+                return
+
+    def _build_user_prompt(self, stt: STTAnalysis) -> str:
+        low_confidence_words = [
+            item.word for item in stt.all_words if item.confidence < 0.6
+        ]
+        low_confidence_text = (
+            ", ".join(low_confidence_words) if low_confidence_words else "None"
+        )
+
+        return (
+            "Learner transcript:\n"
+            f"{stt.raw_text.strip()}\n\n"
+            "Low-confidence tokens (likely pronunciation uncertainty):\n"
+            f"{low_confidence_text}\n\n"
+            f"Suspicious count: {stt.suspicious_count}\n"
+            "Provide the 2-line output format exactly."
+        )
+
+    @staticmethod
+    def _parse_output(raw_output: str, *, source: str = "gemini") -> PedagogicalReply:
+        response_text = ""
+        pedagogical_feedback = ""
+
+        for raw_line in raw_output.splitlines():
+            line = raw_line.strip()
+            upper = line.upper()
+            if upper.startswith("RESPONSE_TEXT:"):
+                response_text = line.split(":", 1)[1].strip()
+                continue
+            if upper.startswith("PEDAGOGICAL_FEEDBACK:"):
+                pedagogical_feedback = line.split(":", 1)[1].strip()
+
+        if pedagogical_feedback.lower() in {"none", "n/a", "na"}:
+            pedagogical_feedback = ""
+
+        if response_text:
+            return PedagogicalReply(
+                response_text=response_text,
+                pedagogical_feedback=pedagogical_feedback,
+                source=source,
+            )
+
+        cleaned = raw_output.strip()
+        if not cleaned:
+            raise ValueError("Gemini returned empty output")
+
+        return PedagogicalReply(
+            response_text=cleaned.splitlines()[0][:220],
+            pedagogical_feedback="",
+            source=source,
+        )
+
+    @staticmethod
+    def build_fallback_reply(stt: STTAnalysis) -> PedagogicalReply:
+        if stt.suspicious_count > 0:
+            return PedagogicalReply(
+                response_text="Nice try! Can you repeat that once more a bit more clearly?",
+                pedagogical_feedback=(
+                    "I detected a few unclear words. Slow down slightly and stress keyword endings."
+                ),
+                source="local_fallback",
+            )
+        return PedagogicalReply(
+            response_text="Great! Tell me a little more about that.",
+            pedagogical_feedback="",
+            source="local_fallback",
+        )
