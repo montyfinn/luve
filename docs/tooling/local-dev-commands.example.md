@@ -49,3 +49,5 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -d @login.json \
   | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])'
 ```
+
+http://127.0.0.1:8080/control-center
