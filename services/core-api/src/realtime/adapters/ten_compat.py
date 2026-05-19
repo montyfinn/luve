@@ -43,6 +43,7 @@ class OutboundAudioTrack(MediaStreamTrack):
     def __init__(self) -> None:
         super().__init__()
         self._queue: asyncio.Queue[AudioFrame | None] = asyncio.Queue(maxsize=128)
+        self._enqueue_lock = asyncio.Lock()
         self._next_pts = 0
         self._time_base = Fraction(1, self._target_sample_rate)
         self._playout_base_time: float | None = None
@@ -66,38 +67,39 @@ class OutboundAudioTrack(MediaStreamTrack):
         if channels <= 0:
             channels = 1
 
-        samples = np.frombuffer(pcm_bytes, dtype=np.int16)
-        if samples.size == 0:
-            return
-
-        if channels > 1:
-            usable = samples[: (samples.size // channels) * channels]
-            if usable.size == 0:
-                return
-            mono = usable.reshape(-1, channels).mean(axis=1).astype(
-                np.int16,
-                copy=False,
-            )
-        else:
-            mono = samples
-
-        if sample_rate != self._target_sample_rate:
-            mono = self._resample_pcm16_mono(
-                mono,
-                sample_rate,
-                self._target_sample_rate,
-            )
-            if mono.size == 0:
+        async with self._enqueue_lock:
+            samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+            if samples.size == 0:
                 return
 
-        for offset in range(0, mono.size, self._frame_samples):
-            packet = mono[offset : offset + self._frame_samples]
-            if packet.size == 0:
-                continue
-            frame = AudioFrame(format="s16", layout="mono", samples=packet.size)
-            frame.planes[0].update(packet.tobytes())
-            frame.sample_rate = self._target_sample_rate
-            await self._queue.put(frame)
+            if channels > 1:
+                usable = samples[: (samples.size // channels) * channels]
+                if usable.size == 0:
+                    return
+                mono = usable.reshape(-1, channels).mean(axis=1).astype(
+                    np.int16,
+                    copy=False,
+                )
+            else:
+                mono = samples
+
+            if sample_rate != self._target_sample_rate:
+                mono = self._resample_pcm16_mono(
+                    mono,
+                    sample_rate,
+                    self._target_sample_rate,
+                )
+                if mono.size == 0:
+                    return
+
+            for offset in range(0, mono.size, self._frame_samples):
+                packet = mono[offset : offset + self._frame_samples]
+                if packet.size == 0:
+                    continue
+                frame = AudioFrame(format="s16", layout="mono", samples=packet.size)
+                frame.planes[0].update(packet.tobytes())
+                frame.sample_rate = self._target_sample_rate
+                await self._queue.put(frame)
 
     async def close(self) -> None:
         await self._queue.put(None)
