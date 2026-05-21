@@ -3,6 +3,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 
+DEFAULT_LOW_CONFIDENCE_WORD_THRESHOLD = 0.55
+
+
 class WordPoint(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -74,11 +77,31 @@ class STTAnalysis(BaseModel):
 
     raw_text: str
     all_words: list[WordPoint] = Field(default_factory=list)
+    avg_logprob: float | None = None
+    no_speech_prob: float | None = None
+    compression_ratio: float | None = None
+    segment_count: int = 0
 
     @computed_field
     @property
     def suspicious_count(self) -> int:
         return sum(1 for item in self.all_words if item.confidence < 0.6)
+
+    @computed_field
+    @property
+    def low_confidence_word_count(self) -> int:
+        return sum(
+            1
+            for item in self.all_words
+            if item.confidence < DEFAULT_LOW_CONFIDENCE_WORD_THRESHOLD
+        )
+
+    @computed_field
+    @property
+    def low_confidence_word_ratio(self) -> float:
+        if not self.all_words:
+            return 0.0
+        return self.low_confidence_word_count / len(self.all_words)
 
 
 class AIReview(BaseModel):

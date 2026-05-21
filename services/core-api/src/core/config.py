@@ -56,6 +56,32 @@ class Settings(BaseSettings):
         default="This is a spoken English conversation between a learner and an AI tutor.",
         alias="STT_INITIAL_PROMPT",
     )
+    stt_reject_low_confidence: bool = Field(
+        default=True, alias="STT_REJECT_LOW_CONFIDENCE"
+    )
+    stt_min_speech_ms_for_final: int = Field(
+        default=1000, alias="STT_MIN_SPEECH_MS_FOR_FINAL"
+    )
+    stt_min_words_for_llm: int = Field(default=1, alias="STT_MIN_WORDS_FOR_LLM")
+    stt_max_no_speech_prob: float = Field(
+        default=0.35, alias="STT_MAX_NO_SPEECH_PROB"
+    )
+    stt_min_avg_logprob: float = Field(default=-0.65, alias="STT_MIN_AVG_LOGPROB")
+    stt_max_compression_ratio: float = Field(
+        default=2.2, alias="STT_MAX_COMPRESSION_RATIO"
+    )
+    stt_final_word_timestamps: bool = Field(
+        default=False, alias="STT_FINAL_WORD_TIMESTAMPS"
+    )
+    stt_enable_cuda_fallback_to_cpu: bool = Field(
+        default=True, alias="STT_ENABLE_CUDA_FALLBACK_TO_CPU"
+    )
+    stt_min_word_confidence: float = Field(
+        default=0.55, alias="STT_MIN_WORD_CONFIDENCE"
+    )
+    stt_max_low_confidence_word_ratio: float = Field(
+        default=0.40, alias="STT_MAX_LOW_CONFIDENCE_WORD_RATIO"
+    )
 
     @property
     def effective_groq_api_key(self) -> str | None:

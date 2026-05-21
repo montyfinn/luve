@@ -19,7 +19,7 @@ from src.core.db import engine
 from src.core.config import settings
 from src.media.brain import LLMProcessor
 from src.media.stt_postprocess import sanitize_transcript
-from src.media.stt_worker import WhisperInference
+from src.media.stt_worker import STTProcessingError, WhisperInference
 from src.media.tts import TTSAudioChunk, TTSProcessor
 from src.schemas.ai_logic import STTAnalysis
 from src.services.session_event_publisher import publish_session_completed
@@ -832,19 +832,45 @@ class LUVEExtension(ten.Extension):
                 contextual_prompt = self._stt_initial_prompt
 
                 started = time.perf_counter()
-                analysis = await self._stt_worker.transcribe_audio_bytes(
-                    job.pcm_bytes,
-                    initial_prompt=contextual_prompt,
-                    beam_size=self._stt_final_beam_size
-                    if job.is_final
-                    else self._stt_partial_beam_size,
-                    word_timestamps=False,
-                    # Live VAD already owns utterance boundaries. Running
-                    # Whisper's internal VAD again on finals can trim/mutate
-                    # the same audio that partials recognized correctly.
-                    vad_filter=False,
-                    condition_on_previous_text=False,
-                )
+                try:
+                    analysis = await self._stt_worker.transcribe_audio_bytes(
+                        job.pcm_bytes,
+                        initial_prompt=contextual_prompt,
+                        beam_size=self._stt_final_beam_size
+                        if job.is_final
+                        else self._stt_partial_beam_size,
+                        word_timestamps=bool(
+                            job.is_final and settings.stt_final_word_timestamps
+                        ),
+                        # Live VAD already owns utterance boundaries. Running
+                        # Whisper's internal VAD again on finals can trim/mutate
+                        # the same audio that partials recognized correctly.
+                        vad_filter=False,
+                        condition_on_previous_text=False,
+                    )
+                except STTProcessingError as exc:
+                    self._emit_json(
+                        "stt_error",
+                        {
+                            "reason": "stt_runtime_error",
+                            "is_final": job.is_final,
+                            "trigger": job.trigger,
+                            "audio": job.audio_stats,
+                        },
+                    )
+                    self._emit_json(
+                        "stt_result_suppressed",
+                        {
+                            "reason": "stt_runtime_error",
+                            "is_final": job.is_final,
+                            "trigger": job.trigger,
+                            "audio": job.audio_stats,
+                        },
+                    )
+                    logger.warning("ten.stt.runtime_error reason=%s", exc)
+                    if job.is_final:
+                        self._reset_current_utterance()
+                    continue
 
                 analysis.raw_text = sanitize_transcript(analysis.raw_text)
                 if self._is_probable_stt_hallucination(
@@ -861,6 +887,28 @@ class LUVEExtension(ten.Extension):
                             "trigger": job.trigger,
                             "text": analysis.raw_text,
                             "audio": job.audio_stats,
+                        },
+                    )
+                    if job.is_final:
+                        self._reset_current_utterance()
+                    continue
+
+                stt_rejection = self._stt_rejection_reason(
+                    analysis,
+                    is_final=job.is_final,
+                    audio_stats=job.audio_stats,
+                )
+                if stt_rejection is not None:
+                    self._emit_json(
+                        "stt_result_suppressed",
+                        {
+                            "reason": stt_rejection,
+                            "is_final": job.is_final,
+                            "trigger": job.trigger,
+                            "text": analysis.raw_text,
+                            "audio": job.audio_stats,
+                            "stt": analysis.model_dump(),
+                            "confidence": self._stt_confidence_metrics(analysis),
                         },
                     )
                     if job.is_final:
@@ -1636,6 +1684,79 @@ class LUVEExtension(ten.Extension):
             return True
 
         return False
+
+    def _stt_rejection_reason(
+        self,
+        analysis: STTAnalysis,
+        *,
+        is_final: bool,
+        audio_stats: dict[str, object] | None,
+    ) -> str | None:
+        if not is_final or not settings.stt_reject_low_confidence:
+            return None
+
+        normalized = self._normalize_stt_text(analysis.raw_text)
+        if not normalized:
+            return None
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+
+        word_count = len(normalized.split())
+        if speech_ms is not None and speech_ms < settings.stt_min_speech_ms_for_final:
+            return "low_speech_duration"
+        if word_count < settings.stt_min_words_for_llm:
+            return "too_few_words"
+        if (
+            analysis.no_speech_prob is not None
+            and analysis.no_speech_prob > settings.stt_max_no_speech_prob
+        ):
+            return "high_no_speech_probability"
+        if (
+            analysis.avg_logprob is not None
+            and analysis.avg_logprob < settings.stt_min_avg_logprob
+        ):
+            return "low_average_logprob"
+        if (
+            analysis.compression_ratio is not None
+            and analysis.compression_ratio > settings.stt_max_compression_ratio
+        ):
+            return "high_compression_ratio"
+
+        confidence = self._stt_confidence_metrics(analysis)
+        if (
+            confidence["word_count"] > 0
+            and confidence["low_confidence_word_ratio"]
+            > settings.stt_max_low_confidence_word_ratio
+        ):
+            return "too_many_low_confidence_words"
+
+        return None
+
+    @staticmethod
+    def _stt_confidence_metrics(analysis: STTAnalysis) -> dict[str, object]:
+        word_count = len(analysis.all_words)
+        low_confidence_word_count = sum(
+            1
+            for word in analysis.all_words
+            if word.confidence < settings.stt_min_word_confidence
+        )
+        low_confidence_word_ratio = (
+            low_confidence_word_count / word_count if word_count else 0.0
+        )
+        return {
+            "avg_logprob": analysis.avg_logprob,
+            "no_speech_prob": analysis.no_speech_prob,
+            "compression_ratio": analysis.compression_ratio,
+            "segment_count": analysis.segment_count,
+            "word_count": word_count,
+            "low_confidence_word_count": low_confidence_word_count,
+            "low_confidence_word_ratio": round(low_confidence_word_ratio, 4),
+            "min_word_confidence": settings.stt_min_word_confidence,
+        }
 
     @staticmethod
     def _extract_response_text(raw_stream: str) -> str:
