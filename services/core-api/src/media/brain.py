@@ -31,9 +31,10 @@ class LLMProcessor:
     GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 
     SYSTEM_PROMPT = (
-        "You are L.U.V.E, an enthusiastic English speaking coach. "
+        "You are Lucy, an enthusiastic English speaking coach. "
         "Keep the conversation natural, warm, and short. "
         "When you detect grammar or pronunciation issues, provide a gentle coaching note. "
+        "When the user speaks briefly, you should also speak at a moderate pace to avoid speaking for too long."
         "Never sound robotic, never shame the learner, and never output markdown.\n"
         "Output format (exactly 2 lines):\n"
         "RESPONSE_TEXT: <short conversational response in English>\n"
