@@ -44,6 +44,7 @@ class OutboundAudioTrack(MediaStreamTrack):
         super().__init__()
         self._queue: asyncio.Queue[AudioFrame | None] = asyncio.Queue(maxsize=128)
         self._enqueue_lock = asyncio.Lock()
+        self._closed = False
         self._next_pts = 0
         self._time_base = Fraction(1, self._target_sample_rate)
         self._playout_base_time: float | None = None
@@ -61,6 +62,8 @@ class OutboundAudioTrack(MediaStreamTrack):
     ) -> None:
         if not pcm_bytes:
             return
+        if self._closed:
+            return
 
         if sample_rate <= 0:
             sample_rate = self._target_sample_rate
@@ -68,6 +71,8 @@ class OutboundAudioTrack(MediaStreamTrack):
             channels = 1
 
         async with self._enqueue_lock:
+            if self._closed:
+                return
             samples = np.frombuffer(pcm_bytes, dtype=np.int16)
             if samples.size == 0:
                 return
@@ -102,18 +107,40 @@ class OutboundAudioTrack(MediaStreamTrack):
                 await self._queue.put(frame)
 
     async def close(self) -> None:
-        await self._queue.put(None)
+        self._closed = True
+        self._drain_queue()
+        try:
+            self._queue.put_nowait(None)
+        except asyncio.QueueFull:
+            with contextlib.suppress(asyncio.QueueEmpty):
+                self._queue.get_nowait()
+            with contextlib.suppress(asyncio.QueueFull):
+                self._queue.put_nowait(None)
 
     async def clear(self) -> None:
+        self._drain_queue()
+        self._resync_playout = True
+
+    @property
+    def queued_frames(self) -> int:
+        return self._queue.qsize()
+
+    def _drain_queue(self) -> None:
         while True:
             try:
                 self._queue.get_nowait()
             except asyncio.QueueEmpty:
-                self._resync_playout = True
                 return
 
     async def recv(self) -> AudioFrame:
-        frame = await self._queue.get()
+        if self._closed and self._queue.empty():
+            raise MediaStreamError
+
+        try:
+            frame = self._queue.get_nowait()
+        except asyncio.QueueEmpty:
+            frame = self._make_silence_frame()
+
         if frame is None:
             raise MediaStreamError
 
@@ -136,6 +163,12 @@ class OutboundAudioTrack(MediaStreamTrack):
         frame.pts = self._next_pts
         frame.time_base = self._time_base
         self._next_pts += frame.samples
+        return frame
+
+    def _make_silence_frame(self) -> AudioFrame:
+        frame = AudioFrame(format="s16", layout="mono", samples=self._frame_samples)
+        frame.planes[0].update(bytes(self._frame_samples * 2))
+        frame.sample_rate = self._target_sample_rate
         return frame
 
     @staticmethod
@@ -356,9 +389,11 @@ class WebRTCGatewayManager:
     async def close_session(self, session_id: str) -> None:
         async with self._lock:
             session = self._sessions.pop(session_id, None)
+            remaining_sessions = len(self._sessions)
         if session is None:
             return
 
+        queued_frames = session.outbound_audio_track.queued_frames
         for task in list(session.tasks):
             task.cancel()
         if session.tasks:
@@ -373,7 +408,12 @@ class WebRTCGatewayManager:
 
         self._extension.on_cmd({"session_id": session_id, "command": "END_SESSION"})
 
-        logger.info("webrtc.session.closed session_id=%s", session_id)
+        logger.info(
+            "webrtc.session.closed session_id=%s remaining_sessions=%s queued_frames=%s",
+            session_id,
+            remaining_sessions,
+            queued_frames,
+        )
 
     async def assert_session_owner(
         self,
