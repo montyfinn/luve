@@ -132,6 +132,8 @@ class LUVEExtension(ten.Extension):
         self._llm_tasks: set[asyncio.Task[None]] = set()
         self._force_flush_task: asyncio.Task[None] | None = None
         self._assistant_speech_release_task: asyncio.Task[None] | None = None
+        self._tts_feed_started_at: float | None = None
+        self._tts_first_chunk_logged = False
         self._cleanup_lock: asyncio.Lock | None = None
         self._event_log: list[dict[str, object]] = []
         self._session_id: str | None = None
@@ -877,6 +879,14 @@ class LUVEExtension(ten.Extension):
                 # partials on background audio.
                 contextual_prompt = self._stt_initial_prompt
 
+                queued_ms = max((time.perf_counter() - job.queued_at) * 1000, 0.0)
+                stt_log = logger.info if job.is_final else logger.debug
+                stt_log(
+                    "ten.stt.job_started is_final=%s trigger=%s queued_ms=%.2f",
+                    job.is_final,
+                    job.trigger,
+                    queued_ms,
+                )
                 started = time.perf_counter()
                 try:
                     self._stt_inference_busy = True
@@ -974,6 +984,13 @@ class LUVEExtension(ten.Extension):
 
                 hop_ms = max((time.perf_counter() - job.queued_at) * 1000, 0.0)
                 inference_ms = (time.perf_counter() - started) * 1000
+                stt_log(
+                    "ten.stt.job_finished is_final=%s trigger=%s inference_ms=%.2f total_ms=%.2f",
+                    job.is_final,
+                    job.trigger,
+                    inference_ms,
+                    hop_ms,
+                )
                 self._emit_json(
                     "stt_result",
                     {
@@ -1030,6 +1047,7 @@ class LUVEExtension(ten.Extension):
     async def _spawn_llm_for_final(self, analysis: STTAnalysis) -> None:
         if not self._responses_enabled():
             return
+        self._reset_tts_timing()
         if self._llm_processor is None:
             await self._emit_local_fallback_reply(analysis)
             return
@@ -1046,6 +1064,8 @@ class LUVEExtension(ten.Extension):
         if not analysis.raw_text.strip():
             return
 
+        started = time.perf_counter()
+        logger.info("ten.llm.started source=local_fallback")
         try:
             result = LLMProcessor.build_fallback_reply(analysis)
             if not self._responses_enabled():
@@ -1061,6 +1081,7 @@ class LUVEExtension(ten.Extension):
                     },
                 )
                 if self._tts_processor is not None and self._tts_output_enabled:
+                    self._mark_tts_feed_started()
                     await self._tts_processor.feed_text(
                         result.response_text, is_final=False
                     )
@@ -1077,6 +1098,10 @@ class LUVEExtension(ten.Extension):
                 },
             )
         finally:
+            logger.info(
+                "ten.llm.finished source=local_fallback duration_ms=%.2f",
+                (time.perf_counter() - started) * 1000,
+            )
             self._is_assistant_speaking = False  # ALWAYS unblock mic input
 
     async def _run_llm_pipeline(self, analysis: STTAnalysis) -> None:
@@ -1085,6 +1110,9 @@ class LUVEExtension(ten.Extension):
         if self._llm_processor is None:
             return
 
+        llm_started = time.perf_counter()
+        llm_source = self._llm_processor.source
+        logger.info("ten.llm.started source=%s", llm_source)
         try:
             llm_raw_buffer = ""
             streamed_response_buffer = ""
@@ -1131,6 +1159,7 @@ class LUVEExtension(ten.Extension):
                 )
 
                 if self._tts_processor is not None and self._tts_output_enabled:
+                    self._mark_tts_feed_started()
                     await self._tts_processor.feed_text(response_delta, is_final=False)
                     await restart_force_flush()
 
@@ -1156,6 +1185,7 @@ class LUVEExtension(ten.Extension):
                     },
                 )
                 if self._tts_processor is not None and self._tts_output_enabled:
+                    self._mark_tts_feed_started()
                     await self._tts_processor.feed_text(final_tail, is_final=False)
 
             if self._force_flush_task is not None:
@@ -1186,10 +1216,20 @@ class LUVEExtension(ten.Extension):
                     },
                 }
             )
+            logger.info(
+                "ten.llm.finished source=%s duration_ms=%.2f response_chars=%s",
+                result.source,
+                (time.perf_counter() - llm_started) * 1000,
+                len(result.response_text or ""),
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("ten.llm.pipeline_failed")
+            logger.exception(
+                "ten.llm.pipeline_failed source=%s duration_ms=%.2f",
+                llm_source,
+                (time.perf_counter() - llm_started) * 1000,
+            )
             if self._responses_enabled():
                 self._emit_json(
                     "llm_error",
@@ -1244,9 +1284,34 @@ class LUVEExtension(ten.Extension):
                 name="ten-assistant-speech-release",
             )
 
+        if not self._tts_first_chunk_logged:
+            self._tts_first_chunk_logged = True
+            feed_started_at = self._tts_feed_started_at
+            first_chunk_ms = (
+                (time.perf_counter() - feed_started_at) * 1000
+                if feed_started_at is not None
+                else None
+            )
+            logger.info(
+                "ten.tts.first_chunk phrase_id=%s chunk_index=%s sequence_number=%s first_chunk_ms=%s",
+                chunk.phrase_id,
+                chunk.chunk_index,
+                chunk.sequence_number,
+                round(first_chunk_ms, 2) if first_chunk_ms is not None else None,
+            )
+
     async def _release_assistant_speaking_after_tail(self) -> None:
         await asyncio.sleep(self._tts_echo_guard_tail_seconds)
         self._is_assistant_speaking = False
+
+    def _reset_tts_timing(self) -> None:
+        self._tts_feed_started_at = None
+        self._tts_first_chunk_logged = False
+
+    def _mark_tts_feed_started(self) -> None:
+        if self._tts_feed_started_at is None:
+            self._tts_feed_started_at = time.perf_counter()
+            logger.info("ten.tts.started")
 
     # TEN output helpers
     def _responses_enabled(self) -> bool:
@@ -1889,6 +1954,7 @@ class LUVEExtension(ten.Extension):
         self._session_id = None
         self._audio_sequence = 0
         self._is_assistant_speaking = False
+        self._reset_tts_timing()
         self._stt_inference_busy = False
         self._stt_only_mode = False
         self._tts_output_enabled = True

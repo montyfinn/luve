@@ -109,6 +109,11 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/rtc/health")
+async def rtc_health() -> dict[str, Any]:
+    return await app.state.gateway.get_runtime_snapshot()
+
+
 @app.post("/rtc/offer", response_model=OfferResponse)
 async def rtc_offer(
     request: OfferRequest,
