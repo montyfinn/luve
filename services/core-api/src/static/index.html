@@ -109,6 +109,10 @@
             class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600">
             Disconnect
           </button>
+          <button id="mute-mic-btn" disabled
+            class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50">
+            Mute Mic
+          </button>
           <button id="barge-btn"
             class="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold transition hover:bg-rose-500">
             Push-to-Talk / Barge-in (Space)
@@ -190,6 +194,7 @@
       createSessionBtn: document.getElementById("create-session-btn"),
       connectBtn: document.getElementById("connect-btn"),
       disconnectBtn: document.getElementById("disconnect-btn"),
+      muteMicBtn: document.getElementById("mute-mic-btn"),
       bargeBtn: document.getElementById("barge-btn"),
       copySttSummaryBtn: document.getElementById("copy-stt-summary-btn"),
       subtitleFinal: document.getElementById("subtitle-final"),
@@ -208,7 +213,11 @@
       controlChannel: null,
       jsonChannel: null,
       sessionId: null,
+      sessionEnded: false,
+      connectionAttemptId: 0,
+      acceptIceCandidates: false,
       micStream: null,
+      micMuted: false,
       audioContext: null,
       pendingIceCandidates: [],
       activeSources: new Set(),
@@ -217,6 +226,14 @@
       audioQueuePromise: Promise.resolve(),
       eventLogLines: [],
       assistantAudioMeta: new Map(),
+      ttsActive: false,
+      ttsReleaseTimer: null,
+      remoteAudioStatsTimer: null,
+      lastInboundAudioStats: null,
+      remoteAudioDiagnosticsBound: false,
+      audioDiagnosticsEnabled: false,
+      lastTtsSequenceNumber: -1,
+      pageUnloadCleanupDone: false,
       lastFinalSttResult: null,
     };
 
@@ -248,6 +265,11 @@
          monitor: "border-emerald-500/40 bg-emerald-500/10",
          dot: "bg-emerald-500",
          text: "Ready",
+       },
+       error: {
+         monitor: "border-red-500/40 bg-red-500/10",
+         dot: "bg-red-500",
+         text: "Error",
        },
        "llm-error": {
          monitor: "border-red-500/40 bg-red-500/10",
@@ -287,7 +309,7 @@
       );
       ui.statusMonitor.classList.add(...theme.monitor.split(" "));
 
-      ui.statusDot.classList.remove("bg-rose-500", "bg-amber-400", "bg-emerald-500");
+      ui.statusDot.classList.remove("bg-rose-500", "bg-amber-400", "bg-emerald-500", "bg-red-500");
       ui.statusDot.classList.add(theme.dot);
 
       ui.statusText.textContent = customText || theme.text;
@@ -348,19 +370,228 @@
       return `${String(data.session_id || "")}:${String(data.phrase_id ?? "unknown")}`;
     }
 
+    function bindRemoteAudioElementDiagnostics() {
+      if (!state.audioDiagnosticsEnabled) return;
+      if (state.remoteAudioDiagnosticsBound) return;
+      state.remoteAudioDiagnosticsBound = true;
+
+      const eventNames = ["play", "playing", "pause", "waiting", "stalled", "ended", "error"];
+      for (const eventName of eventNames) {
+        ui.remoteAudio.addEventListener(eventName, () => {
+          const error = ui.remoteAudio.error;
+          logEvent(`remote_audio:${eventName}`, {
+            currentTime: Number(ui.remoteAudio.currentTime || 0).toFixed(3),
+            paused: ui.remoteAudio.paused,
+            readyState: ui.remoteAudio.readyState,
+            networkState: ui.remoteAudio.networkState,
+            errorCode: error ? error.code : null,
+            errorMessage: error ? error.message : null,
+          });
+        });
+      }
+    }
+
+    function logRemoteTrackEvent(eventName, track) {
+      if (!state.audioDiagnosticsEnabled) return;
+      logEvent(`remote_track:${eventName}`, {
+        kind: track.kind,
+        id: track.id,
+        muted: track.muted,
+        readyState: track.readyState,
+      });
+    }
+
+    function bindRemoteTrackDiagnostics(track) {
+      if (!state.audioDiagnosticsEnabled) return;
+      if (!track || track.kind !== "audio") return;
+      logRemoteTrackEvent("attached", track);
+      track.onmute = () => logRemoteTrackEvent("mute", track);
+      track.onunmute = () => logRemoteTrackEvent("unmute", track);
+      track.onended = () => logRemoteTrackEvent("ended", track);
+    }
+
+    function summarizeInboundAudioStats(report) {
+      return {
+        packetsReceived: Number(report.packetsReceived || 0),
+        bytesReceived: Number(report.bytesReceived || 0),
+        packetsLost: Number(report.packetsLost || 0),
+        jitter: typeof report.jitter === "number" ? Number(report.jitter.toFixed(6)) : null,
+        concealedSamples: Number(report.concealedSamples || 0),
+        totalSamplesReceived: Number(report.totalSamplesReceived || 0),
+        silentConcealedSamples: Number(report.silentConcealedSamples || 0),
+      };
+    }
+
+    function diffInboundAudioStats(current, previous) {
+      if (!previous) return current;
+      return {
+        packetsReceived: current.packetsReceived - previous.packetsReceived,
+        bytesReceived: current.bytesReceived - previous.bytesReceived,
+        packetsLost: current.packetsLost - previous.packetsLost,
+        jitter: current.jitter,
+        concealedSamples: current.concealedSamples - previous.concealedSamples,
+        totalSamplesReceived: current.totalSamplesReceived - previous.totalSamplesReceived,
+        silentConcealedSamples: current.silentConcealedSamples - previous.silentConcealedSamples,
+      };
+    }
+
+    function stopInboundAudioStats() {
+      if (state.remoteAudioStatsTimer) {
+        clearInterval(state.remoteAudioStatsTimer);
+        state.remoteAudioStatsTimer = null;
+      }
+      state.lastInboundAudioStats = null;
+    }
+
+    function startInboundAudioStats() {
+      if (!state.audioDiagnosticsEnabled) return;
+      if (state.remoteAudioStatsTimer || !state.peerConnection) return;
+
+      state.remoteAudioStatsTimer = setInterval(async () => {
+        const pc = state.peerConnection;
+        if (!pc || !state.ttsActive) {
+          stopInboundAudioStats();
+          return;
+        }
+
+        try {
+          const stats = await pc.getStats();
+          let inboundAudio = null;
+          stats.forEach((report) => {
+            if (
+              report.type === "inbound-rtp" &&
+              !report.isRemote &&
+              (report.kind === "audio" || report.mediaType === "audio")
+            ) {
+              inboundAudio = report;
+            }
+          });
+
+          if (!inboundAudio) {
+            logEvent("inbound_audio_stats", { available: false });
+            return;
+          }
+
+          const current = summarizeInboundAudioStats(inboundAudio);
+          const delta = diffInboundAudioStats(current, state.lastInboundAudioStats);
+          state.lastInboundAudioStats = current;
+          logEvent("inbound_audio_stats", {
+            available: true,
+            delta,
+            total: current,
+          });
+        } catch (error) {
+          logEvent("inbound_audio_stats:error", { error: String(error) });
+        }
+      }, 1000);
+    }
+
+    function updateMicMuteButton() {
+      const isConnected = Boolean(state.peerConnection && state.micStream);
+      ui.muteMicBtn.disabled = !isConnected;
+      ui.muteMicBtn.textContent = state.micMuted ? "Unmute Mic" : "Mute Mic";
+    }
+
+    function setMicMuted(muted) {
+      state.micMuted = Boolean(muted);
+      if (state.micStream) {
+        for (const track of state.micStream.getAudioTracks()) {
+          track.enabled = !state.micMuted;
+        }
+      }
+      updateMicMuteButton();
+      logEvent(state.micMuted ? "mic_muted" : "mic_unmuted");
+    }
+
+    async function toggleMicMute() {
+      if (!state.peerConnection || !state.micStream) {
+        logEvent("mic_toggle_ignored", { reason: "not_connected" });
+        return;
+      }
+      const nextMuted = !state.micMuted;
+      if (nextMuted) {
+        const flushSent = await sendCommand({
+          cmd: "FLUSH",
+          source: "mute_mic",
+          suppress_response: false,
+        });
+        logEvent("flush_sent", {
+          source: "mute_mic",
+          sent: flushSent,
+        });
+      }
+      setMicMuted(nextMuted);
+    }
+
+    function clearTtsSpeakingState(nextStatus = null) {
+      if (state.ttsReleaseTimer) {
+        clearTimeout(state.ttsReleaseTimer);
+        state.ttsReleaseTimer = null;
+      }
+      state.ttsActive = false;
+      stopInboundAudioStats();
+      state.lastTtsSequenceNumber = -1;
+      if (nextStatus) {
+        setStatus(nextStatus.mode, nextStatus.text);
+      }
+    }
+
+    function markTtsSpeaking(data) {
+      const sequenceNumber = Number(data.sequence_number);
+      if (Number.isFinite(sequenceNumber)) {
+        state.lastTtsSequenceNumber = Math.max(state.lastTtsSequenceNumber, sequenceNumber);
+      }
+
+      state.ttsActive = true;
+      if (state.audioDiagnosticsEnabled) {
+        startInboundAudioStats();
+      }
+      if (state.ttsReleaseTimer) {
+        clearTimeout(state.ttsReleaseTimer);
+        state.ttsReleaseTimer = null;
+      }
+      setStatus("thinking", "AI speaking...");
+
+      if (data.is_last_chunk) {
+        const releaseSequence = state.lastTtsSequenceNumber;
+        const echoGuardMs = Number(data.echo_guard_tail_ms || 0);
+        const releaseDelayMs = Math.max(echoGuardMs + 400, 400);
+        state.ttsReleaseTimer = setTimeout(() => {
+          if (state.ttsActive && state.lastTtsSequenceNumber === releaseSequence) {
+            clearTtsSpeakingState({ mode: "ready", text: "Ready - speak now" });
+          }
+        }, releaseDelayMs);
+      }
+    }
+
     function logAssistantAudioMeta(data) {
+      if (!state.audioDiagnosticsEnabled) return;
+
       const phraseId = data.phrase_id ?? "unknown";
       const key = buildAudioMetaKey(data);
       const existing = state.assistantAudioMeta.get(key) || {
         chunkCount: 0,
         maxChunkIndex: -1,
+        lastChunkIndex: -1,
         phraseId,
         sessionId: data.session_id || null,
       };
 
       existing.chunkCount += 1;
-      if (Number.isFinite(Number(data.chunk_index))) {
-        existing.maxChunkIndex = Math.max(existing.maxChunkIndex, Number(data.chunk_index));
+      const chunkIndex = Number(data.chunk_index);
+      const sequenceNumber = data.sequence_number ?? null;
+      if (Number.isFinite(chunkIndex)) {
+        if (existing.lastChunkIndex >= 0 && chunkIndex > existing.lastChunkIndex + 1) {
+          logEvent("assistant_audio_meta:chunk_gap_detected", {
+            phraseId: existing.phraseId,
+            sessionId: existing.sessionId,
+            expectedChunkIndex: existing.lastChunkIndex + 1,
+            actualChunkIndex: chunkIndex,
+            sequenceNumber,
+          });
+        }
+        existing.lastChunkIndex = Math.max(existing.lastChunkIndex, chunkIndex);
+        existing.maxChunkIndex = Math.max(existing.maxChunkIndex, chunkIndex);
       }
       state.assistantAudioMeta.set(key, existing);
 
@@ -368,6 +599,16 @@
         logEvent("assistant_audio_meta:start", {
           phraseId: existing.phraseId,
           sessionId: existing.sessionId,
+        });
+      }
+
+      if (data.is_last_chunk || (Number.isFinite(chunkIndex) && chunkIndex % 10 === 0)) {
+        logEvent("assistant_audio_meta:chunk", {
+          phraseId: existing.phraseId,
+          sessionId: existing.sessionId,
+          chunkIndex: Number.isFinite(chunkIndex) ? chunkIndex : null,
+          sequenceNumber,
+          isLastChunk: Boolean(data.is_last_chunk),
         });
       }
 
@@ -479,6 +720,14 @@
 
     function setCurrentSessionId(sessionId) {
       state.sessionId = sessionId || null;
+      state.sessionEnded = false;
+      ui.sessionIdInput.value = sessionId || "";
+      persistControlSettings();
+    }
+
+    function keepCompletedSessionVisible(sessionId) {
+      state.sessionId = null;
+      state.sessionEnded = Boolean(sessionId);
       ui.sessionIdInput.value = sessionId || "";
       persistControlSettings();
     }
@@ -509,6 +758,12 @@
     }
 
     async function createSession() {
+      if (!getAuthToken()) {
+        setApiStatus("error", "API: Token required");
+        logEvent("Token required before creating session");
+        throw new Error("Bearer token is required to create a session.");
+      }
+
       setApiStatus("busy", "API: Creating session...");
       const response = await fetch(buildCoreApiUrl("/api/v1/sessions"), {
         method: "POST",
@@ -618,7 +873,10 @@
     }
 
     async function ensureMicrophone() {
-      if (state.micStream) return state.micStream;
+      if (state.micStream && state.micStream.getAudioTracks().some((track) => track.readyState === "live")) {
+        return state.micStream;
+      }
+      state.micStream = null;
       state.micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -632,8 +890,22 @@
       return state.micStream;
     }
 
-    async function sendIceCandidate(candidate) {
-      if (!state.sessionId) {
+    function describeMicrophoneError(error) {
+      const name = String(error?.name || "");
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        return "Mic permission denied";
+      }
+      if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        return "No microphone found";
+      }
+      if (name === "NotReadableError" || name === "TrackStartError") {
+        return "Microphone is busy or unavailable";
+      }
+      return "Microphone failed";
+    }
+
+    async function sendIceCandidate(candidate, sessionId = state.sessionId) {
+      if (!sessionId) {
         state.pendingIceCandidates.push(candidate);
         return;
       }
@@ -642,7 +914,7 @@
         method: "POST",
         headers: getJsonHeaders({ includeAuth: true }),
         body: JSON.stringify({
-          session_id: state.sessionId,
+          session_id: sessionId,
           candidate,
         }),
       });
@@ -651,15 +923,15 @@
       }
     }
 
-    async function flushPendingIceCandidates() {
-      if (!state.sessionId || state.pendingIceCandidates.length === 0) return;
+    async function flushPendingIceCandidates(sessionId = state.sessionId) {
+      if (!sessionId || state.pendingIceCandidates.length === 0) return;
 
       const pending = [...state.pendingIceCandidates];
       state.pendingIceCandidates = [];
 
       for (const candidate of pending) {
         try {
-          await sendIceCandidate(candidate);
+          await sendIceCandidate(candidate, sessionId);
         } catch (error) {
           logEvent("Queued ICE send failed", { error: String(error) });
         }
@@ -706,26 +978,52 @@
       }
 
       try {
+        const attemptId = state.connectionAttemptId + 1;
+        state.connectionAttemptId = attemptId;
+        state.acceptIceCandidates = true;
         state.pendingIceCandidates = [];
         ui.assistantMeta.textContent = "LLM source: waiting for assistant_final";
         ui.assistantStream.textContent = "";
         await ensureAudioContext();
-        const micStream = await ensureMicrophone();
-        let providedSessionId = ui.sessionIdInput.value.trim();
+        let micStream = null;
+        try {
+          micStream = await ensureMicrophone();
+        } catch (error) {
+          const message = describeMicrophoneError(error);
+          logEvent("mic_error", {
+            name: String(error?.name || "unknown"),
+            message: String(error?.message || message),
+          });
+          setStatus("error", message);
+          updateMicMuteButton();
+          return;
+        }
+        let providedSessionId = state.sessionEnded ? "" : ui.sessionIdInput.value.trim();
         if (!providedSessionId) {
           providedSessionId = await createSession();
         }
         setCurrentSessionId(providedSessionId);
+        const iceSessionId = providedSessionId;
+        setMicMuted(false);
 
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
         state.peerConnection = pc;
+        state.pageUnloadCleanupDone = false;
+        updateMicMuteButton();
 
         micStream.getAudioTracks().forEach((track) => pc.addTrack(track, micStream));
 
         pc.ontrack = async (event) => {
           const [remoteStream] = event.streams;
+          bindRemoteAudioElementDiagnostics();
+          bindRemoteTrackDiagnostics(event.track);
+          for (const track of remoteStream?.getAudioTracks?.() || []) {
+            if (track !== event.track) {
+              bindRemoteTrackDiagnostics(track);
+            }
+          }
           ui.remoteAudio.srcObject = remoteStream;
           try {
             await ensureAudioContext();
@@ -759,17 +1057,37 @@
 
         pc.onicecandidate = async (event) => {
           if (!event.candidate) return;
+          if (attemptId !== state.connectionAttemptId) {
+            logEvent("ICE ignored", { reason: "stale_attempt" });
+            return;
+          }
+          if (!state.acceptIceCandidates) {
+            logEvent("ICE ignored", { reason: "ice_closed" });
+            return;
+          }
+          if (pc !== state.peerConnection) {
+            logEvent("ICE ignored", { reason: "stale_peer_connection" });
+            return;
+          }
+          if (pc.signalingState === "closed" || pc.connectionState === "closed") {
+            logEvent("ICE ignored", { reason: "peer_closed" });
+            return;
+          }
+          if (iceSessionId !== state.sessionId) {
+            logEvent("ICE ignored", { reason: "stale_session" });
+            return;
+          }
           const candidate =
             typeof event.candidate.toJSON === "function" ? event.candidate.toJSON() : event.candidate;
 
-          if (!state.sessionId) {
+          if (!iceSessionId) {
             state.pendingIceCandidates.push(candidate);
             logEvent("ICE queued", { pending: state.pendingIceCandidates.length });
             return;
           }
 
           try {
-            await sendIceCandidate(candidate);
+            await sendIceCandidate(candidate, iceSessionId);
           } catch (error) {
             logEvent("ICE send failed", { error: String(error) });
           }
@@ -813,7 +1131,7 @@
         }
         const answerEnvelope = await response.json();
         setCurrentSessionId(answerEnvelope.session_id || state.sessionId);
-        await flushPendingIceCandidates();
+        await flushPendingIceCandidates(iceSessionId);
 
         const answer = answerEnvelope.answer || answerEnvelope;
         await pc.setRemoteDescription(answer);
@@ -834,7 +1152,13 @@
     }
 
     async function disconnect() {
+      if (state.ttsActive) {
+        logEvent("Disconnect while TTS active; current assistant audio will be cut");
+      }
+      clearTtsSpeakingState();
       clearLocalAudioQueue();
+      state.acceptIceCandidates = false;
+      state.connectionAttemptId += 1;
 
       if (state.controlChannel) {
         try {
@@ -862,7 +1186,7 @@
         state.micStream = null;
       }
       const currentSessionId = state.sessionId || ui.sessionIdInput.value.trim();
-      state.sessionId = null;
+      state.micMuted = false;
       state.pendingIceCandidates = [];
       state.assistantAudioMeta.clear();
       ui.assistantMeta.textContent = "LLM source: disconnected";
@@ -870,9 +1194,82 @@
       if (currentSessionId) {
         setLastSessionId(currentSessionId);
       }
-      setCurrentSessionId("");
-      setStatus("disconnected");
-      logEvent("Disconnected");
+      keepCompletedSessionVisible(currentSessionId);
+      updateMicMuteButton();
+      setStatus("disconnected", currentSessionId ? "Disconnected - session ended" : "Disconnected");
+      logEvent("Disconnected; realtime session ended", { sessionId: currentSessionId || null });
+    }
+
+    function cleanupRealtimeForPageUnload(event = null) {
+      if (event?.persisted || state.pageUnloadCleanupDone) {
+        return;
+      }
+
+      const sessionId = state.sessionId || ui.sessionIdInput.value.trim();
+      const hasRealtimeState = Boolean(
+        state.peerConnection ||
+        state.controlChannel ||
+        state.jsonChannel ||
+        state.micStream ||
+        ui.remoteAudio.srcObject
+      );
+      if (!hasRealtimeState && !sessionId) {
+        return;
+      }
+
+      state.pageUnloadCleanupDone = true;
+      logEvent("page_unload_cleanup", {
+        sessionId: sessionId || null,
+        connected: Boolean(state.peerConnection),
+      });
+      clearTtsSpeakingState();
+      clearLocalAudioQueue();
+      state.acceptIceCandidates = false;
+      state.connectionAttemptId += 1;
+
+      if (sessionId && getAuthToken()) {
+        try {
+          fetch(buildUrl(ui.cmdEndpoint.value), {
+            method: "POST",
+            headers: getJsonHeaders({ includeAuth: true }),
+            body: JSON.stringify({
+              session_id: sessionId,
+              cmd: "END_SESSION",
+              source: "page_unload",
+            }),
+            keepalive: true,
+          });
+        } catch { }
+      }
+
+      if (state.controlChannel) {
+        try {
+          state.controlChannel.close();
+        } catch { }
+        state.controlChannel = null;
+      }
+      if (state.jsonChannel) {
+        try {
+          state.jsonChannel.close();
+        } catch { }
+        state.jsonChannel = null;
+      }
+      if (state.peerConnection) {
+        state.peerConnection.getSenders().forEach((sender) => {
+          try {
+            sender.track?.stop();
+          } catch { }
+        });
+        state.peerConnection.close();
+        state.peerConnection = null;
+      }
+      if (state.micStream) {
+        state.micStream.getTracks().forEach((track) => track.stop());
+        state.micStream = null;
+      }
+      ui.remoteAudio.srcObject = null;
+      state.micMuted = false;
+      updateMicMuteButton();
     }
 
     async function sendCommand(commandObj) {
@@ -909,6 +1306,7 @@
       } else {
         logEvent("Command sent", commandPayload);
       }
+      return sent;
     }
 
     function showPedagogicalPerfect() {
@@ -1031,7 +1429,11 @@
           } else {
             showPedagogicalError(feedback);
           }
-          setStatus("ready");
+          if (state.ttsActive) {
+            setStatus("thinking", "AI speaking...");
+          } else {
+            setStatus("ready");
+          }
           break;
         }
         case "pedagogical_feedback": {
@@ -1048,10 +1450,12 @@
           break;
         }
         case "assistant_audio_meta": {
+          markTtsSpeaking(data);
           logAssistantAudioMeta(data);
           return;
         }
         case "assistant_audio_aborted": {
+          clearTtsSpeakingState();
           clearLocalAudioQueue();
           setStatus("ready", "Barge-in acknowledged");
           break;
@@ -1068,12 +1472,22 @@
         case "barge_in_ack":
         case "ten_started":
         case "session_ended":
-          if (data.session_id) {
+          if (data.session_id && eventName !== "session_ended") {
             setCurrentSessionId(data.session_id);
             logEvent(`Session ID received: ${state.sessionId}`);
           }
           if (eventName === "ten_started") {
             setStatus("ready", "Ready - speak now");
+          } else if (eventName === "session_ended") {
+            state.acceptIceCandidates = false;
+            state.connectionAttemptId += 1;
+            if (data.session_id) {
+              setLastSessionId(data.session_id);
+              keepCompletedSessionVisible(data.session_id);
+            }
+            clearTtsSpeakingState();
+            updateMicMuteButton();
+            setStatus("disconnected", "Session ended");
           }
           break;
         case "llm_error":
@@ -1116,6 +1530,9 @@
     ui.disconnectBtn.addEventListener("click", async () => {
       await disconnect();
     });
+    ui.muteMicBtn.addEventListener("click", async () => {
+      await toggleMicMute();
+    });
 
     ui.bargeBtn.addEventListener("mousedown", async () => {
       await triggerBargeIn("button");
@@ -1140,6 +1557,8 @@
       await sendCommand({ cmd: "BARGE_IN", source: "spacebar" });
       setStatus("thinking", "Barge-in sent");
     });
+    window.addEventListener("pagehide", cleanupRealtimeForPageUnload);
+    window.addEventListener("beforeunload", cleanupRealtimeForPageUnload);
 
     restoreControlSettings();
     ui.coreApiUrl.addEventListener("change", persistControlSettings);
