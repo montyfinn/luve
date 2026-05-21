@@ -128,6 +128,7 @@ class LUVEExtension(ten.Extension):
 
         self._inference_queue: asyncio.Queue[InferenceJob] | None = None
         self._inference_task: asyncio.Task[None] | None = None
+        self._stt_inference_busy = False
         self._llm_tasks: set[asyncio.Task[None]] = set()
         self._force_flush_task: asyncio.Task[None] | None = None
         self._assistant_speech_release_task: asyncio.Task[None] | None = None
@@ -782,11 +783,20 @@ class LUVEExtension(ten.Extension):
             return
         if self._inference_queue is None:
             return
+
+        if not is_final:
+            if self._stt_inference_busy or self._has_queued_final_inference():
+                return
+
+        if is_final:
+            self._drop_queued_partial_inference()
+            if self._has_queued_final_inference():
+                return
+
         if self._inference_queue.full():
             if not is_final:
                 return
-            with contextlib.suppress(asyncio.QueueEmpty):
-                self._inference_queue.get_nowait()
+            self._drop_one_queued_inference()
 
         if self._inference_queue.full():
             return
@@ -802,6 +812,42 @@ class LUVEExtension(ten.Extension):
                 suppress_response=suppress_response,
             )
         )
+
+    def _has_queued_final_inference(self) -> bool:
+        if self._inference_queue is None:
+            return False
+        return any(job.is_final for job in list(self._inference_queue._queue))
+
+    def _drop_queued_partial_inference(self) -> None:
+        if self._inference_queue is None or self._inference_queue.empty():
+            return
+
+        queued_jobs = list(self._inference_queue._queue)
+        kept_jobs = [job for job in queued_jobs if job.is_final]
+        dropped_partials = len(queued_jobs) - len(kept_jobs)
+        if not dropped_partials:
+            return
+
+        self._inference_queue._queue.clear()
+        self._inference_queue._queue.extend(kept_jobs)
+
+        # Dropped jobs will never be consumed by _inference_loop.
+        for _ in range(dropped_partials):
+            with contextlib.suppress(ValueError):
+                self._inference_queue.task_done()
+
+        logger.info(
+            "ten.stt.partial_dropped_for_final count=%s",
+            dropped_partials,
+        )
+
+    def _drop_one_queued_inference(self) -> None:
+        if self._inference_queue is None:
+            return
+        with contextlib.suppress(asyncio.QueueEmpty):
+            self._inference_queue.get_nowait()
+            with contextlib.suppress(ValueError):
+                self._inference_queue.task_done()
 
     async def _inference_loop(self) -> None:
         if self._inference_queue is None:
@@ -833,6 +879,7 @@ class LUVEExtension(ten.Extension):
 
                 started = time.perf_counter()
                 try:
+                    self._stt_inference_busy = True
                     analysis = await self._stt_worker.transcribe_audio_bytes(
                         job.pcm_bytes,
                         initial_prompt=contextual_prompt,
@@ -871,6 +918,8 @@ class LUVEExtension(ten.Extension):
                     if job.is_final:
                         self._reset_current_utterance()
                     continue
+                finally:
+                    self._stt_inference_busy = False
 
                 analysis.raw_text = sanitize_transcript(analysis.raw_text)
                 if self._is_probable_stt_hallucination(
@@ -1137,6 +1186,17 @@ class LUVEExtension(ten.Extension):
                     },
                 }
             )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("ten.llm.pipeline_failed")
+            if self._responses_enabled():
+                self._emit_json(
+                    "llm_error",
+                    {
+                        "message": "Assistant response failed. Please try again.",
+                    },
+                )
         finally:
             self._is_assistant_speaking = False  # ALWAYS unblock mic input
 
@@ -1829,6 +1889,7 @@ class LUVEExtension(ten.Extension):
         self._session_id = None
         self._audio_sequence = 0
         self._is_assistant_speaking = False
+        self._stt_inference_busy = False
         self._stt_only_mode = False
         self._tts_output_enabled = True
         self._assistant_speech_release_task = None
