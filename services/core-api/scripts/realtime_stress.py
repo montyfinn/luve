@@ -529,6 +529,8 @@ async def amain() -> int:
     parser.add_argument("--stt-only", type=parse_bool, default=False)
     parser.add_argument("--flush-after-seconds", type=float, default=2.5)
     parser.add_argument("--disconnect-after-seconds", type=float, default=8.0)
+    parser.add_argument("--cooldown-seconds", type=float, default=30.0)
+    parser.add_argument("--max-idle-cpu", type=float, default=50.0)
     parser.add_argument("--expect-response", type=parse_bool, default=True)
     parser.add_argument("--fail-fast", type=parse_bool, default=True)
     args = parser.parse_args()
@@ -546,7 +548,13 @@ async def amain() -> int:
     healthz_ok = health_status == 200
     print("healthz_status", health_status)
 
-    snapshots = {"before": process_snapshot(), "after_each": [], "after": None}
+    snapshots = {
+        "before": process_snapshot(),
+        "after_each": [],
+        "after": None,
+        "cooldown_before": None,
+        "cooldown_after": None,
+    }
     metrics: list[LoopMetrics] = []
     for loop_index in range(1, args.loops + 1):
         item = await run_loop(args, token, loop_index)
@@ -557,19 +565,62 @@ async def amain() -> int:
             break
 
     snapshots["after"] = process_snapshot()
+
+    cooldown_before_healthz_status, cooldown_before_healthz = await get_health(args.ten_url)
+    cooldown_before_rtc_status, cooldown_before_rtc = await get_rtc_health(args.ten_url)
+    snapshots["cooldown_before"] = {
+        "healthz_status": cooldown_before_healthz_status,
+        "healthz": cooldown_before_healthz,
+        "rtc_health_status": cooldown_before_rtc_status,
+        "rtc_health": cooldown_before_rtc,
+        "process": process_snapshot(),
+    }
+
+    if args.cooldown_seconds > 0:
+        await asyncio.sleep(args.cooldown_seconds)
+
+    cooldown_after_healthz_status, cooldown_after_healthz = await get_health(args.ten_url)
+    cooldown_after_rtc_status, cooldown_after_rtc = await get_rtc_health(args.ten_url)
+    snapshots["cooldown_after"] = {
+        "healthz_status": cooldown_after_healthz_status,
+        "healthz": cooldown_after_healthz,
+        "rtc_health_status": cooldown_after_rtc_status,
+        "rtc_health": cooldown_after_rtc,
+        "process": process_snapshot(),
+    }
+
     failures = evaluate_failures(metrics, healthz_ok)
-    before_cpu = parse_run_ten_cpu(snapshots["before"])
-    after_cpu = parse_run_ten_cpu(snapshots["after"])
-    if (
-        before_cpu is not None
-        and after_cpu is not None
-        and after_cpu >= 50.0
-        and after_cpu > before_cpu + 10.0
-    ):
+    cooldown_after_cpu = parse_run_ten_cpu(snapshots["cooldown_after"]["process"])
+    cooldown_after_active_sessions = (
+        extract_active_sessions(cooldown_after_rtc)
+        if cooldown_after_rtc_status == 200
+        else None
+    )
+    if cooldown_after_healthz_status != 200:
+        failures.append(f"healthz failed after cooldown status={cooldown_after_healthz_status}")
+    if cooldown_after_active_sessions != 0:
         failures.append(
-            f"run_ten.py CPU remained high after cooldown before={before_cpu:.1f} after={after_cpu:.1f}"
+            "active_sessions did not return to 0 after cooldown "
+            f"active_sessions={cooldown_after_active_sessions}"
         )
+    if cooldown_after_cpu is not None and cooldown_after_cpu >= args.max_idle_cpu:
+        failures.append(
+            "run_ten.py CPU remained high after cooldown "
+            f"cpu={cooldown_after_cpu:.1f} max_idle_cpu={args.max_idle_cpu:.1f}"
+        )
+
     print_table(metrics)
+    print(
+        "cooldown_summary",
+        json.dumps(
+            {
+                "healthz_after_cooldown": cooldown_after_healthz_status,
+                "active_sessions_after_cooldown": cooldown_after_active_sessions,
+                "run_ten_cpu_after_cooldown": cooldown_after_cpu,
+            },
+            ensure_ascii=False,
+        ),
+    )
     print("summary", json.dumps({"loops": len(metrics), "failures": failures}, ensure_ascii=False))
 
     artifact = {
