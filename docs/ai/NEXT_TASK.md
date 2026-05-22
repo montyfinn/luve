@@ -19,26 +19,46 @@
 * **Apparently unused code identified:** `SQLSessionStore.persist_event_log` in `session_store.py` appears unused by current call-site search; removal should be a separate cleanup with verification.
 * **Future patch scoped:** Collapse the `_persist_event_log` if/else to always write `json.dumps(self._event_log)` (empty array `[]` when no turns). Grading input coercion treats NULL and `[]` similarly as zero events, but backfill candidate accounting differs: `[]` satisfies `raw_backup_json IS NOT NULL` and would then be skipped by `user_turns=0`. Requires a separate approved prompt.
 
+### Task 3: Implement [] instead of NULL for empty session event logs.
+* Audited proposed patch: collapse `_persist_event_log` if/else into one unconditional `UPDATE` with `raw_backup_json = CAST(:logs AS jsonb)`.
+* Implemented in `services/core-api/src/ten_ext/luve_extension.py` (commit `440ff98`).
+* Verified: py_compile pass, `run_ten` import smoke pass, DB verification pass with RabbitMQ publish monkeypatched to async no-op.
+  * `raw_backup_json::text = '[]'`, `status = 'completed'`, `ended_at IS NOT NULL`, cleanup `deleted_rows=1`.
+* Existing 80 NULL sessions are historical data — not migrated, not backfilled.
+* `SQLSessionStore.persist_event_log` dead code left in place (separate cleanup required, not urgent).
+
 ---
 
 ## Current Task
-Commit AI state docs after `raw_backup_json` NULL audit.
+Audit durable outbox vs current manual backfill safety net.
 
 ## 1. Operating Constraints
-* **Mode:** DOCS-COMMIT-ONLY.
+* **Mode:** AUDIT-ONLY.
 * **Modification Policy:**
-  * Only `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md` may be staged and committed.
-  * Do not modify any runtime files.
-  * Do not run destructive DB commands.
-  * Do not publish any RabbitMQ messages.
+  * Do not modify any runtime files. Do not stage. Do not commit.
+  * Run only read-only SQL queries if needed; do not run destructive DB commands.
+  * Do not publish any real RabbitMQ messages or trigger actual events.
 * **Credentials Policy:** Never print or leak any passwords, database credentials, API keys, cookies, or JWTs.
 
-## 2. Steps
-1. Verify `git status --short` shows only the two docs files as modified (M).
-2. Stage: `git add docs/ai/PROJECT_STATE.md docs/ai/NEXT_TASK.md`
-3. Commit with message: `docs(ai): record raw_backup_json NULL audit findings`
-4. Verify `git status --short` is clean and `git log --oneline -n 3` shows the new commit at HEAD.
+## 2. Allowed Read Paths
+* `services/core-api/src/ten_ext/luve_extension.py`
+* `services/core-api/src/services/session_event_publisher.py`
+* `services/core-api/src/core/db.py`
+* `services/grading-worker/scripts/backfill_completed_sessions.py`
+* `infrastructure/db-init/01-init.sql`
+* `docs/ai/`
 
-## 3. Expected Outputs
-* Clean worktree after commit.
-* New HEAD commit with message `docs(ai): record raw_backup_json NULL audit findings`.
+## 3. Audit Questions
+1. What is the exact failure mode when RabbitMQ is down at session completion? What data is preserved? What is lost?
+2. Is the current manual backfill script a sufficient operational safety net? What scenarios does it not cover?
+3. What would a minimal transactional outbox look like in this codebase? What tables/columns would be needed?
+4. Is a scheduled reconciliation job a simpler alternative to a full outbox for this workload?
+5. What is the blast radius and implementation complexity of each option?
+
+## 4. Expected Output
+A rigorous markdown analysis covering:
+1. Current delivery gap: exact failure path and data preservation guarantees
+2. Backfill coverage: what it recovers and what it cannot
+3. Design options: transactional outbox / scheduled reconciliation / status-based polling
+4. Risk analysis per option: complexity, blast radius, operational risk
+5. Recommendation: implement outbox / maintain current pattern / defer — with explicit conditions
