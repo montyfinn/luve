@@ -2,6 +2,8 @@
 
 > [!IMPORTANT]
 > **For current mutable state, read [PROJECT_STATE.md](PROJECT_STATE.md) and [NEXT_TASK.md](NEXT_TASK.md) first.**
+>
+> This file is a historical architecture handoff. It is useful for service/module orientation, but it is not the current mutable state source of truth.
 
 This document is a factual onboarding handoff for Claude Code. It is not a product spec and does not replace the running code as source of truth.
 
@@ -30,7 +32,7 @@ The repo is a monorepo, but implementation depth is uneven.
 - Core API and TEN gateway are still run manually in local development.
 - `clients/mobile-app/` and `services/media-server/` should not be assumed complete.
 
-Recent HEAD at handoff time:
+Historical HEAD at original handoff time:
 
 ```text
 795fafe fix(core-api): reuse RabbitMQ session event publisher
@@ -109,7 +111,8 @@ Important current behavior:
 
 Session completion:
 
-- `LUVEExtension._persist_event_log()` updates `sessions` with `status='completed'`, `ended_at`, and `raw_backup_json` when event log exists.
+- `LUVEExtension._persist_event_log()` updates `sessions` with `status='completed'`, `ended_at`, and `raw_backup_json` on session completion.
+- Empty event logs are now persisted as `[]`, not `NULL`.
 - After DB commit, it calls `publish_session_completed(session_id)`.
 - `session_event_publisher.py` publishes:
 
@@ -143,8 +146,9 @@ Grading worker:
 Known delivery gap:
 
 - There is no durable outbox yet.
-- If RabbitMQ is down at publish time, a completed session can miss grading until manual/future backfill.
-- A read-only local DB inspection during audit showed many completed sessions missing `grading_results`; many are test/stress sessions, so backfill must filter carefully.
+- If RabbitMQ is down at publish time, a completed session can miss grading until recovery tooling runs.
+- Recovery tooling now exists via a manual backfill script and a one-shot reconciliation scanner, but neither is a transactional outbox.
+- Historical DB audit showed many completed sessions missing `grading_results`; many were test/stress sessions, so recovery tooling must filter carefully.
 
 ## F. Infrastructure Roles
 
@@ -245,18 +249,13 @@ Do not generalize this as production readiness. It proves the current local base
 
 ## J. Next Recommended Task
 
-Audit grading delivery reliability and compare outbox/backfill options.
-Do not implement until a separate patch prompt is approved.
+Read [NEXT_TASK.md](NEXT_TASK.md) for the current approved task scope.
 
-Recommended next implementation:
+Historical note:
 
-1. Add a dry-run-first backfill script.
-2. Query completed sessions missing `grading_results`.
-3. Filter to sessions with useful `raw_backup_json`, preferably at least one `USER_TURN`.
-4. Publish `session.completed` for selected sessions.
-5. Keep `--limit`, `--dry-run`, and safe logging with truncated IDs.
-
-Durable outbox is stronger, but it requires schema and a drainer. Start with backfill to reduce immediate operational risk.
+- The original recommendation here was to audit grading delivery reliability and add a dry-run-first backfill path.
+- That work has since moved forward: manual backfill and reconciliation scanner tooling now exist.
+- The remaining strategic gap is still the lack of a durable outbox.
 
 ## K. Files Claude Must Not Touch Without Explicit Permission
 

@@ -1,5 +1,11 @@
 # LUVE Project State
 
+This file is the current source of truth for mutable repo state in `docs/ai`.
+
+- Read this file first for current baseline, verified evidence, and known limitations.
+- Treat `NEXT_TASK.md` as a scoped task memo, not as global repo state.
+- Treat `CLAUDE_CODE_HANDOFF.md` as architecture/historical onboarding context, not mutable state.
+
 ## 1. Current Expected Git State
 
 * **Clean Worktree:** `git status --short` should be empty (clean) after committing these docs.

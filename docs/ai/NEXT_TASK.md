@@ -1,5 +1,11 @@
 # LUVE Next Task
 
+This file is a scoped task memo, not the global repo state source of truth.
+
+- Read `PROJECT_STATE.md` first for current baseline and verified status.
+- Use this file only for the currently approved task scope at the time it was last updated.
+- If this file conflicts with current code, current git history, or `PROJECT_STATE.md`, re-audit before acting.
+
 ## Completed Tasks
 
 ### Task 1: Audit grading delivery reliability, design and implement backfill script, execute backfill.

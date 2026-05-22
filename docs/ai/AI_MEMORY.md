@@ -16,7 +16,7 @@ Không ghi log dài, transcript dài, hay giả định chưa xác minh.
 
 - `services/core-api/` là backend chính hiện có giá trị thực thi trong repo.
 - Audio production path nên đi qua `WebRTC/TEN`, không phải `legacy WS raw audio`.
-- `ENABLE_LEGACY_WS_AUDIO=false` là mặc định an toàn cho production path.
+- `ENABLE_LEGACY_WS_AUDIO=true` đang là default hiện tại trong code và `.env.example`; không được nhầm default env này với production recommendation. Production speech path vẫn nên ưu tiên `WebRTC/TEN`, không phải `legacy WS raw audio`.
 - Node hiện tại đang khóa `MAX_WEBRTC_SESSIONS=1` để tránh quá tải và vì gateway/session state chưa đủ an toàn để nhồi nhiều phiên.
 - `POST /api/v1/sessions` đã tồn tại và là đường tạo session chuẩn cho flow `WebRTC/TEN`.
 - `control-center` hiện có thể:
