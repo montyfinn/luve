@@ -27,38 +27,45 @@
 * Existing 80 NULL sessions are historical data — not migrated, not backfilled.
 * `SQLSessionStore.persist_event_log` dead code left in place (separate cleanup required, not urgent).
 
+### Task 4: Implement automated reconciliation scanner for missed grading results.
+* Audited durable outbox vs manual backfill safety net; recommended one-shot scanner over full outbox at current dev stage.
+* Implemented `services/grading-worker/scripts/reconciliation_scanner.py` (commit `fc18916`).
+* Scanner properties: one-shot, dry-run default, `--execute` required for DB writes, 5-minute grace window (configurable), reuses `process_session_completed_job`, no RabbitMQ dependency for recovery.
+* Verified: py_compile pass, dry-run `candidates_seen=0` (correct — all eligible sessions already graded by historical backfill).
+* Not a daemon; intended for cron or manual execution. Does not loop internally.
+
 ---
 
 ## Current Task
-Audit durable outbox vs current manual backfill safety net.
+Controlled operational test for reconciliation scanner.
 
 ## 1. Operating Constraints
-* **Mode:** AUDIT-ONLY.
+* **Mode:** TEST/AUDIT-ONLY.
 * **Modification Policy:**
-  * Do not modify any runtime files. Do not stage. Do not commit.
-  * Run only read-only SQL queries if needed; do not run destructive DB commands.
+  * Do not modify any runtime files. Do not stage. Do not commit without explicit approval.
+  * Do not implement transactional outbox, new DB tables, or schema migrations unless separately approved.
+  * Do not wire the scanner as a background daemon or auto-start service.
+  * Run scanner in dry-run mode only (no `--execute`) unless explicitly instructed otherwise.
   * Do not publish any real RabbitMQ messages or trigger actual events.
+  * Do not run destructive DB commands.
 * **Credentials Policy:** Never print or leak any passwords, database credentials, API keys, cookies, or JWTs.
 
-## 2. Allowed Read Paths
-* `services/core-api/src/ten_ext/luve_extension.py`
-* `services/core-api/src/services/session_event_publisher.py`
-* `services/core-api/src/core/db.py`
-* `services/grading-worker/scripts/backfill_completed_sessions.py`
-* `infrastructure/db-init/01-init.sql`
-* `docs/ai/`
+## 2. Allowed Actions
+* Run scanner with dry-run flags and read its output.
+* Run read-only DB queries to verify candidate counts.
+* Read scanner source and grading-worker source files.
+* Propose cron schedule or deployment wrapper if asked.
 
-## 3. Audit Questions
-1. What is the exact failure mode when RabbitMQ is down at session completion? What data is preserved? What is lost?
-2. Is the current manual backfill script a sufficient operational safety net? What scenarios does it not cover?
-3. What would a minimal transactional outbox look like in this codebase? What tables/columns would be needed?
-4. Is a scheduled reconciliation job a simpler alternative to a full outbox for this workload?
-5. What is the blast radius and implementation complexity of each option?
+## 3. Test Goals
+1. Confirm scanner dry-run output is correct after new sessions complete.
+2. Confirm grace window correctly excludes recently ended sessions.
+3. Confirm scanner correctly identifies any newly missed grading results.
+4. Confirm `--execute` path grades exactly the expected sessions when triggered.
 
-## 4. Expected Output
-A rigorous markdown analysis covering:
-1. Current delivery gap: exact failure path and data preservation guarantees
-2. Backfill coverage: what it recovers and what it cannot
-3. Design options: transactional outbox / scheduled reconciliation / status-based polling
-4. Risk analysis per option: complexity, blast radius, operational risk
-5. Recommendation: implement outbox / maintain current pattern / defer — with explicit conditions
+## 4. Out of Scope (requires separate approved prompt)
+* Transactional outbox implementation.
+* New DB schema / migration files.
+* Wiring scanner as a background daemon or auto-start service.
+* Removing `SQLSessionStore.persist_event_log` dead code.
+* Replacing `fake_grader.v1` with real pedagogical grader.
+* Wiring `close_publisher()` into shutdown.
