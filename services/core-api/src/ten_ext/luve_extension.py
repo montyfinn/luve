@@ -1918,29 +1918,17 @@ class LUVEExtension(ten.Extension):
             from src.core.db import AsyncSessionLocal
 
             async with AsyncSessionLocal() as session:
-                if self._event_log:
-                    await session.execute(
-                        text(
-                            "UPDATE SESSIONS "
-                            "SET raw_backup_json = CAST(:logs AS jsonb), status = 'completed', ended_at = CURRENT_TIMESTAMP "
-                            "WHERE id = :sid"
-                        ),
-                        {
-                            "logs": json.dumps(self._event_log),
-                            "sid": session_id,
-                        },
-                    )
-                else:
-                    await session.execute(
-                        text(
-                            "UPDATE SESSIONS "
-                            "SET status = 'completed', ended_at = CURRENT_TIMESTAMP "
-                            "WHERE id = :sid"
-                        ),
-                        {
-                            "sid": session_id,
-                        },
-                    )
+                await session.execute(
+                    text(
+                        "UPDATE SESSIONS "
+                        "SET raw_backup_json = CAST(:logs AS jsonb), status = 'completed', ended_at = CURRENT_TIMESTAMP "
+                        "WHERE id = :sid"
+                    ),
+                    {
+                        "logs": json.dumps(self._event_log),
+                        "sid": session_id,
+                    },
+                )
                 await session.commit()
                 logger.info(
                     "Phase 1: SUCCESS - Blackbox logs saved to DB for session %s",
