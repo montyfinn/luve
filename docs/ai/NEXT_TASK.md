@@ -1,9 +1,8 @@
 # LUVE Next Task
 
-## Completed Task
-Audit grading delivery reliability, design and implement backfill script, execute backfill.
+## Completed Tasks
 
-### Summary of Work Done
+### Task 1: Audit grading delivery reliability, design and implement backfill script, execute backfill.
 * Audited grading delivery gap: `_persist_event_log` commits DB first then publishes best-effort; no durable outbox.
 * Designed and implemented `services/grading-worker/scripts/backfill_completed_sessions.py` (commit `c5cf2c3`).
 * Executed backfill against local Postgres in controlled increments:
@@ -12,42 +11,34 @@ Audit grading delivery reliability, design and implement backfill script, execut
   * Remaining 80 all have `raw_backup_json IS NULL`; excluded by default filter.
 * Verified idempotency: rerun on already-graded session produced `candidates_seen=0`, no duplicate row.
 
+### Task 2: Audit why completed sessions have `raw_backup_json IS NULL`.
+* Confirmed NULL-producing branch in `luve_extension.py`: `_persist_event_log` has an explicit `if self._event_log: ... else: ...`; the `else` path omits `raw_backup_json` from the UPDATE.
+* `_event_log` is only populated when accepted STT finals arrive (`job.is_final and analysis.raw_text.strip()`). Zero accepted finals → empty `_event_log` → NULL.
+* The 80 remaining NULL sessions are consistent with empty/noise/rapid-disconnect/silent sessions; no gradeable event log was found. Under the current observed code path, a session with an accepted USER_TURN should write `raw_backup_json`.
+* **Policy confirmed:** Do not run `--include-empty-raw`. `fake_grader.v1` produces meaningless fixed scores for 0-turn input; the rows would pollute `grading_results` with no pedagogical value.
+* **Apparently unused code identified:** `SQLSessionStore.persist_event_log` in `session_store.py` appears unused by current call-site search; removal should be a separate cleanup with verification.
+* **Future patch scoped:** Collapse the `_persist_event_log` if/else to always write `json.dumps(self._event_log)` (empty array `[]` when no turns). Grading input coercion treats NULL and `[]` similarly as zero events, but backfill candidate accounting differs: `[]` satisfies `raw_backup_json IS NOT NULL` and would then be skipped by `user_turns=0`. Requires a separate approved prompt.
+
 ---
 
 ## Current Task
-Audit why completed sessions have `raw_backup_json IS NULL` and whether that is expected.
+Commit AI state docs after `raw_backup_json` NULL audit.
 
 ## 1. Operating Constraints
-* **Mode:** AUDIT-ONLY.
+* **Mode:** DOCS-COMMIT-ONLY.
 * **Modification Policy:**
-  * Do not modify any runtime files. Do not stage. Do not commit.
-  * If git status is not clean, stop and report.
-  * Run only read-only SQL queries if needed; do not run destructive DB commands.
-  * Do not publish any real RabbitMQ messages or trigger actual events.
+  * Only `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md` may be staged and committed.
+  * Do not modify any runtime files.
+  * Do not run destructive DB commands.
+  * Do not publish any RabbitMQ messages.
 * **Credentials Policy:** Never print or leak any passwords, database credentials, API keys, cookies, or JWTs.
 
-## 2. Access Controls
-
-### Allowed Read Paths
-* `services/core-api/src/ten_ext/luve_extension.py`
-* `services/core-api/src/api/v1/`
-* `services/core-api/src/main.py`
-* `services/core-api/src/services/session_event_publisher.py`
-* `services/grading-worker/`
-* `infrastructure/db-init/01-init.sql`
-* `docs/ai/`
-
-### Forbidden Changes (DO NOT TOUCH)
-* No changes to VAD thresholding or noise floor tracking.
-* No changes to Whisper warm singleton or unload policies.
-* No changes to Redis configuration or persistence parameters.
-* No changes to password hashing, passlib, or bcrypt.
-* No modifications in the realtime hot paths (VAD, STT, LLM, TTS, WebRTC).
-* No changes to `_persist_event_log` or session completion logic without a separate approved prompt.
+## 2. Steps
+1. Verify `git status --short` shows only the two docs files as modified (M).
+2. Stage: `git add docs/ai/PROJECT_STATE.md docs/ai/NEXT_TASK.md`
+3. Commit with message: `docs(ai): record raw_backup_json NULL audit findings`
+4. Verify `git status --short` is clean and `git log --oneline -n 3` shows the new commit at HEAD.
 
 ## 3. Expected Outputs
-A rigorous markdown analysis covering:
-1. **Code path analysis:** Under what conditions does `_persist_event_log` write a NULL `raw_backup_json`? Trace the exact branch in the code.
-2. **Session categorization:** Which session types are expected to produce NULL `raw_backup_json` (e.g., empty/noise/rapid-disconnect stress sessions, sessions that ended before any STT was accepted)?
-3. **Backfill policy recommendation:** Should the 80 remaining NULL sessions ever be backfilled using `--include-empty-raw`? What would grading produce for a 0-turn session, and is it operationally useful?
-4. **Prevention recommendation:** Is there a safe, minimal change to `_persist_event_log` that always writes at least an empty array `[]` instead of NULL, to keep future backfill and grading consistent? State the risk and blast radius clearly. Do not implement — audit only.
+* Clean worktree after commit.
+* New HEAD commit with message `docs(ai): record raw_backup_json NULL audit findings`.
