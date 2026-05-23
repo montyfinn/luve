@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked IDE artifacts (`.codegraph/`, `.cursor/`).
-* **Latest runtime/tooling baseline:** `06acf97` — feat(grading-worker): add safe grading provider dispatch.
+* **Latest runtime/tooling baseline:** `1cae30b` — feat(grading-worker): add Groq grading provider client.
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `1cae30b` - feat(grading-worker): add Groq grading provider client (`GroqClient` via raw `httpx` REST; `_build_grader_client()` reads `LLM_PROVIDER`/`GROQCLOUD_API_KEY`/`GROQ_MODEL`/`GROQ_TIMEOUT_SECONDS`; `httpx` declared in `requirements.txt`; 57/57 mocked tests pass; real Groq live test not yet run).
 * `06acf97` - feat(grading-worker): add safe grading provider dispatch (`GRADING_PROVIDER` env-flag dispatch with fake default; `GRADING_PROVIDER=llm` falls back to fake until real provider client exists; no-user-turn sessions skip without upsert; 34/34 mocked tests pass).
 * `675e3a2` - feat(grading-worker): add offline LLM grader scaffold (loosen `grader_version` Literal, add `llm_grader.py` prompt builder + response parser/validator, add 22 mocked tests; worker still uses `fake_grader.v1` only).
 * `3da235c` - feat(core-api): add end-of-session grading analysis API and UI (`GradingRead` schema, `GET /api/v1/sessions/{session_id}/grading` endpoint, Session Analysis card in control center UI with dev-preview badge and `escapeHtml` sanitization).
@@ -90,20 +91,56 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * `grader_info` marker prepended to `detailed_corrections` JSONB on successful LLM grading — queryable without a schema migration.
 * 12 new mocked worker dispatch tests added.
 
-**What is NOT yet done:**
-* No real LLM provider client exists. `GRADING_PROVIDER=llm` is structurally wired but always falls back to fake.
+**What is NOT yet done (at time of Patch 2A):**
+* No real LLM provider client existed. `GRADING_PROVIDER=llm` was structurally wired but always fell back to fake.
 * No `httpx` or provider SDK added to `requirements.txt`.
 * No `services/core-api/` or DB schema changes.
-* No real LLM API calls have been made by the grader.
+* No real LLM API calls had been made by the grader.
 * UI still shows "DEV PREVIEW — Simulated Grading" and `fake_grader.v1` scores.
-* Patch 2B must add exactly one provider client before real grading can be enabled.
+* Patch 2B added exactly one provider client — see section 7 below.
 
 **Verification evidence:**
 * `py_compile` pass on `worker.py` and `tests/test_worker_patch2a.py`.
 * 34/34 mocked tests pass (`test_llm_grader.py` 22 + `test_worker_patch2a.py` 12).
 * `grep` confirmed: no `httpx`, `requests`, `aiohttp`, `google`, `groq`, `openai`, `anthropic` imports in `worker.py` or the new test file.
 
-## 7. Known Limitations & Gaps
+## 7. Patch 2B Groq Grading Provider Client (commit `1cae30b`)
+
+**What was added:**
+* `services/grading-worker/src/grading_provider_client.py` — `GroqClient` class:
+  * Raw `httpx.AsyncClient` POST to `https://api.groq.com/openai/v1/chat/completions` (OpenAI-compatible endpoint; no Groq SDK, no OpenAI SDK).
+  * Constructor validates `api_key` (blank → error), `model` (blank → error), `timeout_seconds` (≤0 → error). No env-var reads inside the class.
+  * `grade(prompt) -> str` builds Authorization header and request body, posts, extracts `choices[0]["message"]["content"]`, strips whitespace.
+  * All `LLMGraderError` messages are safe: no API key, prompt, transcript, response body, Authorization header, or full URL logged.
+* `services/grading-worker/requirements.txt` — `httpx>=0.27,<1` declared (was already installed in venv as transitive dep; now declared for production correctness).
+* `services/grading-worker/src/worker.py` — `_build_grader_client()` now reads:
+  * `LLM_PROVIDER` (default `"groq"`): any value other than `"groq"` raises `LLMGraderError` → falls back to fake.
+  * `GROQCLOUD_API_KEY`: absent or blank raises `LLMGraderError` → falls back to fake.
+  * `GROQ_MODEL` (default `"llama-3.1-8b-instant"`).
+  * `GROQ_TIMEOUT_SECONDS` or `LLM_TIMEOUT_SECONDS` (default `"20.0"`): non-float value raises `LLMGraderError` → falls back to fake.
+  * Returns a constructed `GroqClient` on success.
+* All error paths — missing key, unsupported provider, invalid timeout, `LLMGraderError` from `llm_grade_with_client`, `asyncio.TimeoutError` — fall back to `fake_grade()` through the existing exception handler in `process_session_completed_job`.
+* `services/grading-worker/tests/test_grading_provider_client.py` — 17 mocked `GroqClient` tests: 5 constructor validation, 2 success, 2 transport errors, 2 non-2xx, 4 malformed response, 2 security (no key or prompt in exceptions or logs).
+* `services/grading-worker/tests/test_worker_patch2a.py` — 6 new worker integration tests for `_build_grader_client()` env wiring added; existing 12 tests updated for Groq hermeticity (delenv `GROQCLOUD_API_KEY` + `LLM_PROVIDER` where needed).
+
+**What is NOT yet done:**
+* Real Groq live test has **not** been run. No `grading_results` row has been written by `llm_grader.v1`.
+* `GRADING_PROVIDER` default/unset remains `"fake"`. Live path remains fake unless `GRADING_PROVIDER=llm` is explicitly set.
+* UI still shows "DEV PREVIEW — Simulated Grading" and `fake_grader.v1` scores.
+* No `services/core-api/` or DB schema changes.
+* Patch 3 (controlled real Groq test) requires a separate approved prompt.
+* **Security:** Any previously exposed Groq API key must be rotated/revoked before running a live test. Refer only to env var names (`GROQCLOUD_API_KEY`) — never print or store key values.
+
+**Verification evidence (pre-commit):**
+* `py_compile` pass on all 5 Patch 2B files.
+* 57/57 mocked grading-worker tests pass across the full test suite.
+* No Gemini references anywhere in grading-worker source or tests.
+* No Groq SDK, OpenAI SDK, or other provider SDK import (`httpx` only).
+* No real API calls in tests (all via `patch("src.grading_provider_client.httpx.AsyncClient")`).
+* No DB or RabbitMQ calls in tests.
+* No API key, prompt, transcript, response body, Authorization header, or full URL in any log or exception message.
+
+## 8. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
 * **Recovery Tools (dev/ops-only):**
@@ -115,6 +152,6 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW — Simulated Grading" because `fake_grader.v1` scores are not pedagogically valid. Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader remains deferred.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). Default/unset remains `fake_grader.v1`. `GRADING_PROVIDER=llm` is structurally handled but falls back to `fake_grader.v1` because no real provider client exists yet. Patch 2B (exactly one real provider client) requires a separate approved prompt. Real LLM grading is not yet live.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` now exists (commit `1cae30b`). Default/unset remains `"fake"`. Setting `GRADING_PROVIDER=llm` + `LLM_PROVIDER=groq` + `GROQCLOUD_API_KEY` set will now call Groq — but this live path has **not** been tested yet. Patch 3 (controlled real Groq test) requires a separate approved prompt. Any previously exposed Groq API key must be rotated before Patch 3 runs.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

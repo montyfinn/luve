@@ -78,45 +78,49 @@ This file is a scoped task memo, not the global repo state source of truth.
 * No `httpx`, no provider SDK, no `requirements.txt` change, no `core-api` change, no DB migration, no UI change.
 * Live behavior unchanged: `GRADING_PROVIDER` defaults to `"fake"`; `fake_grader.v1` still the only live grader.
 
+### Task 8: Patch 2B — Groq grading provider client.
+* Conducted Patch 2B pre-implementation audit (design-only): confirmed Groq as first provider, `httpx` as HTTP client, env var names.
+* Implemented `services/grading-worker/src/grading_provider_client.py` (commit `1cae30b`):
+  * `GroqClient` using raw `httpx.AsyncClient` POST to `https://api.groq.com/openai/v1/chat/completions`.
+  * No Groq SDK, no OpenAI SDK. Constructor validates `api_key`, `model`, `timeout_seconds`. No env reads inside class.
+  * `grade(prompt) -> str` extracts `choices[0]["message"]["content"]`; wraps all errors as `LLMGraderError`; no secrets/prompt/response body in messages.
+* Updated `_build_grader_client()` in `worker.py` to read `LLM_PROVIDER`/`GROQCLOUD_API_KEY`/`GROQ_MODEL`/`GROQ_TIMEOUT_SECONDS` and return a real `GroqClient`.
+* Declared `httpx>=0.27,<1` in `services/grading-worker/requirements.txt`.
+* Added 17 mocked `GroqClient` tests (`tests/test_grading_provider_client.py`); updated `tests/test_worker_patch2a.py` with 6 new env-wiring tests (total 26).
+* Verified: py_compile pass, 57/57 tests pass, no real API calls in tests, no secrets/prompt/response-body in logs.
+* `GRADING_PROVIDER` default/unset remains `"fake"`. Real Groq live test has **not** been run. UI still shows DEV PREVIEW.
+* **Security:** A Groq API key was exposed in chat during this task. It must be rotated/revoked before Patch 3. Docs contain env var names only — never values.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not implement.**
+**Mode: AUDIT / DESIGN ONLY — do not run live test, do not modify runtime files.**
 
-### Patch 2B Pre-Implementation Audit: Add exactly one real LLM provider client.
+### Patch 3 Pre-Implementation Audit: Controlled Real Groq Grading Test
 
-**Goal of audit:** produce an approved implementation plan for exactly one provider client before any code is written.
+**Goal of audit:** produce an approved plan for exactly one controlled real Groq grading test before any live path is enabled.
 
-**Patch 2B design scope (audit only in this task):**
-* Decide on exactly one first provider — do not implement Gemini + Groq together.
-* Decide whether to use raw HTTP via `httpx` or evaluate if an existing dependency already available in the worker venv is sufficient.
-* Determine exact env vars needed (names only — do not print values).
-* Design provider client class: name, constructor, `async def grade(prompt: str) -> str`, error handling, timeout, no-retry policy.
-* Add `httpx>=0.27` or chosen minimal dependency to `services/grading-worker/requirements.txt`.
-* Create `services/grading-worker/src/grading_provider_client.py`.
-* Update `_build_grader_client()` in `worker.py` to return the real client instead of raising.
-* Add mocked provider client tests (no real API calls).
-* Default `GRADING_PROVIDER` remains `"fake"` — no live impact until explicitly set.
-
-**Audit checks to perform (read-only):**
-1. Read `worker.py` `_build_grader_client()` — confirm exact raise and what Patch 2B must replace.
-2. Read `llm_grader.py` `GraderClient` Protocol — confirm `async def grade(self, prompt: str) -> str`.
-3. Read `requirements.txt` — confirm `httpx` is absent; note current deps.
-4. Check if `httpx` is already installed in `services/core-api/venv` (the shared venv used for tests).
-5. Check `services/core-api/.env` for provider key names — do not print values, only names.
-6. Determine which provider to implement first and why. Do not rely on unverified pricing assumptions.
-7. Propose exact class structure, timeout value, error wrapping into `LLMGraderError`.
+**What this audit must plan (read-only, no execution):**
+1. **Key rotation confirmation:** Verify that the previously exposed `GROQCLOUD_API_KEY` has been rotated and revoked. Do not run any live path until a fresh key is confirmed. Do not print or log key values — refer only to env var names.
+2. **Exact services to run:** Which processes must be running (core-api, grading-worker, Postgres, RabbitMQ). Confirm no additional services are needed.
+3. **Exact env var names only:** `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `GROQCLOUD_API_KEY` (name only), `GROQ_MODEL` (default or override). Do not print values.
+4. **One controlled session only:** Plan for exactly one test session — not a batch scan. Determine whether to trigger via a new UI session or by injecting one known session payload into the worker directly. Do not use the reconciliation scanner `--execute` flag.
+5. **How to avoid batch scanner/backfill:** Explicitly confirm the reconciliation scanner will not be run in `--execute` mode during this test.
+6. **How to verify `grading_results` row safely:** SQL read-only query (`SELECT`) against local Postgres to confirm a new row exists with `grader_version='llm_grader.v1'` and valid score range `[0,10]`. No `UPDATE`/`DELETE`/`TRUNCATE` during verification.
+7. **How to verify `grader_info` marker:** `SELECT detailed_corrections` from `grading_results` and confirm `detailed_corrections[0].type == 'grader_info'` and `detailed_corrections[0].grader_version == 'llm_grader.v1'`.
+8. **How to verify UI:** Confirm grading analysis card loads in control center. Confirm UI still shows DEV PREVIEW badge (do not remove it during Patch 3). Verify scores are non-zero and differ from the fake grader floor pattern.
+9. **Rollback plan:** Unsetting `GRADING_PROVIDER` or setting `GRADING_PROVIDER=fake` immediately restores fake grader behavior. No DB migration needed to roll back.
+10. **UI badge removal:** Keep deferred until after the controlled real Groq test passes. Badge removal (`static/index.html`) requires separate authorization in a Patch 3 implementation prompt.
 
 **Do not in this task:**
-* Do not create `grading_provider_client.py`.
-* Do not modify `worker.py`, `llm_grader.py`, `fake_grader.py`, `grading_repository.py`, or `evaluation_input_builder.py`.
-* Do not modify `requirements.txt`.
-* Do not call any real LLM API.
-* Do not write any DB row.
-* Do not change the UI or remove the DEV PREVIEW badge.
-* Do not modify any `services/core-api/` files.
-* Do not modify `infrastructure/db-init/01-init.sql`.
-* Do not print secret values, API keys, or DATABASE_URL contents.
+* Do not set `GRADING_PROVIDER=llm` or call Groq.
+* Do not run the grading worker with a real Groq key.
+* Do not write any `grading_results` row via the live path.
+* Do not run the reconciliation scanner in `--execute` mode.
+* Do not remove the DEV PREVIEW badge or modify `static/index.html`.
+* Do not modify any `services/grading-worker/src/` or `services/core-api/src/` files.
+* Do not modify DB schema, migrations, or `requirements.txt`.
+* Do not print secret values, API keys, or DATABASE_URL credentials.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
