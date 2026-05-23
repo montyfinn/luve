@@ -194,7 +194,53 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * `grader_version` is not a DB column — stored only in `detailed_corrections[0]` JSONB.
 * DB schema, migrations, `requirements.txt`, and all runtime source files were **not modified** during Patch 3.
 
-## 10. Known Limitations & Gaps
+## 10. Patch 4 Normal RabbitMQ Consume-Loop Groq Grading Test
+
+**What was tested:**
+* Normal RabbitMQ grading-worker consume-loop path with `GRADING_PROVIDER=llm` via `consume_forever()`.
+* This was **not** the Patch 3 direct one-shot invocation. The worker connected to RabbitMQ, consumed the queued message, called Groq, and wrote to DB through the full production code path.
+
+**Queue preparation (separate approved step before test):**
+* Queue had 4 stale messages from prior development sessions.
+* Purged via `rabbitmqctl purge_queue luve.session.completed`; confirmed `messages=0`.
+* One fresh TEN session was then created. Queue confirmed `messages=1` before starting worker.
+
+**Fresh session (target suffix `...218666a0`):**
+* Pre-worker DB state: `status=completed`, `raw_backup_json` present, `event_count=8`, `USER_TURN count=4`, `has_grading=False`.
+
+**Worker invocation:**
+* Started exactly once using `timeout 60 python -m src.worker` (no code changes).
+* `RABBITMQ_HOST=localhost` override required — default is `"rabbitmq"` (Docker-internal hostname); worker ran as a local Python process.
+* Env vars loaded by grep from `.env`; values never printed.
+
+**Worker log (sanitized):**
+```
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=llm grader_version=llm_grader.v1
+```
+* No `grading.llm_failed_fallback` occurred.
+* Exit code 124 (SIGKILL from `timeout` after idle) — expected.
+
+**Queue after worker:** `messages=0`, `messages_ready=0`, `messages_unacknowledged=0`, `consumers=0`.
+
+**Verified DB result (SELECT-only):**
+* `detailed_corrections[0].type`: `grader_info` ← confirms LLM path, not fake fallback.
+* `detailed_corrections[0].grader_version`: `llm_grader.v1`.
+* `is_fake_text`: `False`.
+* `feedback_len`: 168 characters.
+* `overall_score`: 2.95 ✅ in [0, 10].
+* `fluency_score`: 4.00 ✅ in [0, 10].
+* `grammar_score`: 2.00 ✅ in [0, 10].
+* `vocab_score`: 3.00 ✅ in [0, 10].
+* All score range checks: True.
+
+**What is NOT yet done:**
+* Browser UI verification of a real `llm_grader.v1` row has **not** been done — that is Patch 5.
+* UI still shows "DEV PREVIEW — Simulated Grading" badge. Badge removal requires separate authorization after Patch 5.
+* Real grading stability over multiple sessions is unverified.
+* CUDA dependency reproducibility from `services/core-api/requirements.txt` remains unresolved local venv drift.
+
+## 11. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
 * **Recovery Tools (dev/ops-only):**
@@ -206,6 +252,6 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW — Simulated Grading" because `fake_grader.v1` scores are not pedagogically valid. Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader remains deferred.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. The **normal RabbitMQ consume-loop path** with `GRADING_PROVIDER=llm` has **not** been tested yet; that is Patch 4. Browser UI display of a real `llm_grader.v1` row has **not** been verified. UI DEV PREVIEW badge has **not** been removed.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Browser UI display of a real `llm_grader.v1` row has **not** been verified (Patch 5). UI DEV PREVIEW badge has **not** been removed — requires Patch 5 success + separate authorization.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

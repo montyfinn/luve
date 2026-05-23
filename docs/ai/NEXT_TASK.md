@@ -103,36 +103,55 @@ This file is a scoped task memo, not the global repo state source of truth.
 * No scanner/backfill `--execute`, no worker consume loop, no RabbitMQ publish, no source files modified, no secrets printed.
 * UI still shows DEV PREVIEW. Normal RabbitMQ consume-loop path with `GRADING_PROVIDER=llm` not yet tested.
 
+### Task 11: Patch 4 Audit/Design — Normal Grading-Worker Consume-Loop Test.
+* Audited consume-loop structure: `consume_forever()` has no `--consume-once` flag; `prefetch_count=1`; `message.process(requeue=False)`.
+* Identified 4 stale messages in `luve.session.completed` queue — starting worker immediately would risk 4 Groq calls and overwrites.
+* Recommended strategy: purge stale messages (separate approval gate), run fresh TEN session, use OS `timeout 60` to bound worker without code changes.
+* Confirmed `RABBITMQ_HOST=localhost` override required for local worker execution (default `"rabbitmq"` is Docker-internal hostname).
+* Confirmed all 10 audit questions answered (audit/design only — no live call, no runtime changes, no messages consumed/purged).
+
+### Task 12: Patch 4 — Normal RabbitMQ Consume-Loop Groq Grading Test.
+* **Queue preparation:** 4 stale messages purged via `rabbitmqctl purge_queue luve.session.completed`. Queue confirmed `messages=0`.
+* **Fresh TEN session:** Session suffix `...218666a0`, `event_count=8`, `USER_TURN count=4`. Queue confirmed `messages=1` before worker start.
+* **Worker:** Started exactly once with `timeout 60 python -m src.worker` with `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `RABBITMQ_HOST=localhost`. No code changes required.
+* **Worker log:** `grading.completed provider_requested=llm grader_version=llm_grader.v1`. No `grading.llm_failed_fallback`. Exit code 124 (timeout-after-idle) expected.
+* **Queue after:** `messages=0`.
+* **Verified DB result (SELECT-only):** `marker_type=grader_info`, `marker_grader_version=llm_grader.v1`, `is_fake_text=False`, `feedback_len=168`, `overall_score=2.95`, `fluency_score=4.00`, `grammar_score=2.00`, `vocab_score=3.00`, all score range checks passed.
+* No scanner/backfill `--execute`, no manual RabbitMQ publish, no second worker, no source files modified, no secrets printed.
+* UI still shows DEV PREVIEW. Browser UI verification deferred to Patch 5.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not start grading-worker consume loop, do not call Groq.**
+**Mode: AUDIT / DESIGN ONLY — do not change UI, do not call Groq, do not run worker.**
 
-### Patch 4 Audit/Design: Normal Grading-Worker Consume-Loop Test with GRADING_PROVIDER=llm
+### Patch 5 Audit/Design: UI Verification of Real llm_grader.v1 Session Analysis Row
 
-**Goal of audit:** produce an approved plan for running the grading-worker RabbitMQ consume loop with `GRADING_PROVIDER=llm` against exactly one fresh session, without overwriting existing grading rows or triggering batch Groq calls.
+**Goal of audit:** produce an approved plan for verifying that the control center Session Analysis card correctly displays the real Groq `grading_results` row written in Patch 4 (session suffix `...218666a0`), without triggering new Groq calls, new sessions, or UI changes.
 
 **Do not in this task:**
-* Do not start the grading-worker consume loop.
+* Do not remove or modify the DEV PREVIEW badge.
+* Do not modify `static/index.html` or any UI/API source file.
 * Do not call Groq.
+* Do not start the grading-worker consume loop.
 * Do not run the reconciliation scanner in `--execute` mode.
 * Do not run backfill `--execute`.
-* Do not change the UI or remove the DEV PREVIEW badge.
 * Do not change DB schema or migrations.
 * Do not overwrite existing `grading_results` rows.
-* Do not print secrets, API keys, or DATABASE_URL credentials.
+* Do not run a new TEN session.
+* Do not print secrets, API keys, DATABASE_URL credentials, or raw transcript text.
 
 **What this audit must plan:**
-1. **RabbitMQ queue inspection:** How to safely inspect `luve.session.completed` for stale messages without consuming them. Tools: `rabbitmqctl list_queues` or management UI. Confirm whether the queue contains any messages and how many.
-2. **Stale message risk:** If the queue contains messages for already-graded sessions, the worker's idempotent upsert (`ON CONFLICT DO UPDATE`) would overwrite their `grading_results` with new LLM scores. Plan to purge stale messages or verify none exist before starting the worker.
-3. **One-session isolation:** Determine whether the grading-worker supports a `--consume-once` or single-message flag. If not, audit `worker.py` to understand the consume loop structure and the safest way to limit it to exactly one message.
-4. **Env var setup:** `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `GROQCLOUD_API_KEY` (name only), `GROQ_MODEL` default (`"llama-3.1-8b-instant"`).
-5. **Pre-worker DB check:** Confirm the target session has `has_grading=False` immediately before starting the worker.
-6. **Post-worker DB verification:** Confirm exactly one new `grading_results` row with `marker_type=grader_info` and `marker_grader_version=llm_grader.v1` via SELECT-only query.
-7. **Rollback:** Stop the worker; unset `GRADING_PROVIDER` or set `GRADING_PROVIDER=fake` to immediately restore fake behavior. No DB migration needed.
-8. **UI verification plan:** After one worker-consumed real Groq result exists, verify the control center Session Analysis card displays the real scores and non-fake summary. Confirm DEV PREVIEW badge remains visible during Patch 4. Badge removal requires separate authorization.
-9. **Avoiding batch calls:** Explicitly confirm the plan prevents more than one Groq call per run. If the queue has N messages, the worker would make N calls — stale queue messages must be resolved first.
-10. **New session strategy:** Determine whether to use the existing session `...a3d35b36` (already graded — would overwrite) or run a new TEN session to produce a fresh ungraded message in the queue.
+1. **Session access:** How to open session `...218666a0` in the control center without starting a new session. Confirm the control center URL and whether it requires an active session or can display historical grading.
+2. **API check:** How to issue `GET /api/v1/sessions/{session_id}/grading` safely (e.g., via browser DevTools or `curl` with session cookie) and confirm HTTP 200 is returned.
+3. **Score verification:** How to confirm the UI displays `overall_score=2.95`, `fluency_score=4.00`, `grammar_score=2.00`, `vocab_score=3.00` without printing full feedback unless explicitly requested.
+4. **Summary verification:** How to confirm the `ai_summary_feedback` renders in the card (non-empty, not the fake placeholder `"Fake grading completed..."`). Do not print full text.
+5. **DEV PREVIEW badge:** Confirm the amber "DEV PREVIEW — Simulated Grading" badge and disclaimer text remain visible. Do not remove or hide.
+6. **Real/fake identification:** How to confirm the displayed result came from `llm_grader.v1` using the DB `detailed_corrections[0]` marker or `detailed_corrections` field in the API response (if exposed). Confirm the UI does not currently expose grader version — that is a separate future concern.
+7. **No new grading calls:** Confirm `fetchAndShowGrading` will not trigger a new Groq call. It calls `GET /api/v1/sessions/{session_id}/grading` (read-only); the API returns the cached DB row. No side effects.
+8. **Retry button check:** Confirm the Retry button behavior when a 200 result already exists — the card should render scores, not show the Retry button.
+9. **Badge removal scope:** Assess whether the DEV PREVIEW badge should be removed now that a real `llm_grader.v1` row exists. Do not remove in this audit — document the decision criteria for a future separate authorization.
+10. **Future UI labeling:** Consider whether a future patch should display `grader_version` or a real/fake indicator in the UI. Do not implement — flag as a future improvement.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
