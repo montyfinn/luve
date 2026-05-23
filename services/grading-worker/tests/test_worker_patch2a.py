@@ -9,8 +9,9 @@ from uuid import UUID
 import pytest
 
 from src.contracts import EvaluationInput, EvaluationTurn, GradingResult
+from src.grading_provider_client import GroqClient
 from src.llm_grader import LLMGraderError
-from src.worker import process_session_completed_job
+from src.worker import _build_grader_client, process_session_completed_job
 
 
 # ---------------------------------------------------------------------------
@@ -148,16 +149,17 @@ async def test_session_missing_skips_upsert(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # ---------------------------------------------------------------------------
-# LLM provider path — _build_grader_client raises (Patch 2A stub)
+# LLM provider path — _build_grader_client raises (missing GROQCLOUD_API_KEY)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_llm_provider_stub_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.delenv("GROQCLOUD_API_KEY", raising=False)  # ensure hermetic — key absent → LLMGraderError → fallback
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)  # default groq, key absent → raises
     repo = FakeRepository()
     with caplog.at_level(logging.WARNING, logger="src.worker"):
         await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
-    # _build_grader_client raises LLMGraderError → fallback
     assert repo.upserted is not None
     assert repo.upserted.grader_version == "fake_grader.v1"
     assert any("llm_failed_fallback" in r.message for r in caplog.records)
@@ -260,3 +262,58 @@ async def test_logs_do_not_include_transcript_text(monkeypatch: pytest.MonkeyPat
     for record in caplog.records:
         assert "Hello, how are you?" not in record.message
         assert "I am fine" not in record.message
+
+
+# ---------------------------------------------------------------------------
+# _build_grader_client env wiring (Patch 2B)
+# ---------------------------------------------------------------------------
+
+
+def test_build_grader_client_returns_groq_when_api_key_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GROQCLOUD_API_KEY", "test-key-abc")
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_TIMEOUT_SECONDS", raising=False)
+    client = _build_grader_client()
+    assert isinstance(client, GroqClient)
+
+
+def test_build_grader_client_raises_when_api_key_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.delenv("GROQCLOUD_API_KEY", raising=False)
+    with pytest.raises(LLMGraderError, match="GROQCLOUD_API_KEY"):
+        _build_grader_client()
+
+
+def test_build_grader_client_raises_when_api_key_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setenv("GROQCLOUD_API_KEY", "   ")
+    with pytest.raises(LLMGraderError):
+        _build_grader_client()
+
+
+def test_build_grader_client_raises_on_unsupported_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GROQCLOUD_API_KEY", "test-key")
+    with pytest.raises(LLMGraderError, match="Unsupported LLM_PROVIDER"):
+        _build_grader_client()
+
+
+def test_build_grader_client_raises_on_invalid_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setenv("GROQCLOUD_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_TIMEOUT_SECONDS", "not-a-float")
+    with pytest.raises(LLMGraderError, match="GROQ_TIMEOUT_SECONDS"):
+        _build_grader_client()
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_missing_key_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.delenv("GROQCLOUD_API_KEY", raising=False)
+    repo = FakeRepository()
+    # _build_grader_client raises LLMGraderError (missing key) → falls back to fake
+    await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+    assert repo.upserted is not None
+    assert repo.upserted.grader_version == "fake_grader.v1"

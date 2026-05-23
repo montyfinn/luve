@@ -30,9 +30,24 @@ def _get_grading_provider() -> str:
 
 
 def _build_grader_client() -> Any:
-    # Patch 2A: real provider client not yet implemented.
-    # Raising here ensures GRADING_PROVIDER=llm falls back safely to fake_grade.
-    raise LLMGraderError("No LLM provider client configured — real provider not yet implemented")
+    from src.grading_provider_client import GroqClient
+    llm_provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+    if llm_provider != "groq":
+        raise LLMGraderError(
+            f"Unsupported LLM_PROVIDER for grading worker: {llm_provider!r}"
+        )
+    api_key = os.getenv("GROQCLOUD_API_KEY", "").strip()
+    if not api_key:
+        raise LLMGraderError("GROQCLOUD_API_KEY is not set — cannot use llm provider")
+    model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant").strip()
+    raw_timeout = os.getenv("GROQ_TIMEOUT_SECONDS") or os.getenv("LLM_TIMEOUT_SECONDS", "20.0")
+    try:
+        timeout = float(raw_timeout)
+    except ValueError as exc:
+        raise LLMGraderError(
+            f"GROQ_TIMEOUT_SECONDS is not a valid float: {raw_timeout!r}"
+        ) from exc
+    return GroqClient(api_key=api_key, model=model, timeout_seconds=timeout)
 
 
 async def process_session_completed_job(
