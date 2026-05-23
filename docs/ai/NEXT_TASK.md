@@ -40,38 +40,31 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Verified: py_compile pass, dry-run `candidates_seen=0` (correct — all eligible sessions already graded by historical backfill).
 * Not a daemon; intended for cron or manual execution. Does not loop internally.
 
+### Task 5: Add end-of-session grading analysis API and UI.
+* Audited: `grading_results` table was fully populated (138 rows) but no API endpoint exposed the data and the UI had no post-session display.
+* Added `GradingRead` Pydantic schema to `schemas/session.py`.
+* Added `get_session_grading()` to `session_service.py`: raw SQL JOIN enforcing session ownership via `sessions.user_id`; returns `GradingRead` or 404 (`"Grading result not ready"`).
+* Added `GET /api/v1/sessions/{session_id}/grading` route to `sessions.py`, registered before the `/{session_id}` wildcard to avoid route shadowing.
+* Added Session Analysis card to control center UI (`static/index.html`):
+  * One-shot `fetchAndShowGrading(sessionId)` with 2s delay, hooked into `session_ended` TEN event and manual `disconnect()`.
+  * Renders 4 score tiles, AI summary, corrections list, and graded_at timestamp.
+  * 404 path shows pending text + DOM-created Retry button (no inline `onclick`).
+  * All server-derived text sanitized via `escapeHtml()` before `innerHTML` insertion.
+  * Labeled "DEV PREVIEW — Simulated Grading" (amber badge + disclaimer) because `fake_grader.v1` is not pedagogically valid.
+  * Card hidden on `ten_started` for new sessions.
+* Committed as `3da235c`. Verified: py_compile OK, import smoke OK, JS syntax OK.
+* Not yet manually tested end-to-end in browser.
+
 ---
 
 ## Current Task
-Controlled operational test for reconciliation scanner.
+No active task. Awaiting next approved prompt.
 
-## 1. Operating Constraints
-* **Mode:** TEST/AUDIT-ONLY.
-* **Modification Policy:**
-  * Do not modify any runtime files. Do not stage. Do not commit without explicit approval.
-  * Do not implement transactional outbox, new DB tables, or schema migrations unless separately approved.
-  * Do not wire the scanner as a background daemon or auto-start service.
-  * Run scanner in dry-run mode only (no `--execute`) unless explicitly instructed otherwise.
-  * Do not publish any real RabbitMQ messages or trigger actual events.
-  * Do not run destructive DB commands.
-* **Credentials Policy:** Never print or leak any passwords, database credentials, API keys, cookies, or JWTs.
-
-## 2. Allowed Actions
-* Run scanner with dry-run flags and read its output.
-* Run read-only DB queries to verify candidate counts.
-* Read scanner source and grading-worker source files.
-* Propose cron schedule or deployment wrapper if asked.
-
-## 3. Test Goals
-1. Confirm scanner dry-run output is correct after new sessions complete.
-2. Confirm grace window correctly excludes recently ended sessions.
-3. Confirm scanner correctly identifies any newly missed grading results.
-4. Confirm `--execute` path grades exactly the expected sessions when triggered.
-
-## 4. Out of Scope (requires separate approved prompt)
+## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
 * New DB schema / migration files.
-* Wiring scanner as a background daemon or auto-start service.
+* Wiring reconciliation scanner as a background daemon or auto-start service.
 * Removing `SQLSessionStore.persist_event_log` dead code.
 * Replacing `fake_grader.v1` with real pedagogical grader.
 * Wiring `close_publisher()` into shutdown.
+* Adding `.codegraph/` and `.cursor/` to `.gitignore`.

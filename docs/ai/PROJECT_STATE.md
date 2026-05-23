@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Clean Worktree:** `git status --short` should be empty (clean) after committing these docs.
-* **Latest runtime/tooling baseline:** `440ff98` — fix(core-api): persist empty event logs as arrays.
+* **Latest runtime/tooling baseline:** `3da235c` — feat(core-api): add end-of-session grading analysis API and UI.
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `3da235c` - feat(core-api): add end-of-session grading analysis API and UI (`GradingRead` schema, `GET /api/v1/sessions/{session_id}/grading` endpoint, Session Analysis card in control center UI with dev-preview badge and `escapeHtml` sanitization).
 * `fc18916` - feat(grading-worker): add completed session reconciliation scanner (one-shot, dry-run default, `--grace-minutes` grace window, no RabbitMQ dependency for recovery).
 * `440ff98` - fix(core-api): persist empty event logs as arrays (`_persist_event_log` always writes `raw_backup_json`; empty event logs now store `[]` instead of NULL).
 * `da4a0d9` - docs(ai): record raw_backup_json NULL audit findings.
@@ -59,6 +60,7 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * **`_persist_event_log` [] patch applied (`440ff98`):** `_persist_event_log` now always writes `raw_backup_json = CAST(:logs AS jsonb)`. Empty sessions store `[]` instead of NULL. Sessions with accepted speech turns are unchanged. DB-verified with monkeypatched RabbitMQ no-op: `raw_backup_json::text = '[]'`, `status = 'completed'`, `ended_at IS NOT NULL`. The backfill script's `IS NOT NULL` filter will now count formerly-NULL-producing sessions as candidates, but the `user_turns=0` Python guard skips them — no false grading results.
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
+* **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW — Simulated Grading" because `fake_grader.v1` scores are not pedagogically valid. Not yet manually tested end-to-end in browser (py_compile, import smoke, and JS syntax all pass).
 * **Grading Worker:** Currently uses a simulated fake grader instead of final pedagogical grading.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
