@@ -123,13 +123,10 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * `services/grading-worker/tests/test_grading_provider_client.py` — 17 mocked `GroqClient` tests: 5 constructor validation, 2 success, 2 transport errors, 2 non-2xx, 4 malformed response, 2 security (no key or prompt in exceptions or logs).
 * `services/grading-worker/tests/test_worker_patch2a.py` — 6 new worker integration tests for `_build_grader_client()` env wiring added; existing 12 tests updated for Groq hermeticity (delenv `GROQCLOUD_API_KEY` + `LLM_PROVIDER` where needed).
 
-**What is NOT yet done:**
-* Real Groq live test has **not** been run. No `grading_results` row has been written by `llm_grader.v1`.
+**What is NOT yet done (at time of Patch 2B):**
 * `GRADING_PROVIDER` default/unset remains `"fake"`. Live path remains fake unless `GRADING_PROVIDER=llm` is explicitly set.
-* UI still shows "DEV PREVIEW — Simulated Grading" and `fake_grader.v1` scores.
 * No `services/core-api/` or DB schema changes.
-* Patch 3 (controlled real Groq test) requires a separate approved prompt.
-* **Security:** Any previously exposed Groq API key must be rotated/revoked before running a live test. Refer only to env var names (`GROQCLOUD_API_KEY`) — never print or store key values.
+* Real Groq live test was completed in Patch 3 — see Section 9.
 
 **Verification evidence (pre-commit):**
 * `py_compile` pass on all 5 Patch 2B files.
@@ -140,7 +137,64 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * No DB or RabbitMQ calls in tests.
 * No API key, prompt, transcript, response body, Authorization header, or full URL in any log or exception message.
 
-## 8. Known Limitations & Gaps
+## 8. CUDA/STT Stabilization (torch cu118 → cu126)
+
+**Context:** During Patch 3 preparation a TEN session's STT fell back to CPU. Root cause: `torch+cu118` bundled `libcudart.so.11.0`; system `ldconfig` registered CUDA 12.1 libraries; `ctranslate2 4.7.1` requires `libcublas.so.12` (CUDA 12.x). Mixed CUDA 11/12 runtimes in the same process → `cudaErrorUnknown`. GPU: NVIDIA GeForce RTX 3050 Ti Laptop GPU, driver 595.58.03.
+
+**Fix applied (venv-only, no source changes):**
+* Upgraded `torch 2.7.1+cu118` → `torch 2.7.1+cu126`, `torchaudio 2.7.1+cu118` → `2.7.1+cu126`, `torchvision 0.22.1+cu118` → `0.22.1+cu126`.
+* All 14 `nvidia-*-cu12` packages installed at exact torch-pinned versions via `--index-url https://download.pytorch.org/whl/cu126 --force-reinstall`.
+* Removed 24 orphan packages: 11 `nvidia-*-cu11` and 13 no-suffix/cu13 packages. Note: pip namespace package corruption occurred during cu11 removal (shared namespace dirs deleted); resolved by a second full torch+cu126 force-reinstall to restore exact-version files.
+* Final `pip check`: no broken requirements.
+* After package fix, `cuInit(0)` still returned `CUDA_ERROR_UNKNOWN (999)` — root cause was the NVIDIA kernel module (`nvidia.ko`) in a bad state, not a package issue. Confirmed via direct ctypes call: `libcuda.so.1 cuInit(0) → 999`. Resolved by system reboot.
+
+**Post-reboot verification (all gates passed):**
+* `cuInit(0)` via ctypes: `0 → CUDA_SUCCESS`.
+* `torch.cuda.is_available()`: `True` (no warning).
+* `torch.cuda.device_count()`: `1`.
+* `ctranslate2.get_cuda_device_count()`: `1`.
+* `faster-whisper tiny` on `device="cuda"`, `compute_type="float16"`: loaded successfully.
+* `pip check`: no broken requirements.
+* No source files, DB rows, or git commits modified during stabilization.
+
+**Ongoing drift note:** `torch`, `torchaudio`, `torchvision`, and all `nvidia-*` packages remain absent from `services/core-api/requirements.txt` — they are manually installed local venv drift, not tracked changes.
+
+## 9. Patch 3 Controlled One-Shot Groq Grading Test
+
+**Pre-conditions met:**
+* CUDA/STT stabilized (Section 8). TEN GPU path active.
+* Grading-worker consume loop was **not running**.
+* Reconciliation scanner `--execute` was **not used**.
+* Target session `...a3d35b36` had `has_grading=False` confirmed by pre-live SELECT.
+
+**TEN session (suffix `...a3d35b36`):**
+* STT GPU path confirmed in TEN log: `ctranslate2_cuda_devices=1`, `torch_cuda_available=True`, Whisper loaded on `device=cuda`, `compute_type=int8_float16`.
+* Session completed cleanly: `raw_backup_json` persisted 30 events, 15 `USER_TURN` events, `session.completed` published.
+
+**Live grading invocation:**
+* Exactly one direct `process_session_completed_job` call with `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `GROQCLOUD_API_KEY` set (env var name only — value never printed).
+* Groq call succeeded. `grading_results` row created.
+
+**Verified DB result (SELECT-only):**
+* `detailed_corrections[0].type`: `grader_info` ← confirms LLM path executed, not fake fallback.
+* `detailed_corrections[0].grader_version`: `llm_grader.v1`.
+* `is_fake_text`: `False` (summary text is not the fake grader placeholder).
+* `feedback_len`: 252 characters.
+* `overall_score`: 2.95 ✅ in [0, 10].
+* `fluency_score`: 4.00 ✅ in [0, 10].
+* `grammar_score`: 2.00 ✅ in [0, 10].
+* `vocab_score`: 3.00 ✅ in [0, 10].
+* `graded_at`: 2026-05-23 18:17:07 UTC.
+
+**What is NOT yet done:**
+* Normal RabbitMQ grading-worker consume loop with `GRADING_PROVIDER=llm` has **not** been tested.
+* Browser UI verification of the real Groq `grading_results` row has **not** been done.
+* UI still shows "DEV PREVIEW — Simulated Grading" badge and disclaimer. Badge removal requires separate authorization.
+* Real grading stability over multiple sessions is unverified.
+* `grader_version` is not a DB column — stored only in `detailed_corrections[0]` JSONB.
+* DB schema, migrations, `requirements.txt`, and all runtime source files were **not modified** during Patch 3.
+
+## 10. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
 * **Recovery Tools (dev/ops-only):**
@@ -152,6 +206,6 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW — Simulated Grading" because `fake_grader.v1` scores are not pedagogically valid. Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader remains deferred.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` now exists (commit `1cae30b`). Default/unset remains `"fake"`. Setting `GRADING_PROVIDER=llm` + `LLM_PROVIDER=groq` + `GROQCLOUD_API_KEY` set will now call Groq — but this live path has **not** been tested yet. Patch 3 (controlled real Groq test) requires a separate approved prompt. Any previously exposed Groq API key must be rotated before Patch 3 runs.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. The **normal RabbitMQ consume-loop path** with `GRADING_PROVIDER=llm` has **not** been tested yet; that is Patch 4. Browser UI display of a real `llm_grader.v1` row has **not** been verified. UI DEV PREVIEW badge has **not** been removed.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

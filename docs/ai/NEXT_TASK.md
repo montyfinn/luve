@@ -88,53 +88,65 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Declared `httpx>=0.27,<1` in `services/grading-worker/requirements.txt`.
 * Added 17 mocked `GroqClient` tests (`tests/test_grading_provider_client.py`); updated `tests/test_worker_patch2a.py` with 6 new env-wiring tests (total 26).
 * Verified: py_compile pass, 57/57 tests pass, no real API calls in tests, no secrets/prompt/response-body in logs.
-* `GRADING_PROVIDER` default/unset remains `"fake"`. Real Groq live test has **not** been run. UI still shows DEV PREVIEW.
+* `GRADING_PROVIDER` default/unset remains `"fake"`. Real Groq live test deferred to Patch 3.
 * **Security:** A Groq API key was exposed in chat during this task. It must be rotated/revoked before Patch 3. Docs contain env var names only — never values.
+
+### Task 9: Patch 3 Pre-Implementation Audit — Controlled Real Groq Grading Test.
+* Produced approved plan for one controlled live Groq grading test: key rotation gate, services to run, exact env var names, one-session-only approach, scanner avoidance, DB SELECT verification queries, rollback plan, UI badge deferral.
+* Confirmed all 10 audit questions answered (audit/design only — no live call, no runtime changes).
+
+### Task 10: Patch 3 — CUDA/STT Stabilization + Controlled One-Shot Groq Grading Test.
+* **CUDA stabilization (prerequisite):** STT was falling back to CPU due to `torch+cu118` / system CUDA 12.1 / `ctranslate2 4.7.1` mixed-runtime conflict. Upgraded torch to `2.7.1+cu126` (venv-only, no source changes). Removed 24 orphan nvidia packages. Resolved pip namespace corruption via second force-reinstall. NVIDIA kernel module bad state required system reboot; after reboot `cuInit(0) → CUDA_SUCCESS`, `torch.cuda.is_available() → True`, `ctranslate2.get_cuda_device_count() → 1`, faster-whisper tiny CUDA load passed.
+* **New TEN session (suffix `...a3d35b36`):** STT GPU path active (`device=cuda`, `compute_type=int8_float16`). 30 events persisted, 15 `USER_TURN` events. `session.completed` published. Grading-worker consume loop was NOT running.
+* **One-shot direct Groq grading:** Pre-live DB check confirmed `has_grading=False`. Exactly one `process_session_completed_job` call with `GRADING_PROVIDER=llm LLM_PROVIDER=groq GROQCLOUD_API_KEY` set. Groq call succeeded. `grading_results` row created.
+* **Verified DB result (SELECT-only):** `marker_type=grader_info`, `marker_grader_version=llm_grader.v1`, `is_fake_text=False`, `feedback_len=252`, `overall_score=2.95`, `fluency_score=4.00`, `grammar_score=2.00`, `vocab_score=3.00`, all score range checks passed.
+* No scanner/backfill `--execute`, no worker consume loop, no RabbitMQ publish, no source files modified, no secrets printed.
+* UI still shows DEV PREVIEW. Normal RabbitMQ consume-loop path with `GRADING_PROVIDER=llm` not yet tested.
 
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not run live test, do not modify runtime files.**
+**Mode: AUDIT / DESIGN ONLY — do not start grading-worker consume loop, do not call Groq.**
 
-### Patch 3 Pre-Implementation Audit: Controlled Real Groq Grading Test
+### Patch 4 Audit/Design: Normal Grading-Worker Consume-Loop Test with GRADING_PROVIDER=llm
 
-**Goal of audit:** produce an approved plan for exactly one controlled real Groq grading test before any live path is enabled.
-
-**What this audit must plan (read-only, no execution):**
-1. **Key rotation confirmation:** Verify that the previously exposed `GROQCLOUD_API_KEY` has been rotated and revoked. Do not run any live path until a fresh key is confirmed. Do not print or log key values — refer only to env var names.
-2. **Exact services to run:** Which processes must be running (core-api, grading-worker, Postgres, RabbitMQ). Confirm no additional services are needed.
-3. **Exact env var names only:** `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `GROQCLOUD_API_KEY` (name only), `GROQ_MODEL` (default or override). Do not print values.
-4. **One controlled session only:** Plan for exactly one test session — not a batch scan. Determine whether to trigger via a new UI session or by injecting one known session payload into the worker directly. Do not use the reconciliation scanner `--execute` flag.
-5. **How to avoid batch scanner/backfill:** Explicitly confirm the reconciliation scanner will not be run in `--execute` mode during this test.
-6. **How to verify `grading_results` row safely:** SQL read-only query (`SELECT`) against local Postgres to confirm a new row exists with `grader_version='llm_grader.v1'` and valid score range `[0,10]`. No `UPDATE`/`DELETE`/`TRUNCATE` during verification.
-7. **How to verify `grader_info` marker:** `SELECT detailed_corrections` from `grading_results` and confirm `detailed_corrections[0].type == 'grader_info'` and `detailed_corrections[0].grader_version == 'llm_grader.v1'`.
-8. **How to verify UI:** Confirm grading analysis card loads in control center. Confirm UI still shows DEV PREVIEW badge (do not remove it during Patch 3). Verify scores are non-zero and differ from the fake grader floor pattern.
-9. **Rollback plan:** Unsetting `GRADING_PROVIDER` or setting `GRADING_PROVIDER=fake` immediately restores fake grader behavior. No DB migration needed to roll back.
-10. **UI badge removal:** Keep deferred until after the controlled real Groq test passes. Badge removal (`static/index.html`) requires separate authorization in a Patch 3 implementation prompt.
+**Goal of audit:** produce an approved plan for running the grading-worker RabbitMQ consume loop with `GRADING_PROVIDER=llm` against exactly one fresh session, without overwriting existing grading rows or triggering batch Groq calls.
 
 **Do not in this task:**
-* Do not set `GRADING_PROVIDER=llm` or call Groq.
-* Do not run the grading worker with a real Groq key.
-* Do not write any `grading_results` row via the live path.
+* Do not start the grading-worker consume loop.
+* Do not call Groq.
 * Do not run the reconciliation scanner in `--execute` mode.
-* Do not remove the DEV PREVIEW badge or modify `static/index.html`.
-* Do not modify any `services/grading-worker/src/` or `services/core-api/src/` files.
-* Do not modify DB schema, migrations, or `requirements.txt`.
-* Do not print secret values, API keys, or DATABASE_URL credentials.
+* Do not run backfill `--execute`.
+* Do not change the UI or remove the DEV PREVIEW badge.
+* Do not change DB schema or migrations.
+* Do not overwrite existing `grading_results` rows.
+* Do not print secrets, API keys, or DATABASE_URL credentials.
+
+**What this audit must plan:**
+1. **RabbitMQ queue inspection:** How to safely inspect `luve.session.completed` for stale messages without consuming them. Tools: `rabbitmqctl list_queues` or management UI. Confirm whether the queue contains any messages and how many.
+2. **Stale message risk:** If the queue contains messages for already-graded sessions, the worker's idempotent upsert (`ON CONFLICT DO UPDATE`) would overwrite their `grading_results` with new LLM scores. Plan to purge stale messages or verify none exist before starting the worker.
+3. **One-session isolation:** Determine whether the grading-worker supports a `--consume-once` or single-message flag. If not, audit `worker.py` to understand the consume loop structure and the safest way to limit it to exactly one message.
+4. **Env var setup:** `GRADING_PROVIDER=llm`, `LLM_PROVIDER=groq`, `GROQCLOUD_API_KEY` (name only), `GROQ_MODEL` default (`"llama-3.1-8b-instant"`).
+5. **Pre-worker DB check:** Confirm the target session has `has_grading=False` immediately before starting the worker.
+6. **Post-worker DB verification:** Confirm exactly one new `grading_results` row with `marker_type=grader_info` and `marker_grader_version=llm_grader.v1` via SELECT-only query.
+7. **Rollback:** Stop the worker; unset `GRADING_PROVIDER` or set `GRADING_PROVIDER=fake` to immediately restore fake behavior. No DB migration needed.
+8. **UI verification plan:** After one worker-consumed real Groq result exists, verify the control center Session Analysis card displays the real scores and non-fake summary. Confirm DEV PREVIEW badge remains visible during Patch 4. Badge removal requires separate authorization.
+9. **Avoiding batch calls:** Explicitly confirm the plan prevents more than one Groq call per run. If the queue has N messages, the worker would make N calls — stale queue messages must be resolved first.
+10. **New session strategy:** Determine whether to use the existing session `...a3d35b36` (already graded — would overwrite) or run a new TEN session to produce a fresh ungraded message in the queue.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
 * New DB schema / migration files (including adding `grader_version` column to `grading_results`).
 * Wiring reconciliation scanner as a background daemon or auto-start service.
 * Removing `SQLSessionStore.persist_event_log` dead code.
-* Removing DEV PREVIEW badge from UI (requires Patch 3 approval and `index.html` authorization).
+* Removing DEV PREVIEW badge from UI (requires Patch 4 success + separate authorization).
 * Wiring `close_publisher()` into shutdown.
 * Adding `.codegraph/` and `.cursor/` to `.gitignore`.
-* Live browser/API end-to-end verification with real LLM grader (deferred to Patch 3).
-* Patch 3: controlled real-session grading test and UI badge removal.
+* Real grading stability verification over multiple sessions.
+* Scanner/backfill with `GRADING_PROVIDER=llm` (not approved).
 
 ## Protected Runtime Files
-Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. For the Patch 2 audit/design task, do not modify runtime files, core-api UI/API files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.
+Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files, core-api UI/API files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.
 
 ## Route Behavior Note
 `GET /sessions/{session_id}/grading` and `GET /sessions/{session_id}` match structurally different URL shapes (two segments vs one). They cannot conflict regardless of registration order; FastAPI's UUID path converter also rejects the literal string `"grading"` as a non-UUID. The `/grading` route is registered first for readability only.
