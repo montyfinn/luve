@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked IDE artifacts (`.codegraph/`, `.cursor/`).
-* **Latest runtime/tooling baseline:** `675e3a2` — feat(grading-worker): add offline LLM grader scaffold.
+* **Latest runtime/tooling baseline:** `06acf97` — feat(grading-worker): add safe grading provider dispatch.
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `06acf97` - feat(grading-worker): add safe grading provider dispatch (`GRADING_PROVIDER` env-flag dispatch with fake default; `GRADING_PROVIDER=llm` falls back to fake until real provider client exists; no-user-turn sessions skip without upsert; 34/34 mocked tests pass).
 * `675e3a2` - feat(grading-worker): add offline LLM grader scaffold (loosen `grader_version` Literal, add `llm_grader.py` prompt builder + response parser/validator, add 22 mocked tests; worker still uses `fake_grader.v1` only).
 * `3da235c` - feat(core-api): add end-of-session grading analysis API and UI (`GradingRead` schema, `GET /api/v1/sessions/{session_id}/grading` endpoint, Session Analysis card in control center UI with dev-preview badge and `escapeHtml` sanitization).
 * `fc18916` - feat(grading-worker): add completed session reconciliation scanner (one-shot, dry-run default, `--grace-minutes` grace window, no RabbitMQ dependency for recovery).
@@ -77,7 +78,32 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 **Local venv drift note:**
 `pytest` and `pytest-asyncio` were installed into `services/core-api/venv` during Patch 1 verification. This is local environment drift only — not a git-tracked change and not in any `requirements.txt`. It has no effect on the production grading worker runtime.
 
-## 6. Known Limitations & Gaps
+## 6. Patch 2A Safe Grading Provider Dispatch (commit `06acf97`)
+
+**What was added:**
+* `worker.py` now supports `GRADING_PROVIDER` env-flag dispatch:
+  * Unset or `"fake"` → `fake_grade()` as before.
+  * `"llm"` → attempts `llm_grade_with_client()`; currently falls back to `fake_grade()` because `_build_grader_client()` raises `LLMGraderError` (real provider not yet implemented).
+  * Unknown value → `WARNING` log + fallback to `"fake"`.
+* `process_session_completed_job` now returns early (no upsert) for sessions with zero accepted student turns. Previously these sessions wrote floor-score fake rows; now they produce no `grading_results` row. The API returns 404; the UI shows "Grading pending." This is consistent with the established backfill/reconciliation policy.
+* Completion log updated: now emits `provider_requested=` and `grader_version=` instead of the hardcoded `fake_grader=true`.
+* `grader_info` marker prepended to `detailed_corrections` JSONB on successful LLM grading — queryable without a schema migration.
+* 12 new mocked worker dispatch tests added.
+
+**What is NOT yet done:**
+* No real LLM provider client exists. `GRADING_PROVIDER=llm` is structurally wired but always falls back to fake.
+* No `httpx` or provider SDK added to `requirements.txt`.
+* No `services/core-api/` or DB schema changes.
+* No real LLM API calls have been made by the grader.
+* UI still shows "DEV PREVIEW — Simulated Grading" and `fake_grader.v1` scores.
+* Patch 2B must add exactly one provider client before real grading can be enabled.
+
+**Verification evidence:**
+* `py_compile` pass on `worker.py` and `tests/test_worker_patch2a.py`.
+* 34/34 mocked tests pass (`test_llm_grader.py` 22 + `test_worker_patch2a.py` 12).
+* `grep` confirmed: no `httpx`, `requests`, `aiohttp`, `google`, `groq`, `openai`, `anthropic` imports in `worker.py` or the new test file.
+
+## 7. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
 * **Recovery Tools (dev/ops-only):**
@@ -89,6 +115,6 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW — Simulated Grading" because `fake_grader.v1` scores are not pedagogically valid. Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader remains deferred.
-* **Grading Worker:** Currently uses `fake_grader.v1` only. `llm_grader.py` scaffold exists (commit `675e3a2`) but is not yet wired into `worker.py`. Patch 2 (wiring behind `GRADING_PROVIDER` env flag) requires a separate approved prompt.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). Default/unset remains `fake_grader.v1`. `GRADING_PROVIDER=llm` is structurally handled but falls back to `fake_grader.v1` because no real provider client exists yet. Patch 2B (exactly one real provider client) requires a separate approved prompt. Real LLM grading is not yet live.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
