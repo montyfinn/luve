@@ -8,7 +8,7 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 
 ## 1. Current Expected Git State
 
-* **Clean Worktree:** `git status --short` should be empty (clean) after committing these docs.
+* **Worktree:** No tracked modifications; only untracked IDE artifacts (`.codegraph/`, `.cursor/`).
 * **Latest runtime/tooling baseline:** `3da235c` — feat(core-api): add end-of-session grading analysis API and UI.
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 

@@ -38,6 +38,21 @@ source venv/bin/activate
 python run_ten.py
 ```
 
+
+##Grading
+
+```
+cd ~/project/luve/services/grading-worker
+
+set -a
+source ../core-api/.env 2>/dev/null
+set +a
+export DATABASE_URL="$(grep '^DATABASE_URL=' ../core-api/.env | cut -d= -f2-)"
+
+PYTHONPATH=. ../core-api/venv/bin/python -m src.worker
+
+```
+
 ## Auth Token For Local Debug
 
 Keep login payload files local and ignored by git. Do not commit real tokens,

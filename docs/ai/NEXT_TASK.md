@@ -43,7 +43,7 @@ This file is a scoped task memo, not the global repo state source of truth.
 ### Task 5: Add end-of-session grading analysis API and UI.
 * Audited: `grading_results` table was fully populated (138 rows) but no API endpoint exposed the data and the UI had no post-session display.
 * Added `GradingRead` Pydantic schema to `schemas/session.py`.
-* Added `get_session_grading()` to `session_service.py`: raw SQL JOIN enforcing session ownership via `sessions.user_id`; returns `GradingRead` or 404 (`"Grading result not ready"`).
+* Added `get_session_grading()` to `session_service.py`: raw SQL JOIN enforcing session ownership via `sessions.user_id`; returns `GradingRead` or HTTP 404 (detail `"Grading result not ready"`). The UI treats HTTP 404 as pending based on status code only — it does not parse the detail string.
 * Added `GET /api/v1/sessions/{session_id}/grading` route to `sessions.py`, registered before the `/{session_id}` wildcard to avoid route shadowing.
 * Added Session Analysis card to control center UI (`static/index.html`):
   * One-shot `fetchAndShowGrading(sessionId)` with 2s delay, hooked into `session_ended` TEN event and manual `disconnect()`.
@@ -68,3 +68,10 @@ No active task. Awaiting next approved prompt.
 * Replacing `fake_grader.v1` with real pedagogical grader.
 * Wiring `close_publisher()` into shutdown.
 * Adding `.codegraph/` and `.cursor/` to `.gitignore`.
+* Live browser/API end-to-end verification of Session Analysis card (dev-preview grading delivery committed; real grader and browser smoke test remain deferred).
+
+## Protected Runtime Files
+Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files unless a future prompt explicitly allows it.
+
+## Route Behavior Note
+`GET /sessions/{session_id}/grading` and `GET /sessions/{session_id}` match structurally different URL shapes (two segments vs one). They cannot conflict regardless of registration order; FastAPI's UUID path converter also rejects the literal string `"grading"` as a non-UUID. The `/grading` route is registered first for readability only.
