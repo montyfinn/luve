@@ -26,3 +26,17 @@ class SessionRead(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
 
+
+class GradingRead(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    session_id: UUID
+    overall_score: float
+    fluency_score: float
+    grammar_score: float
+    vocab_score: float
+    detailed_corrections: list[dict[str, Any]] = Field(default_factory=list)
+    ai_summary_feedback: str
+    graded_at: datetime
+    is_dev_preview: bool = True
+

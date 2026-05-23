@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User
-from src.schemas.session import SessionCreateRequest, SessionRead
+from src.schemas.session import GradingRead, SessionCreateRequest, SessionRead
 
 
 async def create_webrtc_session(
@@ -116,4 +116,44 @@ async def get_user_session(
             detail="Session not found",
         )
     return SessionRead(**session_row)
+
+
+async def get_session_grading(
+    db: AsyncSession,
+    *,
+    session_id: UUID,
+    user_id: UUID,
+) -> GradingRead:
+    row = await db.execute(
+        text(
+            """
+            SELECT
+                gr.session_id,
+                gr.overall_score,
+                gr.fluency_score,
+                gr.grammar_score,
+                gr.vocab_score,
+                gr.detailed_corrections,
+                gr.ai_summary_feedback,
+                gr.graded_at
+            FROM grading_results gr
+            JOIN sessions s ON s.id = gr.session_id
+            WHERE gr.session_id = :session_id
+              AND s.user_id = :user_id
+              AND s.deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {
+            "session_id": str(session_id),
+            "user_id": str(user_id),
+        },
+    )
+    grading_row = row.mappings().first()
+    if grading_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Grading result not ready",
+        )
+    return GradingRead(**grading_row)
 
