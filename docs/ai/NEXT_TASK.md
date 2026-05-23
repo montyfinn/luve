@@ -120,38 +120,45 @@ This file is a scoped task memo, not the global repo state source of truth.
 * No scanner/backfill `--execute`, no manual RabbitMQ publish, no second worker, no source files modified, no secrets printed.
 * UI still shows DEV PREVIEW. Browser UI verification deferred to Patch 5.
 
+### Task 13: Patch 5 — Browser UI Verification of Real llm_grader.v1 Session Analysis Row.
+* **Target session:** `9de7a1e3-e374-487e-af91-4d0b218666a0` (suffix `...218666a0`); same session graded in Patch 4.
+* **Correct UI URL confirmed:** `http://localhost:8080/control-center` (HTTP 200). `http://localhost:8000/static/index.html` returns 404 — not a valid route.
+* **Method:** Temporary Playwright automation in `/tmp/luve-playwright-ui-check/` (outside repo) using system Chrome `/usr/bin/google-chrome`. Token injected from `/tmp/luve_token` (file-based, not printed; deleted immediately after run).
+* **API response verified (HTTP 200):** `overall_score=2.95`, `fluency_score=4.00`, `grammar_score=2.00`, `vocab_score=3.00`, `detailed_corrections[0].type=grader_info`, `detailed_corrections[0].grader_version=llm_grader.v1`, `ai_summary_feedback` non-empty, no fake placeholder.
+* **Rendered UI verified (Playwright DOM):** Session Analysis card visible, Overall=3.0 (toFixed(1)), Fluency=4.0, Grammar=2.0, Vocab=3.0, summary non-empty, `Graded at:` visible, Retry button absent, DEV PREVIEW badge visible, `fake_grader.v1` disclaimer visible.
+* **Semantic issue confirmed:** Badge says "Simulated Grading"; disclaimer says `fake_grader.v1` — both are inaccurate for real `llm_grader.v1` rows. Static HTML, not introduced by Patch 5. Requires Patch 6 to fix.
+* No Groq calls, no worker started, no DB writes, no new sessions, no repo files modified, no secrets printed.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not change UI, do not call Groq, do not run worker.**
+**Mode: AUDIT / DESIGN ONLY — do not modify UI, do not call Groq, do not run worker, do not run new sessions.**
 
-### Patch 5 Audit/Design: UI Verification of Real llm_grader.v1 Session Analysis Row
+### Patch 6 Audit/Design: UI Label/Disclaimer Cleanup for Real llm_grader.v1 Rows
 
-**Goal of audit:** produce an approved plan for verifying that the control center Session Analysis card correctly displays the real Groq `grading_results` row written in Patch 4 (session suffix `...218666a0`), without triggering new Groq calls, new sessions, or UI changes.
+**Goal of audit:** design a minimal, safe UI-only patch that corrects the inaccurate DEV PREVIEW badge text and `fake_grader.v1` disclaimer for sessions graded by `llm_grader.v1`, without overclaiming production readiness. Do not implement in this audit.
 
 **Do not in this task:**
-* Do not remove or modify the DEV PREVIEW badge.
-* Do not modify `static/index.html` or any UI/API source file.
+* Do not remove the DEV PREVIEW badge blindly — assess whether neutral wording is better than removal.
+* Do not modify `services/core-api/src/static/index.html` yet.
 * Do not call Groq.
 * Do not start the grading-worker consume loop.
-* Do not run the reconciliation scanner in `--execute` mode.
-* Do not run backfill `--execute`.
-* Do not change DB schema or migrations.
-* Do not overwrite existing `grading_results` rows.
 * Do not run a new TEN session.
-* Do not print secrets, API keys, DATABASE_URL credentials, or raw transcript text.
+* Do not write DB.
+* Do not change DB schema or add migrations.
+* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript text, or auth tokens.
 
-**What this audit must plan:**
-1. **Session access:** How to open session `...218666a0` in the control center without starting a new session. Confirm the control center URL and whether it requires an active session or can display historical grading.
-2. **API check:** How to issue `GET /api/v1/sessions/{session_id}/grading` safely (e.g., via browser DevTools or `curl` with session cookie) and confirm HTTP 200 is returned.
-3. **Score verification:** How to confirm the UI displays `overall_score=2.95`, `fluency_score=4.00`, `grammar_score=2.00`, `vocab_score=3.00` without printing full feedback unless explicitly requested.
-4. **Summary verification:** How to confirm the `ai_summary_feedback` renders in the card (non-empty, not the fake placeholder `"Fake grading completed..."`). Do not print full text.
-5. **DEV PREVIEW badge:** Confirm the amber "DEV PREVIEW — Simulated Grading" badge and disclaimer text remain visible. Do not remove or hide.
-6. **Real/fake identification:** How to confirm the displayed result came from `llm_grader.v1` using the DB `detailed_corrections[0]` marker or `detailed_corrections` field in the API response (if exposed). Confirm the UI does not currently expose grader version — that is a separate future concern.
-7. **No new grading calls:** Confirm `fetchAndShowGrading` will not trigger a new Groq call. It calls `GET /api/v1/sessions/{session_id}/grading` (read-only); the API returns the cached DB row. No side effects.
-8. **Retry button check:** Confirm the Retry button behavior when a 200 result already exists — the card should render scores, not show the Retry button.
-9. **Badge removal scope:** Assess whether the DEV PREVIEW badge should be removed now that a real `llm_grader.v1` row exists. Do not remove in this audit — document the decision criteria for a future separate authorization.
-10. **Future UI labeling:** Consider whether a future patch should display `grader_version` or a real/fake indicator in the UI. Do not implement — flag as a future improvement.
+**What this audit must answer:**
+1. **Badge wording:** Should the badge remain but change text from `"DEV PREVIEW — Simulated Grading"` to something neutral like `"DEV PREVIEW"` only? Or is it safe to use `"DEV PREVIEW — AI Grading"`? What wording avoids overclaiming production readiness?
+2. **Disclaimer text:** Should the disclaimer stop referencing `fake_grader.v1` explicitly? Could it use wording like `"Dev preview: scores are AI-generated and not final pedagogical grading"` that is accurate for both graders?
+3. **Dynamic vs static:** Should the UI inspect `detailed_corrections[0].grader_version` from the API response and conditionally change badge/disclaimer text? Or remain static but use neutral wording? Evaluate complexity vs benefit.
+4. **API surface:** Should the `GradingRead` schema expose a top-level `grader_version` or `is_ai_graded` field instead of burying it in `detailed_corrections[0]`? What is the minimal schema addition if any?
+5. **Minimal safe patch scope:** What is the exact, smallest change to `static/index.html` (and optionally `schemas/session.py`) that corrects the inaccuracy without introducing new complexity?
+6. **Test strategy:** How to verify the fix using existing session `...218666a0` without triggering new Groq calls. Playwright automation reuse is an option (token file approach already proven).
+7. **`is_dev_preview` field:** `GradingRead.is_dev_preview: bool = True` is hardcoded but the JS does not read it — it is unused. Should it be removed, wired up, or left as-is?
+8. **Regression risk:** What could break if `static/index.html` is modified? The file serves the entire control center. Any syntax error in JS disables the full UI.
+9. **Wording constraint:** Do not claim scores are production-grade or final. Do not claim the grader is fully validated. Badge/disclaimer must remain honest about dev-preview status regardless of grader version.
+10. **Implementation plan:** Produce a concrete step-by-step plan for the actual Patch 6 implementation (for a future approved prompt). Include which file(s) to change, the exact old and new strings/code, and the verification steps.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
