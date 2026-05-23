@@ -55,4 +55,4 @@ class GradingResult(BaseModel):
     vocab_score: float
     detailed_corrections: list[dict[str, Any]] = Field(default_factory=list)
     ai_summary_feedback: str
-    grader_version: Literal["fake_grader.v1"] = "fake_grader.v1"
+    grader_version: str = "fake_grader.v1"
