@@ -8,14 +8,31 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.contracts import SessionCompletedJob
+from src.contracts import GradingResult, SessionCompletedJob
 from src.evaluation_input_builder import build_evaluation_input
 from src.fake_grader import fake_grade
 from src.grading_repository import GradingRepository
+from src.llm_grader import LLMGraderError, llm_grade_with_client
 
 
 logger = logging.getLogger(__name__)
 QUEUE_NAME = os.getenv("GRADING_QUEUE_NAME", "luve.session.completed")
+
+
+def _get_grading_provider() -> str:
+    raw = os.getenv("GRADING_PROVIDER", "fake").strip().lower()
+    if raw not in ("fake", "llm"):
+        logger.warning(
+            "grading.unknown_provider value=%r — falling back to fake", raw
+        )
+        return "fake"
+    return raw
+
+
+def _build_grader_client() -> Any:
+    # Patch 2A: real provider client not yet implemented.
+    # Raising here ensures GRADING_PROVIDER=llm falls back safely to fake_grade.
+    raise LLMGraderError("No LLM provider client configured — real provider not yet implemented")
 
 
 async def process_session_completed_job(
@@ -30,15 +47,39 @@ async def process_session_completed_job(
         return
 
     evaluation_input = build_evaluation_input(session_row)
-    if not evaluation_input.turns:
-        logger.warning("grading.no_turns session_id=%s", job.session_id)
+    if not evaluation_input.quality_signals.get("has_student_turns"):
+        logger.warning("grading.no_user_turns_skip session_id=%s", job.session_id)
+        return
 
-    result = fake_grade(evaluation_input)
+    provider = _get_grading_provider()
+    result: GradingResult
+
+    if provider == "llm":
+        try:
+            client = _build_grader_client()
+            result = await llm_grade_with_client(evaluation_input, client)
+            result.detailed_corrections = [
+                {"type": "grader_info", "grader_version": result.grader_version, "message": ""},
+                *result.detailed_corrections,
+            ]
+        except Exception as exc:
+            logger.warning(
+                "grading.llm_failed_fallback session_id=%s error=%s: %s",
+                job.session_id,
+                type(exc).__name__,
+                exc,
+            )
+            result = fake_grade(evaluation_input)
+    else:
+        result = fake_grade(evaluation_input)
+
     await repository.upsert_grading_result(result)
     logger.info(
-        "grading.completed session_id=%s overall_score=%.2f fake_grader=true",
+        "grading.completed session_id=%s overall_score=%.2f provider_requested=%s grader_version=%s",
         job.session_id,
         result.overall_score,
+        provider,
+        result.grader_version,
     )
 
 
