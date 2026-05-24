@@ -53,6 +53,8 @@ htmlcov/
 # IDEs
 .vscode/
 .idea/
+.cursor/
+.codegraph/
 *.swp
 *.swo
 *~
