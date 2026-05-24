@@ -321,6 +321,36 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 **Constraints respected:**
 * No Groq calls. No grading-worker started. No DB writes. No new TEN sessions. No RabbitMQ publish/consume. No backend/schema/worker files modified. No secrets printed.
 
+## 14. Patch 7A + 7B — IDE Artifacts Ignored; CUDA Reproducibility Documented
+
+**Both patches are complete and committed.**
+
+### Patch 7A — `.gitignore` IDE artifacts (commit `ec94d10`)
+* Added `.codegraph/` and `.cursor/` to `.gitignore` under the IDEs section.
+* No runtime code changed. Eliminates recurring untracked entries from `git status`.
+
+### Patch 7B — CUDA/cu126 reproducibility file
+* Created `services/core-api/requirements-torch-cu126.txt`.
+* Records the known-working PyTorch cu126 stack: `torch==2.7.1+cu126`, `torchaudio==2.7.1+cu126`, `torchvision==0.22.1+cu126`.
+* Includes install-order instructions: this file must be installed before `requirements.txt` when creating a fresh GPU-capable venv.
+* Documents the cuInit=999 kernel module reboot caveat.
+* Does not add nvidia-\* packages manually — the torch cu126 wheel pulls correct transitive deps.
+* `ctranslate2==4.7.1` and `faster-whisper==1.2.1` remain in `requirements.txt`.
+* **No venv modified. No packages installed or uninstalled. No runtime code changed.**
+
+**Verified environment (read-only venv check):**
+* `torch`: `2.7.1+cu126` ✓
+* `torch.version.cuda`: `12.6` ✓
+* `torchaudio`: `2.7.1+cu126` ✓
+* `torchvision`: `0.22.1+cu126` ✓
+* `ctranslate2`: `4.7.1` ✓
+* `faster-whisper`: `1.2.1` ✓
+
+**Remaining gap:** Fresh-venv rebuild from these requirements files has not been executed. The reproducibility claim is based on recording the known-working state — not a clean install test.
+
+**Constraints respected:**
+* No packages installed or uninstalled. No venv modified. No runtime Python source changed. No Groq calls. No DB writes. No secrets printed.
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -333,6 +363,6 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13) — no longer reference "Simulated Grading" or `fake_grader.v1`. Multi-session stability and CUDA reproducibility remain unverified.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13) — no longer reference "Simulated Grading" or `fake_grader.v1`. CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Multi-session stability remains unverified.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

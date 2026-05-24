@@ -1,0 +1,27 @@
+# CUDA 12.6 PyTorch stack for local STT GPU support.
+#
+# Install this BEFORE services/core-api/requirements.txt when creating
+# a fresh local venv that should run faster-whisper/ctranslate2 on GPU:
+#
+#   pip install -r services/core-api/requirements-torch-cu126.txt
+#   pip install -r services/core-api/requirements.txt
+#
+# Do not install these packages from the default PyPI index if CUDA support
+# is required; use the PyTorch cu126 wheel index below.
+#
+# Known working environment (verified on CUDA 12.6, NVIDIA driver 560+):
+#   torch==2.7.1+cu126
+#   torchaudio==2.7.1+cu126
+#   torchvision==0.22.1+cu126
+#   ctranslate2==4.7.1     (in requirements.txt via faster-whisper)
+#   faster-whisper==1.2.1  (in requirements.txt)
+#
+# The torch wheel pulls the correct nvidia-* transitive dependencies
+# for cu126 automatically. Do not add nvidia-* packages here manually.
+#
+# If cuInit returns error 999 after a torch reinstall, a system reboot
+# may be required to recover the NVIDIA kernel module state.
+--index-url https://download.pytorch.org/whl/cu126
+torch==2.7.1+cu126
+torchaudio==2.7.1+cu126
+torchvision==0.22.1+cu126

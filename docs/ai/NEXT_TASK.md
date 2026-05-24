@@ -139,44 +139,59 @@ This file is a scoped task memo, not the global repo state source of truth.
 * DEV PREVIEW badge retained; production readiness not claimed.
 * `is_dev_preview` field and top-level `grader_version` exposure left for future scope.
 
+### Task 15: Patch 7 Audit/Design — Multi-Session Stability and Reproducibility Planning.
+* Audited all 10 questions: stability/fallback behavior, score consistency, CUDA reproducibility, API metadata exposure, dead code, publisher shutdown, `.gitignore`, multi-session test plan, prioritized patches.
+* Key findings: `grading.llm_failed_fallback` silently upserts fake row; both verified sessions returned identical scores (temperature=0 + similar transcripts likely cause); `requirements.txt` does not pin torch cu126; `SQLSessionStore.persist_event_log` is dead but ten_compat.py must be checked before removal; `close_publisher()` not wired to lifecycle; `.codegraph/` and `.cursor/` not in `.gitignore`.
+* Produced prioritized patch list: 7A (.gitignore), 7B (CUDA requirements), 7C (multi-session live test), 7D (grader_version API), 7E (dead code), 7F (publisher shutdown).
+
+### Task 16: Patch 7A — Ignore Local IDE Artifacts (commit `ec94d10`).
+* Added `.codegraph/` and `.cursor/` to `.gitignore` under the IDEs section.
+* No runtime code changed. Working tree is clean after this commit.
+
+### Task 17: Patch 7B — CUDA/cu126 Reproducibility File.
+* Created `services/core-api/requirements-torch-cu126.txt` recording the known-working PyTorch cu126 stack.
+* Install order: `requirements-torch-cu126.txt` first, then `requirements.txt`.
+* No packages installed/uninstalled. No venv modified. No runtime source changed.
+* Fresh-venv rebuild not tested; reproducibility claim is based on recording known-working state.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not call Groq, do not run worker, do not run new sessions, do not write DB, do not change DB schema.**
+**Mode: AUDIT / DESIGN ONLY — do not call Groq without explicit approval, do not run worker, do not create sessions, do not write DB, do not purge RabbitMQ without approval.**
 
-### Patch 7 Audit/Design: Multi-Session Real Grading Stability and Reproducibility Planning
+### Patch 7C Audit/Design: Multi-Session Real Groq Grading Stability Test Plan
 
-**Goal of audit:** Design a minimal plan to verify that real Groq grading (`GRADING_PROVIDER=llm`) is stable and reproducible across multiple sessions, and identify any remaining gaps or cleanup items before wider use. Do not implement in this audit.
+**Goal:** Execute a controlled 2-session live Groq grading run through the normal RabbitMQ consume-loop path to verify score sensitivity (different transcript qualities → different scores) and worker loop stability. Requires explicit per-session Groq approval.
 
-**Do not in this task:**
-* Do not call Groq without explicit approval.
-* Do not start the grading-worker consume loop.
-* Do not run a new TEN session.
-* Do not write DB.
-* Do not change DB schema or add migrations.
-* Do not touch CUDA dependencies — reproducibility audit only.
+**Do not in this task without explicit approval:**
+* Do not call Groq without explicit per-session approval in the prompt.
+* Do not start the grading-worker consume loop without explicit approval.
+* Do not run a new TEN session without explicit approval.
+* Do not purge RabbitMQ without explicit approval.
+* Do not write DB rows beyond what the approved grading worker writes.
 * Do not print secrets, API keys, DATABASE_URL credentials, raw transcript text, or auth tokens.
 
-**What this audit must answer:**
-1. **Stability:** What conditions (Groq rate limits, network timeouts, empty transcript edge cases) could cause `llm_grader.v1` to fail silently? Is the `grading.llm_failed_fallback` log path exercised and safe?
-2. **Score consistency:** Are the fixed scores (`overall=2.95`, `fluency=4.00`, etc.) appearing across sessions a coincidence or an artifact of the prompt/model? What would a multi-session comparison reveal?
-3. **CUDA reproducibility:** Is the current `torch 2.7.1+cu126` venv state captured anywhere (requirements or lock file) so that it can be reproduced after a clean install?
-4. **Grader version exposure:** Should `GradingRead` expose a top-level `grader_version` field so the UI can display which grader was used? Minimal schema change if any.
-5. **`is_dev_preview` wiring:** Should `GradingRead.is_dev_preview: bool = True` remain hardcoded or be wired to a DB column or env flag? What is the minimal change?
-6. **Dead code removal:** `SQLSessionStore.persist_event_log` is dead code (identified in Task 2). Should it be removed now or left until a broader cleanup? What verification is needed?
-7. **`close_publisher()` shutdown wiring:** Risk of not wiring it vs complexity. Should this be a separate patch?
-8. **`.gitignore` additions:** `.codegraph/` and `.cursor/` appear as untracked in every `git status`. Should they be added to `.gitignore`?
-9. **Multi-session test plan:** Propose a concrete minimal test plan (how many sessions, what inputs, what checks) that would give confidence in `llm_grader.v1` stability without excessive Groq spend.
-10. **Prioritized next patches:** Produce a prioritized list of the smallest next patches (Patch 7A, 7B, …) for future approved prompts.
+**What this task must accomplish:**
+1. Pre-run checks: `git status --short` clean, `rabbitmqctl list_queues` shows 0 messages, no worker running.
+2. Session A (short, poor quality): run TEN session with 1–2 short grammatically incorrect sentences. Verify `messages=1` before worker start.
+3. Worker run A: `timeout 60 python -m src.worker` with `GRADING_PROVIDER=llm`, `RABBITMQ_HOST=localhost`. Verify `grading.completed` log, exit code 124. DB SELECT: scores, `marker_grader_version=llm_grader.v1`, no `llm_failed_fallback`.
+4. Session B (medium quality): run TEN session with 3–4 grammatically cleaner sentences and varied vocabulary. Verify `messages=1`. Worker run B (same procedure).
+5. Compare A vs B scores in DB: if `fluency/grammar/vocab` differ from each other and from the two prior sessions (`...a3d35b36`, `...218666a0`), score sensitivity is confirmed. If all four sessions return identical scores, flag as prompt/model floor issue and suspend further Groq calls.
+6. Post-run: confirm queue is empty, no unexpected grading rows written, no fallback triggered.
+
+**Stop conditions:**
+* `grading.llm_failed_fallback` in any worker log → stop immediately.
+* Exit code other than 0 or 124 → stop, read logs.
+* More than 2 new Groq calls consumed → stop.
+* Identical scores across all 4 sessions → stop and flag for prompt review.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
 * New DB schema / migration files (including adding `grader_version` column to `grading_results`).
 * Wiring reconciliation scanner as a background daemon or auto-start service.
 * Removing `SQLSessionStore.persist_event_log` dead code.
-* Removing DEV PREVIEW badge from UI (requires Patch 4 success + separate authorization).
+* Removing DEV PREVIEW badge from UI (requires production readiness + separate authorization).
 * Wiring `close_publisher()` into shutdown.
-* Adding `.codegraph/` and `.cursor/` to `.gitignore`.
 * Real grading stability verification over multiple sessions.
 * Scanner/backfill with `GRADING_PROVIDER=llm` (not approved).
 
