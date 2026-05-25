@@ -286,62 +286,37 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 11 passed; full suite 141 passed; no live scanner/backfill `--execute` run.
 * Closes operational gap: scanner no longer prints `ok` for sessions the worker silently skips; prevents ineligible sessions from reaching `process_session_completed_job`.
 
+### Task 32: Patch 7G-4D Implementation — Backfill Execute-Path Eligibility Gate (commit `80d4db7`).
+* Gated backfill execute and dry-run paths: `evaluate_grading_eligibility` called before `process_session_completed_job` for all candidates; ineligible sessions skipped with per-reason counters and `continue`.
+* Added local `_parse_min_student_words_env` helper (matching scanner; not cross-imported).
+* Added `--min-student-words N` CLI flag (default: `GRADING_MIN_STUDENT_WORDS` env or 25).
+* Updated `--no-require-user-turn` help text: flag retained for CLI backward compatibility only; eligibility helper now enforces user-turn presence.
+* Updated `--include-empty-raw` help text: NULL raw sessions selected by this flag are still gated by `evaluate_grading_eligibility(None)` → `no_raw_backup`.
+* Counter names aligned with scanner: `skipped_no_raw_backup`, `skipped_invalid_raw`, `skipped_no_user_turns`, `skipped_insufficient_words`.
+* `_count_user_turns` retained with updated docstring (superseded by `evaluate_grading_eligibility` in Patch 7G-4D).
+* Added `test_backfill_completed_sessions_patch7g4d.py` — 13 mocked unit tests; no DB/RabbitMQ/Groq/live services.
+* **Verification:** py_compile OK; targeted 13 passed; full suite 154 passed; no backfill/scanner `--execute` run.
+* Patch 7G-4 series complete.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY / NO RUNTIME CHANGES / NO LIVE SCANNER / NO DB WRITES / NO RABBITMQ / NO GROQ**
+**Patch 7G-5: Fake Fallback Env Gate**
 
-### Patch 7G-4D Audit/Design: Backfill Threshold Parity
-
-**Goal:** Audit `backfill_completed_sessions.py` to determine whether it can route below-threshold sessions into the grading path, and design the minimal safe runtime patch to bring it to parity with the scanner (Patch 7G-4C) and worker (Patch 7E).
-
-**Recommended model:**
-* **Sonnet high:** focused docs/small tests/small runtime patches — bounded scope, clear prior art.
-* **Sonnet max:** tricky localized patches with race/idempotency/rollback concerns, or stale/mixed previous output.
-* **Opus high:** architecture audit, production-readiness review, DB/queue/workflow design, migration/runbook strategy.
-* **Opus max:** high-risk cross-system production hardening, scanner/backfill/regrade strategy with DB/RabbitMQ/Groq side-effect analysis.
+**Status: Not yet started. Awaiting approved prompt.**
 
 **Background:**
-`backfill_completed_sessions.py` shares the same `_count_user_turns()` defects as the scanner had before Patch 7G-4C: type-key only, `isinstance(dict)` guard, no word-count gate. The scanner execute path is now gated by `evaluate_grading_eligibility` (Patch 7G-4C). The backfill has no equivalent gate. Running it with `GRADING_PROVIDER=llm` could submit below-threshold sessions to the grading path.
+`process_session_completed_job` in `worker.py` silently falls back to `fake_grade()` on any Groq error, including network failures, timeouts, and malformed responses. In production, this causes fabricated scores that appear identical to real `llm_grader.v1` scores — a correctness and trust risk. The fix is a `GRADING_FAKE_FALLBACK` env gate (default `false`) that disables the silent fake-grade fallback. With fallback disabled, Groq failures NACK the message → DLQ rather than producing a misleading fake row.
 
-**Audit scope (read-only):**
-* Read `services/grading-worker/scripts/backfill_completed_sessions.py` in full.
-* Compare its `_count_user_turns` usage with the scanner's now-gated execute path (Patch 7G-4C).
-* Identify all candidate-selection and grading-dispatch call sites.
-* Determine whether `process_session_completed_job` can be reached for below-threshold sessions.
-* Compare with worker gate (Patch 7E) and scanner gate (Patch 7G-4C).
-* Identify structural differences from scanner: `--include-empty-raw`, `ORDER BY ended_at DESC` (newest-first vs. scanner ASC), no grace window.
-* Determine safest minimal runtime change to wire `evaluate_grading_eligibility` in the backfill execute path.
+**Goal:** Gate fake fallback behind `GRADING_FAKE_FALLBACK` env var.
+* Default: `GRADING_FAKE_FALLBACK=false` — fallback disabled; Groq failures NACK to DLQ.
+* `GRADING_FAKE_FALLBACK=true` — existing behavior preserved for local dev/testing.
+* `GRADING_PROVIDER=fake` — always uses fake grader; unaffected by this flag (fake is the requested provider, not a fallback).
 
-**Design deliverable (docs only — no runtime file changes):**
-* Written audit findings.
-* Proposed minimal diff for the runtime change (pseudocode or exact).
-* Proposed test coverage (mocked, matching Patch 7G-4C pattern).
-* Risk assessment: idempotency, rollback, side-effect surface.
-* Explicit statement of whether `_count_user_turns` should be removed from backfill or retained with a docstring note (matching scanner precedent from Patch 7G-4C).
-
-**Constraints:**
-* Do not implement the runtime patch in this sub-patch — audit and design only.
-* Do not run backfill.
-* Do not run scanner.
-* Do not run `--execute`.
-* Do not call Groq.
-* Do not start grading-worker.
-* Do not start core-api.
-* Do not run TEN/browser sessions.
-* Do not write DB.
-* Do not publish/consume/purge RabbitMQ.
-* Do not touch `.understand-anything/` or `docs/system-map.md`.
-* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, or auth tokens.
-* Do not stage or commit runtime files.
-
-**Verification (audit only — no runtime test runs):**
-* Confirm `backfill_completed_sessions.py` fully read and findings are grounded in current code (not assumptions).
-* No runtime files modified; git status clean (only user-owned untracked artifacts).
+**Recommended model:**
+* **Sonnet high:** focused runtime patch with clear prior art (worker.py, existing test patterns).
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-4D runtime: implement backfill eligibility gate.
-* Patch 7G-5 (fake fallback env gate).
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
 * Patch 7G-7 (migration strategy docs and numbered migration directory).
 * Patch 7G-8 (`grading_skip_log` implementation).
