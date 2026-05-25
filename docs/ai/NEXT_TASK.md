@@ -256,48 +256,54 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Recommended sequence: 7G-4A (helper + tests only) → 7G-4B (scanner dry-run wired) → 7G-4C (scanner execute gated) → 7G-4D (backfill parity).
 * Full findings recorded in `docs/ai/PROJECT_STATE.md` Section 19 Patch 7G-4 subsection.
 
+### Task 29: Patch 7G-4A Implementation — Session Eligibility Helper and Unit Tests (commit `462f5a4`).
+* Added `services/grading-worker/src/session_eligibility.py` — pure Python eligibility helper; stdlib-only imports (`json`, `collections.abc`, `dataclasses`, `typing`); no DB/RabbitMQ/runtime imports.
+* Helper exports: `DEFAULT_MIN_STUDENT_WORDS=25`, `GradingEligibility` frozen dataclass (`eligible`, `reason`, `user_turn_count`, `student_word_count`), `parse_raw_backup_events`, `get_event_kind`, `get_event_text`, `count_user_turns`, `count_student_words`, `evaluate_grading_eligibility`. Private helper `_decode_event` handles per-event JSON strings.
+* Reason codes: `eligible`, `no_raw_backup`, `invalid_raw_backup`, `no_user_turns`, `insufficient_words`.
+* Handles: `type`/`event` aliases, Mapping-like events/payloads (`UserDict`, `asyncpg.Record`), `list[dict]`, JSON array string, per-event JSON object strings, `None`, invalid JSON, below/at/above threshold, `min_student_words=0` gate-disable.
+* `GradingEligibility` never exposes transcript text — verified by `test_evaluate_result_has_no_transcript_text`.
+* Added `services/grading-worker/tests/test_session_eligibility.py` — 45 unit tests; no DB, no RabbitMQ, no live services.
+* **Verification:** py_compile OK; 45/45 targeted tests passed; 105/105 full suite passed (60 pre-existing + 45 new); import smoke `eligibility_import_smoke_ok`; static safety check — `session_eligibility` referenced only in helper file and tests; not wired into scanner, backfill, or worker.
+* No Groq calls. No services started. No DB writes. No RabbitMQ operations. No scanner/backfill execution. No sessions.
+
 ---
 
 ## Current Task
-**Mode: CODE + TESTS — NO GROQ / NO DB WRITES / NO SCANNER EXECUTION**
+**Mode: CODE + TESTS / DRY-RUN ONLY / NO EXECUTE / NO DB WRITES / NO RABBITMQ PUBLISH**
 
-### Patch 7G-4A Implementation: Session Eligibility Helper and Unit Tests
+### Patch 7G-4B Implementation: Scanner Dry-Run Categorization Using Session Eligibility Helper
 
-**Goal:** Add `services/grading-worker/src/session_eligibility.py` with a pure Python eligibility helper and `services/grading-worker/tests/test_session_eligibility.py` with ≥18 unit tests. No scanner, backfill, or worker behavior changes in this sub-patch.
+**Goal:** Wire `reconciliation_scanner.py` dry-run categorization to the `session_eligibility` helper so dry-run output reports accurate per-reason buckets. The execute path is unchanged in this sub-patch.
 
 **Background:**
-Patch 7G-4 audit confirmed `_count_user_turns()` in both scripts has three defects: only `"type"` key checked, `dict`-only guard, turns counted not words. The eligibility helper establishes correct word-counting logic as a tested unit before any scanner/backfill wiring (7G-4B/C/D).
+Patch 7G-4A established the shared eligibility helper with correct type/event alias handling, Mapping-compatible guards, and word-counting logic. Patch 7G-4B wires the helper into the scanner's dry-run path only, replacing the defective `_count_user_turns()` inline logic with `evaluate_grading_eligibility()`. The execute path (`process_session_completed_job()`) must remain unchanged until Patch 7G-4C.
 
-**New files only (no existing files modified):**
+**Scope — modify only:**
+* `services/grading-worker/scripts/reconciliation_scanner.py`
+* New test file: `services/grading-worker/tests/test_scanner_patch7g4b.py` (mocked/unit only)
 
-1. `services/grading-worker/src/session_eligibility.py`
-   - `parse_raw_backup_events(raw_backup_json: Any) -> list`
-   - `get_event_kind(event: Any) -> str | None`
-   - `count_user_turns(raw_backup_json: Any) -> int | None`
-   - `count_student_words(raw_backup_json: Any) -> int | None`
-   - `EligibilityResult` dataclass: `eligible`, `reason`, `user_turn_count`, `student_word_count`
-   - `evaluate_grading_eligibility(raw_backup_json, min_student_words=25) -> EligibilityResult`
+**Dry-run output must report per-reason buckets:**
+* `eligible` — sessions that would be submitted to grading
+* `skipped_existing_grading` — sessions already have a `grading_results` row
+* `skipped_no_raw_backup` — `raw_backup_json` is `None`
+* `skipped_invalid_raw_backup` — present but not parseable as JSON array
+* `skipped_no_user_turns` — no `USER_TURN` events found
+* `skipped_insufficient_words` — student word count < threshold
 
-2. `services/grading-worker/tests/test_session_eligibility.py`
-   - ≥18 unit tests (no DB, no RabbitMQ, no live session)
+**Allowed scanner changes in this sub-patch:**
+* Replace/wrap `_count_user_turns()` dry-run categorization with `evaluate_grading_eligibility()`.
+* Add `--min-student-words N` CLI flag (default: `GRADING_MIN_STUDENT_WORDS` env or 25).
+* Update dry-run summary output to include `eligible_total` and per-reason skip counts.
 
-**Test coverage must include:**
-* `None` input → `skipped_no_raw_backup`
-* Empty list `[]` → `skipped_no_user_turns`
-* Invalid JSON string → `skipped_invalid_raw_backup`
-* No USER_TURN events (AI only) → `skipped_no_user_turns`
-* `"type"` key USER_TURN → `eligible`
-* `"event"` key USER_TURN → `eligible` (alias)
-* Mixed `type`/`event` aliases → both counted
-* Mapping-like event (UserDict) → recognized as USER_TURN
-* Per-event JSON strings (double-encoded) → decoded and counted
-* Below threshold → `skipped_insufficient_words`
-* Exactly at threshold (boundary) → `eligible`
-* Above threshold → `eligible`
-* `min_student_words=0` disables word gate
-* Multi-turn word sum correct
-* AI turns excluded from student word count
-* No transcript text in any `EligibilityResult` field
+**Not allowed in this sub-patch:**
+* Do not change the execute path (`--execute` behavior).
+* Do not call `process_session_completed_job()` with different arguments.
+* Do not add any early-return or skip logic to the execute path — that is Patch 7G-4C scope.
+
+**Tests must:**
+* Be mocked/unit tests only — do not run scanner against live DB or queue.
+* Cover each reason bucket in dry-run output.
+* Not call Groq, start services, write DB, publish/consume/purge RabbitMQ, or run any session.
 
 **Constraints:**
 * Do not run scanner/backfill.
@@ -308,23 +314,23 @@ Patch 7G-4 audit confirmed `_count_user_turns()` in both scripts has three defec
 * Do not run TEN/browser sessions.
 * Do not write DB.
 * Do not publish/consume/purge RabbitMQ.
-* Do not modify scanner/backfill/worker behavior yet (helper only).
+* Do not change scanner execute behavior (Patch 7G-4C scope).
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
 * Do not print secrets, API keys, `DATABASE_URL`, raw transcript, or auth tokens.
 
 **Verification:**
-* `py_compile services/grading-worker/src/session_eligibility.py`
-* `pytest services/grading-worker/tests/test_session_eligibility.py -v` — all new tests pass
-* `pytest services/grading-worker/tests/ -v` — all 60 existing tests still pass
-* No live services, no DB writes, no RabbitMQ, no Groq calls
+* `py_compile services/grading-worker/scripts/reconciliation_scanner.py`
+* `pytest` on new scanner tests — all pass
+* `pytest services/grading-worker/tests/ -q` — all pre-existing 105 tests still pass
+* Execute path behavior confirmed unchanged
 
 **Deliverable:**
-* Two new files committed independently.
-* No scanner/backfill/worker behavior changed.
-* `py_compile` + `pytest` results confirmed before commit.
+* `scripts/reconciliation_scanner.py` updated (dry-run categorization only).
+* New scanner mocked tests committed.
+* Execute path verified unchanged.
+* `py_compile` + `pytest` confirmed before commit.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-4B: wire scanner dry-run to eligibility helper for categorization.
 * Patch 7G-4C: gate scanner execute path — skip below-threshold before `process_session_completed_job`.
 * Patch 7G-4D: backfill parity.
 * Patch 7G-5 (fake fallback env gate).
