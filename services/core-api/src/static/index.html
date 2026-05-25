@@ -847,12 +847,30 @@
       }
 
       try {
-        const res = await fetch(
-          buildCoreApiUrl(`/api/v1/sessions/${sessionId}/grading`),
+        // Step 1: check grading status before fetching scores
+        const statusRes = await fetch(
+          buildCoreApiUrl(`/api/v1/sessions/${sessionId}/grading/status`),
           { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } }
         );
 
-        if (res.status === 404) {
+        if (statusRes.status === 404) {
+          ui.gradingCard.classList.add("hidden");
+          return;
+        }
+
+        if (!statusRes.ok) {
+          ui.gradingContent.innerHTML = `<p class="text-rose-400">Failed to check grading status (HTTP ${statusRes.status}).</p>`;
+          return;
+        }
+
+        const { status } = await statusRes.json();
+
+        if (status === "insufficient_evidence") {
+          ui.gradingContent.innerHTML = '<p class="text-amber-400">Not enough speech to grade. Try a longer session.</p>';
+          return;
+        }
+
+        if (status === "pending") {
           ui.gradingContent.innerHTML = '<p class="text-slate-400">Grading pending — try again later.</p>';
           const retryBtn = document.createElement("button");
           retryBtn.textContent = "Retry";
@@ -861,6 +879,12 @@
           ui.gradingContent.appendChild(retryBtn);
           return;
         }
+
+        // status === "graded" — Step 2: fetch and render full grading result
+        const res = await fetch(
+          buildCoreApiUrl(`/api/v1/sessions/${sessionId}/grading`),
+          { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } }
+        );
 
         if (!res.ok) {
           ui.gradingContent.innerHTML = `<p class="text-rose-400">Failed to load grading result (HTTP ${res.status}).</p>`;

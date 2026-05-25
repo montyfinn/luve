@@ -40,3 +40,9 @@ class GradingRead(BaseModel):
     graded_at: datetime
     is_dev_preview: bool = True
 
+
+class GradingStatusRead(BaseModel):
+    session_id: UUID
+    status: str  # "graded" | "pending" | "insufficient_evidence"
+    student_word_count: int | None = None
+
