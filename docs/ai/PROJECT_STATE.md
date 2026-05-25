@@ -665,6 +665,206 @@ Port 8080 Nginx proxy was not running. UI loaded via `file:///…/static/index.h
 * Port 8080 Nginx/proxy was not part of this smoke (UI loaded via `file://`).
 * No DB-backed `grading_status` column yet.
 
+## 19. Patch 7G — Production Hardening Audit
+
+**Status: Audit/design complete (2026-05-25). No runtime files modified.**
+
+This audit assessed production readiness requirements across 13 areas for the Patch 7E/7F grading status and quality gate system. No migrations, implementations, DB changes, Groq calls, or runtime code changes were made.
+
+### 1. DB Persistence for Skipped Sessions
+
+**Recommended approach: separate `grading_skip_log` table (Option D).** Four options were evaluated:
+
+- **Option A — `grading_status` column on `grading_results`**: Cannot record skipped sessions; rows only exist after a grade completes.
+- **Option B — nullable score row + `skipped_reason`**: Upserts a row with NULL scores. Requires `GradingRead.overall_score` to become `Optional[float]` — high blast radius on all existing consumers.
+- **Option C — `grading_status` column on `sessions` table**: Adds unrelated state to the core sessions table; pollutes `SessionRead` schema decisions.
+- **Option D — separate `grading_skip_log` table** (recommended): Purely additive migration, no null-score problem, clean rollback (`DROP TABLE`), enables SRE queryability, and enables regrade list sourcing from one authoritative table.
+
+Proposed schema:
+```sql
+CREATE TABLE IF NOT EXISTS grading_skip_log (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id          UUID NOT NULL REFERENCES sessions(id),
+    skipped_reason      TEXT NOT NULL,
+    student_word_count  INT,
+    min_words_threshold INT,
+    skipped_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS grading_skip_log_session_id_key ON grading_skip_log (session_id);
+```
+
+Not implemented yet. Migration strategy must be finalized in Patch 7G-7 before this table is created.
+
+### 2. Migration Strategy
+
+**Finding:** No Alembic or migration framework exists in the repo. Only `infrastructure/db-init/01-init.sql` (run once by Docker `entrypoint-initdb.d`). No `alembic_version` table confirmed by SELECT-only inspection.
+
+**Recommended approach:** Numbered SQL migration directory:
+```
+infrastructure/db-migrations/
+  0001_grading_skip_log.sql
+  0002_...
+```
+
+Scripts must be idempotent (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`). Each migration requires: `pg_dump` backup → preflight (active transaction check) → apply → verify → rollback plan.
+
+**Postgres safety note:** `ALTER TABLE grading_results ADD COLUMN IF NOT EXISTS grader_version TEXT` is a metadata-only operation in Postgres 15 (nullable column, no DEFAULT) — no table rewrite, minimal lock.
+
+Not implemented yet. Migration directory and scripts are Patch 7G-7 scope.
+
+### 3. Critical Drift: Worker vs. Core-API Word-Count Helper
+
+**Finding:** `evaluation_input_builder.build_evaluation_input()` (grading-worker) and `_compute_student_word_count()` (core-api status endpoint) diverge on three points:
+
+| Difference | Worker (`evaluation_input_builder`) | Core-API (`session_service`) |
+|---|---|---|
+| `event` field alias | `event.get("type") or event.get("event")` | `event.get("type")` only |
+| `None` input | `_coerce_event_list(None)` → `[]` → count = 0 | returns `None` |
+| Nested Mapping events | handled | not handled |
+
+**Risk:** Worker may skip a session (word count below threshold) while the core-api status endpoint infers a higher word count for the same session and returns `"pending"` instead of `"insufficient_evidence"`. The user sees a perpetual retry loop rather than the actionable "not enough speech" message.
+
+**Fix planned in Patch 7G-2:** Apply `event` alias handling and Mapping handling to `_compute_student_word_count`. Add contract tests asserting parity for a shared fixture set. No cross-service import.
+
+### 4. Reconciliation Scanner Critical Gap
+
+**Finding:** `scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running `--execute` with `GRADING_PROVIDER=llm` would submit below-threshold sessions to Groq, undoing the Patch 7E safety gate.
+
+**Risk severity: High.** Sessions the worker deliberately skipped would receive authoritative-looking scores, misleading users about short or noisy transcripts.
+
+**Fix planned in Patch 7G-4:** Add `--min-words` argument (default: `GRADING_MIN_STUDENT_WORDS` env, fallback 25). Gate scanner candidates by student word count before any submission.
+
+**Operational constraint:** Do not run scanner with `--execute` and `GRADING_PROVIDER=llm` until Patch 7G-4 is merged.
+
+### 5. Observability
+
+**Current log events (grep-able now):**
+- `grading.skipped_insufficient_evidence` — session_id, user_turn_count, student_word_count, min_student_words
+- `grading.status_inferred` — session_id, status, student_word_count
+- `grading.llm_failed_fallback` — session_id (fake score silently upserted)
+- `grading.completed` — session_id, overall_score, provider_requested, grader_version
+
+**Short-term ops check:**
+```bash
+journalctl -u grading-worker | grep 'grading\.'
+```
+
+**Medium-term (Patch 7G-9):** Prometheus counters:
+- `grading_jobs_total{outcome}` — `graded_llm`, `graded_fake`, `skipped_insufficient`, `failed_acked`, `failed_nacked`
+- `grading_status_requests_total{status}` — `graded`, `pending`, `insufficient_evidence`, `not_found`
+- `grading_fallback_total` — every fake-fallback event
+- `grading_queue_depth` — sampled from RabbitMQ management API
+
+Not implemented yet.
+
+### 6. Regrade Strategy
+
+**Two scenarios identified:**
+
+1. **Graded but result was wrong:** Extend reconciliation scanner with `--force-regrade` + `--session-id` flags. `upsert_grading_result` `ON CONFLICT DO UPDATE` makes regrade idempotent.
+2. **Skipped but threshold later lowered:** Source candidates from `grading_skip_log` (after Option D is implemented). Apply word-count gate with overridable `--min-words`. Delete the skip log row before resubmitting.
+
+**Requirements for both:** dry-run default, batch-size limit (≤ 20), per-call rate limiting to avoid Groq spend spikes. Regrade tooling is Patch 7G-8 scope. Not implemented yet.
+
+### 7. 8080/Control-Center Serving
+
+**Finding:** No Nginx in `docker-compose.yml`. No `StaticFiles` mount in `main.py`. Patch 7F-2 smoke required a `file://` URL workaround with `luve.control.coreApiUrl` localStorage injection.
+
+**Planned fix (Patch 7G-6):**
+```python
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+app.mount("/static", StaticFiles(directory="src/static"), name="static")
+
+@app.get("/control-center")
+async def control_center():
+    return FileResponse("src/static/index.html")
+```
+
+**Must be paired with CORS lockdown** (replacing `allow_origins=["*"]` with an explicit list via `CORS_ALLOW_ORIGINS` env var) before any broader exposure. Not implemented yet.
+
+### 8. API/UI Hardening
+
+**Items identified for Patch 7G-3:**
+- `GradingStatusRead.status: str` → `status: Literal["graded", "pending", "insufficient_evidence"]`. Pydantic raises on unexpected values rather than silently passing them through.
+- `fetchAndShowGrading` has no `else` fallback after the `pending` branch — a fourth status string falls through silently with no UI update.
+- `fetchAndShowGrading` has no 401/session-expired handling — an expired token renders no error to the user.
+
+No breaking changes to `GradingRead`. Not implemented yet.
+
+### 9. Queue/Worker Production Safety
+
+**Fake fallback risk (production blocker):** `grading.llm_failed_fallback` silently upserts `fake_grader.v1` scores on every Groq failure. In production, users would receive fabricated scores visually indistinguishable from real grading.
+
+**Immediate fix (Patch 7G-5):** Gate fake fallback behind `GRADING_FAKE_FALLBACK` env var (default `false`). With fallback disabled, Groq failures NACK the message → DLQ.
+
+**DLQ (Patch 7G-9):** Add `grading.dlq` exchange + `grading_dead_letter` queue with `x-dead-letter-exchange` binding. Failed jobs accumulate for SRE inspection rather than being silently lost. Not implemented yet.
+
+### 10. Transcript Quality / Noise Heuristics
+
+**Current gate:** raw student word count ≥ 25. Does not catch long-but-noisy transcripts (e.g., session `98a58d10` at 92 words with severe STT artifacts).
+
+**Future heuristics (not in current scope):**
+- Unique-word ratio < 0.3 → flag as repetitive
+- USER_TURN count < 3 → flag as insufficient dialogue
+- Single-word repetition > 40% of student words → flag
+
+Not implementing now. A `quality_flags JSONB` field on `grading_skip_log` can record heuristic flags later without a new table.
+
+### 11. Security and Privacy
+
+- **CORS `allow_origins=["*"]`** — production blocker. Replace with explicit origins via `CORS_ALLOW_ORIGINS` env var. Must pair with Patch 7G-6.
+- **Auth token in localStorage** — acceptable for local single-origin control center. Future external exposure requires CSP header (`Content-Security-Policy: default-src 'self'`) and no third-party scripts.
+- **`raw_backup_json` not exposed** — confirmed: `/grading/status` response does not return transcript data.
+- **Session ownership enforced** — both `/grading/status` and `/grading` enforce `s.user_id = :user_id` in the SQL JOIN.
+- **Rate limiting** — `/grading/status` has no rate limit. Add `slowapi` (10 req/min per user) before broader use.
+
+### 12. Production Readiness Checklist
+
+Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
+
+- [ ] CORS lockdown (`allow_origins=["*"]` → explicit list)
+- [ ] Persistent skip/status strategy approved and migrated (`grading_skip_log` or accepted limitation documented)
+- [ ] Migration strategy finalized (numbered SQL migrations directory proposed and reviewed)
+- [ ] Scanner `--min-words` threshold parity (Patch 7G-4)
+- [ ] Shared word-count helper / contract tests (Patch 7G-2)
+- [ ] Fake fallback gated or disabled (Patch 7G-5)
+- [ ] DLQ configured (Patch 7G-9)
+- [ ] Rate limiting on `/grading/status`
+- [ ] Metrics/log runbook written
+- [ ] Regrade runbook written
+- [ ] Smoke test runbook (standardized on `/control-center`, no `file://` workaround)
+- [ ] Rollback plan documented
+- [ ] Load/concurrency test at ≥ 10 concurrent sessions
+- [ ] Secrets/privacy review (CSP header, localStorage token scope)
+
+### 13. Recommended Patch Sequence
+
+| Patch | Scope | Blocker for production? |
+|---|---|---|
+| 7G-1 | Audit record (docs only) | No |
+| 7G-2 | `event` alias fix + word-count parity + contract tests | Yes |
+| 7G-3 | `Literal[...]` status + UI unknown-status fallback + 401 handling | Yes |
+| 7G-4 | Scanner `--min-words` hardening | Yes |
+| 7G-5 | Fake fallback env gate (`GRADING_FAKE_FALLBACK=false` default) | Yes |
+| 7G-6 | `StaticFiles` `/control-center` + CORS lockdown | Yes |
+| 7G-7 | Migration strategy docs + numbered migration directory proposal | Yes |
+| 7G-8 | `grading_skip_log` implementation (after 7G-7 approved) | Recommended |
+| 7G-9 | DLQ + Prometheus counters + regrade tooling | Recommended |
+
+**Final recommendation:** Do not jump to DB migration. Do not run 7G-2 and 7G-3 in parallel. The DevOps/SRE-safe implementation order is strictly sequential:
+
+1. Commit Patch 7G-1 audit docs first (this record).
+2. Implement Patch 7G-2: event alias / word-count parity + contract tests.
+3. Commit 7G-2 independently.
+4. Implement Patch 7G-3: `Literal[...]` status type + UI unknown-status fallback + 401 handling.
+5. Commit 7G-3.
+
+Running patches in sequence keeps blast radius small, rollback simple (one commit reverts one concern), and test failures easy to attribute to a single change.
+
+---
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -677,6 +877,6 @@ Port 8080 Nginx proxy was not running. UI loaded via `file:///…/static/index.h
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed; next implementation is Patch 7G-2.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

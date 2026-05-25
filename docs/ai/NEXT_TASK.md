@@ -216,46 +216,78 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Side effects confirmed absent:** no files modified, no Groq calls, no worker started, no TEN sessions, no DB writes, no RabbitMQ operations (queue `messages=0` pre/post), no secrets/raw data printed.
 * **SRE conclusions:** `NULL raw_backup_json` → `pending` (no false insufficient_evidence); `/grading` backward compatibility intact; UI branch prevents retry treadmill.
 
+### Task 25: Patch 7G Audit/Design — Production Hardening for Grading Status, Observability, and Migration Strategy.
+* Conducted 13-section production hardening audit for the Patch 7E/7F grading status and quality gate system. Audit/design only — no runtime files modified, no Groq calls, no DB writes, no RabbitMQ operations, no sessions.
+* **DB persistence:** Recommended separate `grading_skip_log` table (Option D) — additive, no null-score problem, clean rollback, enables SRE queryability and regrade list sourcing. Options A–C ruled out due to schema blast radius or semantic mismatch.
+* **Migration strategy:** No Alembic or migration framework found. Only `infrastructure/db-init/01-init.sql`. Proposed numbered SQL migrations directory (`infrastructure/db-migrations/0001_...`) with idempotent scripts and backup/preflight/verify/rollback requirements.
+* **Critical drift (word-count helper):** `_compute_student_word_count` in core-api does not handle the `"event"` field alias (worker checks `event.get("type") or event.get("event")`). Risk: worker skips a session; core-api status infers `"pending"` instead of `"insufficient_evidence"`.
+* **Reconciliation scanner critical gap:** `_count_user_turns()` counts USER_TURN events but does not enforce `GRADING_MIN_STUDENT_WORDS`. Running `--execute` with `GRADING_PROVIDER=llm` would submit below-threshold sessions to Groq, undoing the Patch 7E safety gate. **Do not run scanner with `--execute` + `GRADING_PROVIDER=llm` until Patch 7G-4 is merged.**
+* **Observability:** Current structured logs sufficient for grep-based ops. Medium-term: Prometheus counters for `grading_jobs_total{outcome}`, `grading_status_requests_total{status}`, `grading_fallback_total`, `grading_queue_depth`.
+* **Regrade strategy:** Two scenarios (wrong result, threshold lowered). Both require dry-run default, batch-size ≤ 20, rate-limit, `grading_skip_log` as source for skipped candidates.
+* **8080/control-center:** No Nginx in docker-compose, no StaticFiles in main.py. Fix planned (Patch 7G-6) must pair with CORS lockdown.
+* **API/UI hardening:** `Literal[...]` status type, unknown-status `else` fallback, 401 handling (Patch 7G-3). No `GradingRead` changes.
+* **Fake fallback (production blocker):** `grading.llm_failed_fallback` silently upserts fake scores. Fix: `GRADING_FAKE_FALLBACK` env gate + DLQ (Patch 7G-5 + 7G-9).
+* **Security/privacy:** CORS `allow_origins=["*"]` is a production blocker; rate limiting on `/grading/status` needed before broader use; transcript data not exposed in `/grading/status` response; session ownership enforced.
+* **Production readiness checklist:** 14-item checklist recorded in PROJECT_STATE.md Section 19.
+* **Recommended sequence (strictly sequential — do not run in parallel):** commit 7G-1 docs → implement + commit 7G-2 → implement + commit 7G-3 → 7G-4 → 7G-5 → 7G-6 → 7G-7 → 7G-8 → 7G-9. Each patch committed independently to keep blast radius small, rollback simple, and test failures attributable to a single change.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not call Groq, do not start worker, do not run sessions, do not write DB, do not add migration yet, do not modify runtime code yet.**
+**Mode: CODE + TESTS / NO GROQ / NO DB WRITES / NO WORKER / NO MIGRATION**
 
-### Patch 7G Audit/Design: Production Hardening for Grading Status Observability and Migration Strategy
+### Patch 7G-2 Implementation: Word-Count Parity and Status Endpoint Contract Tests
 
-**Goal:** Assess what is required to move the Patch 7E/7F grading status and quality gate system toward production readiness. Produce a design recommendation covering DB persistence, observability, code quality, operational tooling, and deployment prerequisites — without implementing yet.
+**Goal:** Fix the critical word-count helper drift identified in the Patch 7G audit. `_compute_student_word_count()` in `services/core-api/src/services/session_service.py` must handle the `"event"` field alias the same way the grading-worker's `evaluation_input_builder` does, so that the status endpoint does not infer `"pending"` for a session the worker correctly skipped.
+
+**Background:**
+The grading-worker's `evaluation_input_builder` handles two event key aliases: `event.get("type") or event.get("event")`. The core-api's `_compute_student_word_count` checks only `event.get("type")`. Events using the old `"event"` key are silently skipped by the status endpoint, producing an under-count. This can cause the status endpoint to return `"pending"` for a session the worker identified as below-threshold and skipped, placing the user in a perpetual retry loop rather than showing the actionable "not enough speech" message.
 
 **Constraints:**
 * Do not call Groq.
 * Do not start the grading-worker.
 * Do not run a new TEN session.
 * Do not write DB rows.
-* Do not add migration files yet.
-* Do not modify runtime code yet.
+* Do not add migration files.
+* Do not run scanner/backfill.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
-* Do not print secrets, API keys, `DATABASE_URL` credentials, raw transcript, `raw_backup_json`, or auth tokens.
+* Do not cross-import grading-worker code into core-api.
+* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, `raw_backup_json`, or auth tokens.
+* Do not modify `/grading` endpoint or `GradingRead` schema.
 
-**What this audit must answer:**
-1. Should `grading_status` / skip state become DB-persistent? What are the trade-offs of dynamic inference vs. a persisted `grading_status` column in `grading_results` or a separate `grading_skip_log` table?
-2. What migration strategy is safe given no Alembic and only `infrastructure/db-init/01-init.sql`? What is the safest way to add a nullable column to `grading_results` without downtime or data loss?
-3. Should the 8080/control-center static serving be standardised (e.g., `StaticFiles` mount in `main.py` or Nginx config) so that smoke tests do not require `file://` workarounds?
-4. Should `_compute_student_word_count` be extracted to a shared module used by both the grading worker and the status endpoint, to prevent the two from drifting apart if the word-count logic changes?
-5. Should observability move from `logger.info(grading.status_inferred …)` to a metrics counter (Prometheus, StatsD) or structured log aggregation? What is the minimum viable skip-rate monitoring approach?
-6. If `GRADING_MIN_STUDENT_WORDS` threshold is lowered, previously skipped sessions have no `grading_results` row and no queue message. What is the recommended regrade mechanism: re-publish to queue, direct one-shot call, or reconciliation scanner extension?
-7. What is the minimum checklist to call the grading pipeline (Patch 7E + 7F) production-ready? Consider: multi-tenant correctness, load/concurrency, token expiry handling, error rate alerting, and rollback plan.
+**Implementation scope:**
+1. Fix `_compute_student_word_count()` in `services/core-api/src/services/session_service.py`:
+   - Handle the `"event"` field alias: use `event.get("type") or event.get("event")` (matching worker behavior).
+   - Handle Mapping-like events if practical without adding external dependencies.
+   - Preserve current `None` → `None` return behavior unless explicitly changed.
+   - Keep the function small and self-contained — no cross-service import.
+2. Add contract tests in `services/core-api/tests/` (if a test harness exists) or a standalone smoke script (outside repo in `/tmp`, with explicit explanation why):
+   - Fixtures must include: standard `"type"` key event, old `"event"` alias key event, mixed `"type"` + `"event"` events, `None` input, empty list, double-encoded JSON string events.
+   - Assert `_compute_student_word_count` produces the same word count as the worker's logic for each fixture.
+   - If pytest is available: add tests to `tests/unit/test_session_service.py` (create file if it does not exist; do not create new test directories).
+   - If no test harness: add smoke script in `/tmp` with confirmed output showing fixture results.
+3. Keep `_parse_raw_backup_events` and `_get_min_student_words` unchanged unless the fix requires it.
+
+**Verification:**
+* `py_compile` on all modified files.
+* All new and existing tests pass (or confirmed smoke script output).
+* UI grep: `/grading/status` call, `insufficient_evidence` branch, `"Not enough speech to grade"` message, score tile render still present in `static/index.html`.
+* No Groq calls. No worker started. No DB writes. No RabbitMQ. No sessions.
 
 ## Out of Scope (requires separate approved prompt)
+* Patch 7G-3 (Literal status type, UI unknown-status fallback, 401 handling).
+* Patch 7G-4 (scanner `--min-words` hardening).
+* Patch 7G-5 (fake fallback env gate).
+* Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
+* Patch 7G-7 (migration strategy docs and numbered migration directory).
+* Patch 7G-8 (`grading_skip_log` implementation).
+* Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
-* New DB schema / migration files (including adding `grader_version` column to `grading_results`).
-* Wiring reconciliation scanner as a background daemon or auto-start service.
+* New DB schema or migration files.
+* Reconciliation scanner execution or modification.
 * Removing `SQLSessionStore.persist_event_log` dead code.
-* Removing DEV PREVIEW badge from UI (requires production readiness + separate authorization).
+* Removing DEV PREVIEW badge from UI.
 * Wiring `close_publisher()` into shutdown.
-* Real grading stability verification over multiple sessions.
-* Scanner/backfill with `GRADING_PROVIDER=llm` (not approved).
 
 ## Protected Runtime Files
-Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files, core-api UI/API files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.
-
-## Route Behavior Note
-`GET /sessions/{session_id}/grading` and `GET /sessions/{session_id}` match structurally different URL shapes (two segments vs one). They cannot conflict regardless of registration order; FastAPI's UUID path converter also rejects the literal string `"grading"` as a non-UUID. The `/grading` route is registered first for readability only.
+Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.
