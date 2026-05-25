@@ -231,17 +231,25 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Production readiness checklist:** 14-item checklist recorded in PROJECT_STATE.md Section 19.
 * **Recommended sequence (strictly sequential — do not run in parallel):** commit 7G-1 docs → implement + commit 7G-2 → implement + commit 7G-3 → 7G-4 → 7G-5 → 7G-6 → 7G-7 → 7G-8 → 7G-9. Each patch committed independently to keep blast radius small, rollback simple, and test failures attributable to a single change.
 
+### Task 26: Patch 7G-2 Implementation — Word-Count Parity Fix (commit `24fef0b`).
+* Fixed `_compute_student_word_count()` in `services/core-api/src/services/session_service.py` to accept `USER_TURN` events keyed by both `"type"` and `"event"`, matching `evaluation_input_builder` semantics.
+* Broadened event and payload type guards from `dict`-only to `Mapping`-compatible (covers `UserDict` and other Mapping subclasses).
+* Preserved `raw_backup_json is None` → `None` (conservative "pending" fallback — prevents false `insufficient_evidence` for sessions with no event log).
+* No pytest harness found in `services/core-api/` (only STT GPU hardware scripts). Verified via py_compile + 8-case inline helper parity smoke run from within the core-api venv.
+* **Verification:** py_compile OK; helper smoke 8/8 PASS — `type_key_user_turn`, `event_key_user_turn`, `mixed_type_and_event`, `json_string_event_key`, `double_encoded_event_key`, `mapping_like_event_payload`, `none_raw`, `invalid_json`.
+* No Groq calls, no worker/core-api started, no DB writes, no RabbitMQ operations, no sessions.
+
 ---
 
 ## Current Task
-**Mode: CODE + TESTS / NO GROQ / NO DB WRITES / NO WORKER / NO MIGRATION**
+**Mode: CODE / NO GROQ / NO DB WRITES / NO WORKER / NO MIGRATION**
 
-### Patch 7G-2 Implementation: Word-Count Parity and Status Endpoint Contract Tests
+### Patch 7G-3 Implementation: Status Literal Schema and UI Defensive Handling
 
-**Goal:** Fix the critical word-count helper drift identified in the Patch 7G audit. `_compute_student_word_count()` in `services/core-api/src/services/session_service.py` must handle the `"event"` field alias the same way the grading-worker's `evaluation_input_builder` does, so that the status endpoint does not infer `"pending"` for a session the worker correctly skipped.
+**Goal:** Harden the grading status API schema and UI against unexpected values. Change `GradingStatusRead.status` from `str` to a constrained `Literal` type, add an unknown-status fallback branch in `fetchAndShowGrading`, and add 401/session-expired error handling for the status call.
 
 **Background:**
-The grading-worker's `evaluation_input_builder` handles two event key aliases: `event.get("type") or event.get("event")`. The core-api's `_compute_student_word_count` checks only `event.get("type")`. Events using the old `"event"` key are silently skipped by the status endpoint, producing an under-count. This can cause the status endpoint to return `"pending"` for a session the worker identified as below-threshold and skipped, placing the user in a perpetual retry loop rather than showing the actionable "not enough speech" message.
+`GradingStatusRead.status` is currently typed as `str`. An unexpected value from a bug or future code change would pass Pydantic validation silently and reach the UI with no error. The UI `fetchAndShowGrading` also has no `else` fallback after the `pending` branch — a fourth status string falls through with no user-visible update. An expired auth token currently renders no error to the user.
 
 **Constraints:**
 * Do not call Groq.
@@ -251,31 +259,29 @@ The grading-worker's `evaluation_input_builder` handles two event key aliases: `
 * Do not add migration files.
 * Do not run scanner/backfill.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
-* Do not cross-import grading-worker code into core-api.
-* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, `raw_backup_json`, or auth tokens.
 * Do not modify `/grading` endpoint or `GradingRead` schema.
+* Do not change response JSON values — `"graded"`, `"pending"`, `"insufficient_evidence"` strings must remain identical.
+* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, `raw_backup_json`, or auth tokens.
 
 **Implementation scope:**
-1. Fix `_compute_student_word_count()` in `services/core-api/src/services/session_service.py`:
-   - Handle the `"event"` field alias: use `event.get("type") or event.get("event")` (matching worker behavior).
-   - Handle Mapping-like events if practical without adding external dependencies.
-   - Preserve current `None` → `None` return behavior unless explicitly changed.
-   - Keep the function small and self-contained — no cross-service import.
-2. Add contract tests in `services/core-api/tests/` (if a test harness exists) or a standalone smoke script (outside repo in `/tmp`, with explicit explanation why):
-   - Fixtures must include: standard `"type"` key event, old `"event"` alias key event, mixed `"type"` + `"event"` events, `None` input, empty list, double-encoded JSON string events.
-   - Assert `_compute_student_word_count` produces the same word count as the worker's logic for each fixture.
-   - If pytest is available: add tests to `tests/unit/test_session_service.py` (create file if it does not exist; do not create new test directories).
-   - If no test harness: add smoke script in `/tmp` with confirmed output showing fixture results.
-3. Keep `_parse_raw_backup_events` and `_get_min_student_words` unchanged unless the fix requires it.
+1. In `services/core-api/src/schemas/session.py`:
+   - Change `GradingStatusRead.status: str` to `status: Literal["graded", "pending", "insufficient_evidence"]`.
+   - Keep `session_id` and `student_word_count` fields unchanged.
+   - Keep `GradingRead` entirely unchanged.
+2. In `services/core-api/src/static/index.html`:
+   - Add an `else` fallback branch after the `pending` branch in `fetchAndShowGrading` — show a generic error message if status is unrecognised, then return.
+   - Add 401 handling for the `/grading/status` fetch: if `statusRes.status === 401`, show a "Session expired — please reload" message and return early.
+   - Do not change the `insufficient_evidence`, `pending`, or `graded` branch logic.
+   - Do not add new API calls.
+3. No DB schema changes. No new endpoints. No migration.
 
 **Verification:**
-* `py_compile` on all modified files.
-* All new and existing tests pass (or confirmed smoke script output).
-* UI grep: `/grading/status` call, `insufficient_evidence` branch, `"Not enough speech to grade"` message, score tile render still present in `static/index.html`.
+* `py_compile` on modified Python files.
+* Import smoke: confirm `GradingStatusRead.status` is `Literal` (check annotation, not `str`).
+* UI grep: confirm `else` fallback branch present; confirm `=== 401` handling present; confirm `insufficient_evidence`, `pending`, `graded` branches unchanged.
 * No Groq calls. No worker started. No DB writes. No RabbitMQ. No sessions.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-3 (Literal status type, UI unknown-status fallback, 401 handling).
 * Patch 7G-4 (scanner `--min-words` hardening).
 * Patch 7G-5 (fake fallback env gate).
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
