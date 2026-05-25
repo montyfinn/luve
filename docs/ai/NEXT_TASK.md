@@ -247,51 +247,86 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; schema Literal smoke — `schema_literal_smoke_ok`, `grading_score_type_is_float: True`; UI grep confirmed all 5 branches; Playwright route-intercept branch smoke **22/22 PASS** — 6 cases (401, 403, unknown_status, insufficient_evidence, pending, graded), dummy token, `file://` page, no live API calls.
 * No Groq calls, no worker/core-api started, no DB writes, no RabbitMQ operations, no sessions.
 
+### Task 28: Patch 7G-4 Audit/Design — Reconciliation Scanner Threshold Parity.
+* **Audit/design only — no runtime files modified, no scanner executed, no DB writes, no Groq calls.**
+* Confirmed: `_count_user_turns()` in both `reconciliation_scanner.py` and `backfill_completed_sessions.py` has three defects: checks only `"type"` key (not `"event"` alias), uses `isinstance(e, dict)` not `Mapping`, counts turns not words. Neither script enforces `GRADING_MIN_STUDENT_WORDS`.
+* Scanner execute path calls `process_session_completed_job()` directly — no RabbitMQ publish. Worker Patch 7E gate fires and prevents Groq calls today. Scanner prints misleading `ok` (worker returns `None` on skip, no exception) and sessions are perpetually re-selected (no grading row = always a candidate).
+* Threshold parity matrix documented: worker/`evaluation_input_builder` and core-api (`_compute_student_word_count` after 7G-2) both handle `type`/`event` aliases and Mapping; scanner/backfill do not.
+* Shared eligibility helper proposed: `services/grading-worker/src/session_eligibility.py` — pure Python, no DB/RabbitMQ, handles all event-shape variants.
+* Recommended sequence: 7G-4A (helper + tests only) → 7G-4B (scanner dry-run wired) → 7G-4C (scanner execute gated) → 7G-4D (backfill parity).
+* Full findings recorded in `docs/ai/PROJECT_STATE.md` Section 19 Patch 7G-4 subsection.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — NO RUNTIME CODE CHANGES**
+**Mode: CODE + TESTS — NO GROQ / NO DB WRITES / NO SCANNER EXECUTION**
 
-### Patch 7G-4 Audit/Design: Reconciliation Scanner Threshold Parity
+### Patch 7G-4A Implementation: Session Eligibility Helper and Unit Tests
 
-**Goal:** Audit `reconciliation_scanner.py` and `backfill_completed_sessions.py` to determine whether the scanner can enqueue below-threshold sessions, bypassing the Patch 7E word-count gate. Design a safe `--min-words` / dry-run / execute behavior. Do not implement yet.
+**Goal:** Add `services/grading-worker/src/session_eligibility.py` with a pure Python eligibility helper and `services/grading-worker/tests/test_session_eligibility.py` with ≥18 unit tests. No scanner, backfill, or worker behavior changes in this sub-patch.
 
 **Background:**
-`scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running the scanner with `--execute` may route below-threshold sessions through the grading path, causing queue/job churn and future Groq spend if worker safeguards change; the audit must confirm the exact execute behavior before any runtime changes.
+Patch 7G-4 audit confirmed `_count_user_turns()` in both scripts has three defects: only `"type"` key checked, `dict`-only guard, turns counted not words. The eligibility helper establishes correct word-counting logic as a tested unit before any scanner/backfill wiring (7G-4B/C/D).
+
+**New files only (no existing files modified):**
+
+1. `services/grading-worker/src/session_eligibility.py`
+   - `parse_raw_backup_events(raw_backup_json: Any) -> list`
+   - `get_event_kind(event: Any) -> str | None`
+   - `count_user_turns(raw_backup_json: Any) -> int | None`
+   - `count_student_words(raw_backup_json: Any) -> int | None`
+   - `EligibilityResult` dataclass: `eligible`, `reason`, `user_turn_count`, `student_word_count`
+   - `evaluate_grading_eligibility(raw_backup_json, min_student_words=25) -> EligibilityResult`
+
+2. `services/grading-worker/tests/test_session_eligibility.py`
+   - ≥18 unit tests (no DB, no RabbitMQ, no live session)
+
+**Test coverage must include:**
+* `None` input → `skipped_no_raw_backup`
+* Empty list `[]` → `skipped_no_user_turns`
+* Invalid JSON string → `skipped_invalid_raw_backup`
+* No USER_TURN events (AI only) → `skipped_no_user_turns`
+* `"type"` key USER_TURN → `eligible`
+* `"event"` key USER_TURN → `eligible` (alias)
+* Mixed `type`/`event` aliases → both counted
+* Mapping-like event (UserDict) → recognized as USER_TURN
+* Per-event JSON strings (double-encoded) → decoded and counted
+* Below threshold → `skipped_insufficient_words`
+* Exactly at threshold (boundary) → `eligible`
+* Above threshold → `eligible`
+* `min_student_words=0` disables word gate
+* Multi-turn word sum correct
+* AI turns excluded from student word count
+* No transcript text in any `EligibilityResult` field
 
 **Constraints:**
+* Do not run scanner/backfill.
+* Do not run `--execute`.
 * Do not call Groq.
-* Do not start the grading-worker.
+* Do not start grading-worker.
 * Do not start core-api.
-* Do not run scanner with `--execute`.
-* Do not run scanner/backfill against live queue.
 * Do not run TEN/browser sessions.
-* Do not write DB rows.
+* Do not write DB.
 * Do not publish/consume/purge RabbitMQ.
-* Do not add migration files.
+* Do not modify scanner/backfill/worker behavior yet (helper only).
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
-* Do not modify runtime code yet (audit/design only).
-* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, `raw_backup_json`, or auth tokens.
+* Do not print secrets, API keys, `DATABASE_URL`, raw transcript, or auth tokens.
 
-**Audit scope:**
-1. Read `scripts/reconciliation_scanner.py` — identify where `_count_user_turns()` is used, whether any word-count threshold check exists, and what the `--execute` code path does with candidate sessions.
-2. Read `scripts/backfill_completed_sessions.py` — identify whether it enforces a word-count threshold before submitting sessions.
-3. Determine: can either script enqueue a session that the Patch 7E gate would skip?
-4. Design a safe `--min-words` argument for the scanner:
-   - Default: read `GRADING_MIN_STUDENT_WORDS` env var, fallback `25`.
-   - Dry-run must show which candidates would be filtered.
-   - Execute must gate candidates by student word count before any submission.
-   - Must not call `process_session_completed_job` for below-threshold candidates.
-5. Propose tests without running scanner against live queue.
-6. Document findings and proposed implementation in a design section (docs only, not code).
+**Verification:**
+* `py_compile services/grading-worker/src/session_eligibility.py`
+* `pytest services/grading-worker/tests/test_session_eligibility.py -v` — all new tests pass
+* `pytest services/grading-worker/tests/ -v` — all 60 existing tests still pass
+* No live services, no DB writes, no RabbitMQ, no Groq calls
 
 **Deliverable:**
-* Audit findings recorded in `docs/ai/PROJECT_STATE.md` Section 19 under a new "Patch 7G-4 Audit" subsection.
-* Updated `docs/ai/NEXT_TASK.md` with Patch 7G-4 design complete and Patch 7G-5 as next task.
-* No runtime files modified.
+* Two new files committed independently.
+* No scanner/backfill/worker behavior changed.
+* `py_compile` + `pytest` results confirmed before commit.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-4 runtime implementation: scanner/backfill `--min-words` code changes, execute-path changes, or any queue/DB-affecting behavior (audit/design is in scope; code changes require a separate approved prompt).
+* Patch 7G-4B: wire scanner dry-run to eligibility helper for categorization.
+* Patch 7G-4C: gate scanner execute path — skip below-threshold before `process_session_completed_job`.
+* Patch 7G-4D: backfill parity.
 * Patch 7G-5 (fake fallback env gate).
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
 * Patch 7G-7 (migration strategy docs and numbered migration directory).
