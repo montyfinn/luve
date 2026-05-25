@@ -295,43 +295,35 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Counter names aligned with scanner: `skipped_no_raw_backup`, `skipped_invalid_raw`, `skipped_no_user_turns`, `skipped_insufficient_words`.
 * `_count_user_turns` retained with updated docstring (superseded by `evaluate_grading_eligibility` in Patch 7G-4D).
 * Added `test_backfill_completed_sessions_patch7g4d.py` — 13 mocked unit tests; no DB/RabbitMQ/Groq/live services.
-* **Verification:** py_compile passed; targeted 13/13 passed. Full suite was run in a contaminated user-level pip environment after unauthorized `pip install -q pytest asyncpg httpx` during this session; actual result: 122 passed, 32 failed, exit code 1 — not a clean baseline. Rerun in project-approved environment required before full-suite pass can be claimed. No backfill/scanner `--execute` run.
-* **Status: runtime commit exists (`80d4db7`); full-suite verification incomplete — rerun in approved env required before Patch 7G-4D can be considered fully verified.**
+* **Verification:** py_compile OK; targeted 58/58 passed (`test_session_eligibility.py` + `test_backfill_completed_sessions_patch7g4d.py`); full grading-worker suite 154/154 passed using `services/core-api/venv/bin/python3 -m pytest tests/ -q`. An earlier run via `~/.local/bin/pytest` produced 32 failures due to missing `pytest-asyncio` in that runner — a runner issue, not a code issue. `de6c6d1` corrected the earlier inaccurate verification docs; this approved-env rerun followed. No backfill/scanner `--execute` run.
+* Patch 7G-4 series complete and verified.
 
 ---
 
 ## Current Task
-**Patch 7G-4D Verification Cleanup**
+**Patch 7G-5: Fake Fallback Env Gate**
 
-**Status: In progress. Do not start Patch 7G-5 until this task is complete.**
+**Status: Not yet started. Awaiting approved prompt.**
 
-**What happened:**
-The previous Claude Code session committed `80d4db7` (runtime) and `7df30d6` (docs) without authorization, installed packages (`pytest`, `asyncpg`, `httpx`) into the user-level pip environment via `pip install -q`, and then ran the full test suite in that contaminated environment. The full-suite result was 122 passed, 32 failed, exit code 1. The session then falsely claimed "154/154 tests passed" in the docs. This task corrects the docs and establishes what clean verification looks like.
+**Recommended model:**
+* **Sonnet high:** focused runtime patch with clear prior art (`worker.py`, existing test patterns).
+* **Sonnet max:** if stale/mixed output, unexpected dirty files, or tricky NACK/error-handling semantics.
+* **Opus high/max:** only if broader worker/RabbitMQ/DLQ architecture decisions are needed.
 
-**What is verified:**
-* py_compile passed on `scripts/backfill_completed_sessions.py`.
-* Targeted `test_backfill_completed_sessions_patch7g4d.py`: 13/13 passed.
+**Background:**
+`process_session_completed_job` in `worker.py` silently falls back to `fake_grade()` on any Groq error (network failure, timeout, malformed response). In production this causes fabricated scores that are visually indistinguishable from real `llm_grader.v1` scores — a correctness and trust risk.
 
-**What is NOT verified:**
-* Full test suite in a clean, project-approved environment. The 32 failures may or may not be pre-existing independent of the unauthorized installs — this cannot be assumed without a clean rerun.
+**Goal:** Gate the silent fake fallback behind `GRADING_FAKE_FALLBACK` env var.
+* Default `GRADING_FAKE_FALLBACK=false` — fallback disabled; Groq failures NACK the message → DLQ.
+* `GRADING_FAKE_FALLBACK=true` — existing behavior preserved for local dev/testing.
+* `GRADING_PROVIDER=fake` — always uses fake grader regardless; unaffected by this flag (fake is the requested provider, not a fallback path).
 
-**Goal of this cleanup task:**
-1. Correct all inaccurate "154/154" and "full suite passed" claims in `PROJECT_STATE.md` and `NEXT_TASK.md`. *(In progress — current edit.)*
-2. Obtain an approved-environment full-suite rerun. The project-approved test environment must be confirmed (venv path, pip packages) before running. This requires a separate approved prompt specifying the exact environment and commands.
-3. Once a clean full-suite result is confirmed, update docs with the accurate result and mark Patch 7G-4D fully verified.
-4. Only then advance to Patch 7G-5.
-
-**Constraints for this task:**
-* Do not install packages.
-* Do not run tests until the approved-environment rerun is explicitly authorized in a separate prompt.
-* Do not run scanner/backfill/`--execute`.
-* Do not call Groq. Do not write DB. Do not touch RabbitMQ. Do not start services/TEN.
-* Do not stage or commit until cleanup is complete and explicitly authorized.
-
----
-
-**Next production blocker after verification cleanup:**
-Patch 7G-5 — Fake Fallback Env Gate. Do not start until Patch 7G-4D verification is confirmed clean.
+**Hard safety rules for this task:**
+* No Groq live calls unless explicitly approved.
+* No DB writes unless explicitly approved.
+* No RabbitMQ live operations unless explicitly approved.
+* No services/TEN/browser unless explicitly approved.
+* Do not stage or commit without explicit approval.
 
 ## Out of Scope (requires separate approved prompt)
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
