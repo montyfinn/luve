@@ -154,36 +154,43 @@ This file is a scoped task memo, not the global repo state source of truth.
 * No packages installed/uninstalled. No venv modified. No runtime source changed.
 * Fresh-venv rebuild not tested; reproducibility claim is based on recording known-working state.
 
+### Task 18: Patch 7C — Multi-Session Real Groq Grading Stability Test.
+* Ran Session A (suffix `f56364d6`, 2 user turns) and Session B (suffix `98a58d10`, 10 user turns) through normal RabbitMQ consume-loop with `GRADING_PROVIDER=llm`. Both returned structurally valid `llm_grader.v1` rows.
+* Groq HTTP 200 for both. No `grading.llm_failed_fallback`. Queue drained to `messages=0` after each worker run. Worker started exactly once per session. Exit code 124 (idle timeout) expected and observed.
+* Session A scores: `overall=2.95`, `fluency=4.00`, `grammar=2.00`, `vocab=3.00`, `feedback_len=173`.
+* Session B scores: `overall=2.95`, `fluency=4.00`, `grammar=3.00`, `vocab=2.00`, `feedback_len=226`.
+* Unsafe session `af661bda` (`status=ready`, `ended=False`, `user_turn_count=0`) correctly identified and excluded before any worker run.
+* Verdict: INVESTIGATE. Pipeline reliability confirmed across multiple sequential runs. Score sensitivity unresolved — no dimension changed ≥1.5 across any session pair; `overall=2.95` identical across all four graded sessions (Patches 3, 4, 7C-A, 7C-B).
+* SRE conclusion: no further Groq calls until prompt/rubric and STT transcript quality are audited in Patch 7D.
+
 ---
 
 ## Current Task
 **Mode: AUDIT / DESIGN ONLY — do not call Groq without explicit approval, do not run worker, do not create sessions, do not write DB, do not purge RabbitMQ without approval.**
 
-### Patch 7C Audit/Design: Multi-Session Real Groq Grading Stability Test Plan
+### Patch 7D Audit/Design: LLM Grader Prompt Calibration and Transcript Quality Review
 
-**Goal:** Execute a controlled 2-session live Groq grading run through the normal RabbitMQ consume-loop path to verify score sensitivity (different transcript qualities → different scores) and worker loop stability. Requires explicit per-session Groq approval.
+**Goal:** Investigate why all four live-graded sessions returned `overall=2.95` despite different transcript lengths and quality. Determine whether the repeated score is caused by prompt/rubric anchoring, a model floor effect at `temperature=0`, STT transcript noise, or overall formula weighting. Produce a recommendation for the smallest safe calibration experiment (at most 1 Groq call).
 
 **Do not in this task without explicit approval:**
-* Do not call Groq without explicit per-session approval in the prompt.
-* Do not start the grading-worker consume loop without explicit approval.
-* Do not run a new TEN session without explicit approval.
-* Do not purge RabbitMQ without explicit approval.
-* Do not write DB rows beyond what the approved grading worker writes.
-* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript text, or auth tokens.
+* Do not call Groq.
+* Do not run a new TEN session.
+* Do not start the grading-worker.
+* Do not write DB rows.
+* Do not print raw transcript text unless the user explicitly approves a sanitized transcript review.
+* Do not change the grader prompt.
+* Do not change the model.
+* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript, raw_backup_json, or auth tokens.
 
-**What this task must accomplish:**
-1. Pre-run checks: `git status --short` clean, `rabbitmqctl list_queues` shows 0 messages, no worker running.
-2. Session A (short, poor quality): run TEN session with 1–2 short grammatically incorrect sentences. Verify `messages=1` before worker start.
-3. Worker run A: `timeout 60 python -m src.worker` with `GRADING_PROVIDER=llm`, `RABBITMQ_HOST=localhost`. Verify `grading.completed` log, exit code 124. DB SELECT: scores, `marker_grader_version=llm_grader.v1`, no `llm_failed_fallback`.
-4. Session B (medium quality): run TEN session with 3–4 grammatically cleaner sentences and varied vocabulary. Verify `messages=1`. Worker run B (same procedure).
-5. Compare A vs B scores in DB: if `fluency/grammar/vocab` differ from each other and from the two prior sessions (`...a3d35b36`, `...218666a0`), score sensitivity is confirmed. If all four sessions return identical scores, flag as prompt/model floor issue and suspend further Groq calls.
-6. Post-run: confirm queue is empty, no unexpected grading rows written, no fallback triggered.
-
-**Stop conditions:**
-* `grading.llm_failed_fallback` in any worker log → stop immediately.
-* Exit code other than 0 or 124 → stop, read logs.
-* More than 2 new Groq calls consumed → stop.
-* Identical scores across all 4 sessions → stop and flag for prompt review.
+**What this audit must answer:**
+1. Is the repeated `overall=2.95` caused by prompt/rubric score anchoring (e.g., example scores in the prompt biasing output)?
+2. Does the overall formula (`fluency×0.30 + grammar×0.35 + vocab×0.35`) overweight grammar/vocab in a way that masks fluency differences across sessions?
+3. Is STT transcript quality too noisy at typical TEN session lengths for the grader to distinguish quality bands reliably?
+4. Should we inspect sanitized transcripts for Session A (`f56364d6`) and Session B (`98a58d10`) — and if so, what must be redacted?
+5. Should the `llm_grader` prompt include stronger calibration anchors or few-shot scoring examples to break the anchoring effect?
+6. Should the provider model be changed (e.g., a larger Groq model) or a non-zero temperature tested?
+7. Should a top-level `grader_version` field be added to `GradingRead` (Patch 7D output candidate) before further UI work?
+8. What is the smallest safe calibration experiment — design it so it requires at most 1 Groq call and produces a falsifiable score difference.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.

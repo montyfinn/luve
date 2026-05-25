@@ -351,6 +351,66 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 **Constraints respected:**
 * No packages installed or uninstalled. No venv modified. No runtime Python source changed. No Groq calls. No DB writes. No secrets printed.
 
+## 15. Patch 7C — Multi-Session Real Groq Grading Stability Test
+
+**Two sessions graded via normal RabbitMQ consume-loop with `GRADING_PROVIDER=llm`. Both returned structurally valid `llm_grader.v1` rows with no fallback. Score sensitivity at `temperature=0` is unresolved.**
+
+### Session A (`f56364d6`)
+* session_id: `20545d7f-e92a-4029-9bf3-e8c5f56364d6`
+* Pre-worker DB: `status=completed`, `ended=True`, `raw_present=True`, `user_turn_count=2`, `has_grading=False`.
+* Worker: started exactly once, `timeout 60`. Groq HTTP 200. `grading.completed`. No `grading.llm_failed_fallback`. Exit code 124 (idle timeout — expected).
+* Queue: `messages=1` before → `messages=0` after.
+* DB result (SELECT-only):
+  * `marker_type`: `grader_info`
+  * `marker_grader_version`: `llm_grader.v1`
+  * `is_fake_text`: `False`
+  * `feedback_len`: 173 characters
+  * `overall_score`: 2.95 ✅ in [0, 10]
+  * `fluency_score`: 4.00 ✅ in [0, 10]
+  * `grammar_score`: 2.00 ✅ in [0, 10]
+  * `vocab_score`: 3.00 ✅ in [0, 10]
+  * All score range checks: True
+
+### Session B (`98a58d10`)
+* session_id: `9bc88289-2969-402b-940f-d64f98a58d10`
+* Context: Originally attempted with a longer script that caused STT/finalization difficulty. Session finalized asynchronously after the user disconnected, completing with `user_turn_count=10`. Confirmed via SELECT-only DB check before worker run. One unsafe session (`af661bda`: `status=ready`, `ended=False`, `raw_present=False`, `user_turn_count=0`) was explicitly excluded — it never completed in the DB and produced no queue message.
+* Pre-worker DB: `status=completed`, `ended=True`, `raw_present=True`, `user_turn_count=10`, `has_grading=False`.
+* Worker: started exactly once, `timeout 60`. Groq HTTP 200. `grading.completed`. No `grading.llm_failed_fallback`. Exit code 124 (idle timeout — expected).
+* Queue: `messages=1` before → `messages=0` after.
+* DB result (SELECT-only):
+  * `marker_type`: `grader_info`
+  * `marker_grader_version`: `llm_grader.v1`
+  * `is_fake_text`: `False`
+  * `feedback_len`: 226 characters
+  * `overall_score`: 2.95 ✅ in [0, 10]
+  * `fluency_score`: 4.00 ✅ in [0, 10]
+  * `grammar_score`: 3.00 ✅ in [0, 10]
+  * `vocab_score`: 2.00 ✅ in [0, 10]
+  * All score range checks: True
+
+### Score Comparison (all four live-graded sessions)
+
+| Session | Patch | overall | fluency | grammar | vocab |
+|---|---|---|---|---|---|
+| `a3d35b36` | Patch 3 (direct one-shot) | 2.95 | 4.00 | 2.00 | 3.00 |
+| `218666a0` | Patch 4 (consume-loop) | 2.95 | 4.00 | 2.00 | 3.00 |
+| `f56364d6` | Patch 7C Session A | 2.95 | 4.00 | 2.00 | 3.00 |
+| `98a58d10` | Patch 7C Session B | 2.95 | 4.00 | 3.00 | 2.00 |
+
+* No single dimension changed by ≥1.5 across any session pair.
+* Session B grammar/vocab swapped relative to all prior sessions (grammar +1.00, vocab −1.00); overall unchanged at 2.95.
+
+### Verdict: INVESTIGATE
+
+**Reliability conclusion:** RabbitMQ consume-loop, provider dispatch, `GroqClient`, DB upsert, and queue drain behaved reliably across multiple sequential runs. Worker exit-code-124 pattern (idle timeout after single message) is confirmed stable.
+
+**Calibration conclusion:** Score sensitivity is unresolved. Repeated `overall=2.95` across all four sessions — including sessions with different transcript lengths (2, 4, 10, 15 user turns) and different intended quality — suggests possible anchoring in the prompt/rubric, a model floor effect at `temperature=0`, or STT transcript noise masking real quality differences.
+
+**SRE caution:** Do not expand `GRADING_PROVIDER=llm` usage, run further Groq calls, or claim production readiness until the prompt/rubric and transcript quality are audited (Patch 7D). No production-readiness claim is made.
+
+**Constraints respected:**
+* No runtime source files modified. No DB writes beyond worker-initiated upserts. No RabbitMQ purged. No secrets printed. Git worktree clean throughout.
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -363,6 +423,6 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13) — no longer reference "Simulated Grading" or `fake_grader.v1`. CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Multi-session stability remains unverified.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed, score calibration/sensitivity unresolved (all sessions returned `overall=2.95`). No further Groq calls until Patch 7D prompt/transcript audit is complete.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
