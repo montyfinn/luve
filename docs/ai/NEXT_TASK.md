@@ -291,7 +291,7 @@ This file is a scoped task memo, not the global repo state source of truth.
 * No runtime files modified.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-4 (scanner `--min-words` hardening).
+* Patch 7G-4 runtime implementation: scanner/backfill `--min-words` code changes, execute-path changes, or any queue/DB-affecting behavior (audit/design is in scope; code changes require a separate approved prompt).
 * Patch 7G-5 (fake fallback env gate).
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
 * Patch 7G-7 (migration strategy docs and numbered migration directory).
