@@ -277,42 +277,53 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; 25/25 new tests passed; 130/130 full suite passed; execute path behavior confirmed unchanged (structural gap test documents that `_count_user_turns` does not handle event-key alias — Patch 7G-4C scope).
 * No Groq calls. No services started. No DB writes. No RabbitMQ operations. No scanner `--execute`. No sessions.
 
+### Task 31: Patch 7G-4C Implementation — Scanner Execute-Path Eligibility Gate (commit `7dcc9e8`).
+* Gated scanner execute path: `evaluate_grading_eligibility` called before `process_session_completed_job` for all candidates; ineligible sessions skipped with per-reason counters and `continue`.
+* Skip reasons dispatched in execute path: `no_raw_backup`, `invalid_raw_backup`, `no_user_turns`, `insufficient_words`.
+* Unified execute and dry-run skip summary bucket naming: `skipped_no_raw_backup`, `skipped_invalid_raw`, `skipped_no_user_turns`, `skipped_insufficient_words`.
+* `_count_user_turns` retained but no longer called in the main candidate loop; superseded by `evaluate_grading_eligibility`. Docstring updated.
+* Added `test_reconciliation_scanner_patch7g4c.py` — 11 mocked unit tests; no DB/RabbitMQ/Groq/live services.
+* **Verification:** py_compile OK; targeted 11 passed; full suite 141 passed; no live scanner/backfill `--execute` run.
+* Closes operational gap: scanner no longer prints `ok` for sessions the worker silently skips; prevents ineligible sessions from reaching `process_session_completed_job`.
+
 ---
 
 ## Current Task
-**Mode: CODE + TESTS / NO LIVE SCANNER / NO DB WRITES / NO RABBITMQ / NO GROQ**
+**Mode: AUDIT / DESIGN ONLY / NO RUNTIME CHANGES / NO LIVE SCANNER / NO DB WRITES / NO RABBITMQ / NO GROQ**
 
-### Patch 7G-4C Implementation: Scanner Execute-Path Eligibility Gate
+### Patch 7G-4D Audit/Design: Backfill Threshold Parity
 
-**Goal:** Gate the scanner execute path so that sessions ineligible per `evaluate_grading_eligibility` are skipped before `process_session_completed_job` is called. This closes the operational gap where the scanner prints misleading `ok` output for sessions the worker silently skips.
+**Goal:** Audit `backfill_completed_sessions.py` to determine whether it can route below-threshold sessions into the grading path, and design the minimal safe runtime patch to bring it to parity with the scanner (Patch 7G-4C) and worker (Patch 7E).
+
+**Recommended model:**
+* **Sonnet high:** focused docs/small tests/small runtime patches — bounded scope, clear prior art.
+* **Sonnet max:** tricky localized patches with race/idempotency/rollback concerns, or stale/mixed previous output.
+* **Opus high:** architecture audit, production-readiness review, DB/queue/workflow design, migration/runbook strategy.
+* **Opus max:** high-risk cross-system production hardening, scanner/backfill/regrade strategy with DB/RabbitMQ/Groq side-effect analysis.
 
 **Background:**
-Patch 7G-4B wired the dry-run path to `evaluate_grading_eligibility`. The execute path still calls `_count_user_turns` + `require_user_turn` only — it does not enforce `GRADING_MIN_STUDENT_WORDS`. Below-threshold sessions reach `process_session_completed_job`, which silently skips them via the Patch 7E gate, produces no grading row, prints `ok`, and causes perpetual re-selection. Patch 7G-4C adds an explicit eligibility check in the execute path before `process_session_completed_job`.
+`backfill_completed_sessions.py` shares the same `_count_user_turns()` defects as the scanner had before Patch 7G-4C: type-key only, `isinstance(dict)` guard, no word-count gate. The scanner execute path is now gated by `evaluate_grading_eligibility` (Patch 7G-4C). The backfill has no equivalent gate. Running it with `GRADING_PROVIDER=llm` could submit below-threshold sessions to the grading path.
 
-**Scope — modify only:**
-* `services/grading-worker/scripts/reconciliation_scanner.py`
-* New or extended test file: `services/grading-worker/tests/test_reconciliation_scanner_patch7g4c.py` (mocked/unit only)
+**Audit scope (read-only):**
+* Read `services/grading-worker/scripts/backfill_completed_sessions.py` in full.
+* Compare its `_count_user_turns` usage with the scanner's now-gated execute path (Patch 7G-4C).
+* Identify all candidate-selection and grading-dispatch call sites.
+* Determine whether `process_session_completed_job` can be reached for below-threshold sessions.
+* Compare with worker gate (Patch 7E) and scanner gate (Patch 7G-4C).
+* Identify structural differences from scanner: `--include-empty-raw`, `ORDER BY ended_at DESC` (newest-first vs. scanner ASC), no grace window.
+* Determine safest minimal runtime change to wire `evaluate_grading_eligibility` in the backfill execute path.
 
-**Execute-path changes required:**
-* After the grace-window check and before `user_turns = _count_user_turns(raw_json)`, call `evaluate_grading_eligibility(raw_json, min_student_words=args.min_student_words)`.
-* If `not result.eligible`, skip the session: increment the appropriate skip counter, print the skip reason, and `continue` — do not call `process_session_completed_job`.
-* Replace or supersede the `require_user_turn` / `_count_user_turns` gate with the eligibility helper result (the helper already covers the `no_user_turns` reason).
-* Update execute-path summary output to include per-reason skip counts.
-
-**Not allowed in this sub-patch:**
-* Do not change the `process_session_completed_job` call signature.
-* Do not touch `services/grading-worker/src/worker.py`.
-* Do not run scanner with `--execute`.
-* Do not add DB columns, migrations, or schema changes.
-
-**Tests must:**
-* Be mocked/unit tests only — do not run scanner against live DB or queue.
-* Mock `process_session_completed_job` and verify it is called only for eligible sessions.
-* Cover: eligible → `process_session_completed_job` called; `no_raw_backup` → skipped; `invalid_raw_backup` → skipped; `no_user_turns` → skipped; `insufficient_words` → skipped; `eligible` with word count exactly at threshold → called.
-* Not call Groq, start services, write DB, publish/consume/purge RabbitMQ, or run any session.
+**Design deliverable (docs only — no runtime file changes):**
+* Written audit findings.
+* Proposed minimal diff for the runtime change (pseudocode or exact).
+* Proposed test coverage (mocked, matching Patch 7G-4C pattern).
+* Risk assessment: idempotency, rollback, side-effect surface.
+* Explicit statement of whether `_count_user_turns` should be removed from backfill or retained with a docstring note (matching scanner precedent from Patch 7G-4C).
 
 **Constraints:**
-* Do not run scanner/backfill.
+* Do not implement the runtime patch in this sub-patch — audit and design only.
+* Do not run backfill.
+* Do not run scanner.
 * Do not run `--execute`.
 * Do not call Groq.
 * Do not start grading-worker.
@@ -322,22 +333,14 @@ Patch 7G-4B wired the dry-run path to `evaluate_grading_eligibility`. The execut
 * Do not publish/consume/purge RabbitMQ.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
 * Do not print secrets, API keys, `DATABASE_URL`, raw transcript, or auth tokens.
+* Do not stage or commit runtime files.
 
-**Verification:**
-* `py_compile services/grading-worker/scripts/reconciliation_scanner.py`
-* `pytest` on new scanner tests — all pass
-* `pytest services/grading-worker/tests/ -q` — all pre-existing 130 tests still pass
-* Confirm `process_session_completed_job` is not called for below-threshold candidates in mocked tests
-
-**Deliverable:**
-* `scripts/reconciliation_scanner.py` updated (execute path eligibility gate).
-* New mocked tests proving execute path only calls `process_session_completed_job` for eligible candidates.
-* Execute path verified unchanged.
-* `py_compile` + `pytest` confirmed before commit.
+**Verification (audit only — no runtime test runs):**
+* Confirm `backfill_completed_sessions.py` fully read and findings are grounded in current code (not assumptions).
+* No runtime files modified; git status clean (only user-owned untracked artifacts).
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-4C: gate scanner execute path — skip below-threshold before `process_session_completed_job`.
-* Patch 7G-4D: backfill parity.
+* Patch 7G-4D runtime: implement backfill eligibility gate.
 * Patch 7G-5 (fake fallback env gate).
 * Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
 * Patch 7G-7 (migration strategy docs and numbered migration directory).
