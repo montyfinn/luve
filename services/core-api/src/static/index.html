@@ -858,6 +858,11 @@
           return;
         }
 
+        if (statusRes.status === 401 || statusRes.status === 403) {
+          ui.gradingContent.innerHTML = '<p class="text-rose-400">Session expired or unauthorized. Please refresh your token and try again.</p>';
+          return;
+        }
+
         if (!statusRes.ok) {
           ui.gradingContent.innerHTML = `<p class="text-rose-400">Failed to check grading status (HTTP ${statusRes.status}).</p>`;
           return;
@@ -877,6 +882,11 @@
           retryBtn.className = "mt-2 rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-600";
           retryBtn.addEventListener("click", () => fetchAndShowGrading(sessionId));
           ui.gradingContent.appendChild(retryBtn);
+          return;
+        }
+
+        if (status !== "graded") {
+          ui.gradingContent.innerHTML = '<p class="text-rose-400">Unknown grading status. Please refresh and try again.</p>';
           return;
         }
 

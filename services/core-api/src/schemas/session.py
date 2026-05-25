@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,6 +43,6 @@ class GradingRead(BaseModel):
 
 class GradingStatusRead(BaseModel):
     session_id: UUID
-    status: str  # "graded" | "pending" | "insufficient_evidence"
+    status: Literal["graded", "pending", "insufficient_evidence"]
     student_word_count: int | None = None
 
