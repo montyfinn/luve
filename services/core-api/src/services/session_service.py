@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
@@ -185,13 +186,13 @@ def _compute_student_word_count(raw_backup_json: Any) -> int | None:
                 event = json.loads(event)
             except (json.JSONDecodeError, ValueError):
                 continue
-        if not isinstance(event, dict):
+        if not isinstance(event, Mapping):
             continue
-        if event.get("type") != "USER_TURN":
+        if (event.get("type") or event.get("event")) != "USER_TURN":
             continue
         payload = event.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
+        if not isinstance(payload, Mapping):
+            payload = {}
         text_value = str(payload.get("text") or "").strip()
         if text_value:
             total += len(text_value.split())
