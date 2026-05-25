@@ -55,6 +55,7 @@ sys.path.insert(0, str(SERVICE_ROOT))
 import asyncpg
 
 from src.grading_repository import GradingRepository
+from src.session_eligibility import DEFAULT_MIN_STUDENT_WORDS, evaluate_grading_eligibility
 from src.worker import process_session_completed_job
 
 # Keep imported-module log noise off; only WARNING+ from asyncpg/asyncio surfacing.
@@ -77,11 +78,30 @@ def _normalize_db_url(url: str) -> str:
     return url
 
 
+def _parse_min_student_words_env(value: str | None) -> int:
+    """Parse GRADING_MIN_STUDENT_WORDS env value; fall back to default on invalid.
+
+    Accepts 0 (disables the word-count gate) and positive integers.
+    Returns DEFAULT_MIN_STUDENT_WORDS for None, non-numeric, or negative inputs.
+    """
+    if value is None:
+        return DEFAULT_MIN_STUDENT_WORDS
+    try:
+        parsed = int(value)
+    except (ValueError, TypeError):
+        return DEFAULT_MIN_STUDENT_WORDS
+    return parsed if parsed >= 0 else DEFAULT_MIN_STUDENT_WORDS
+
+
 def _count_user_turns(raw_json_text: str | None) -> int:
     """Count USER_TURN events in the event log JSON text.
 
     Pure Python parse — does not rely on JSONB operators in the DB.
     Returns 0 on any parse failure.
+
+    Used by the execute path only. Dry-run uses evaluate_grading_eligibility
+    (session_eligibility module) which also handles the "event" key alias and
+    Mapping subclasses — see Patch 7G-4B/C for full parity.
     """
     if not raw_json_text:
         return 0
@@ -179,6 +199,7 @@ async def run(args: argparse.Namespace) -> int:
         f"  limit={args.limit}"
         f"  grace_minutes={args.grace_minutes}"
         f"  require_user_turn={args.require_user_turn}"
+        + (f"  min_student_words={args.min_student_words}" if not args.execute else "")
         + (f"  since={args.since}" if args.since else "")
         + ("  session_id=<provided>" if args.session_id else "")
     )
@@ -201,7 +222,10 @@ async def run(args: argparse.Namespace) -> int:
     processed = 0
     skipped_no_raw = 0
     skipped_grace_window = 0
-    skipped_no_user_turn = 0
+    skipped_no_user_turn = 0       # execute path only
+    skipped_invalid_raw = 0        # dry-run: raw_backup_json present but not parseable as JSON array
+    skipped_no_user_turns = 0      # dry-run: no USER_TURN events found
+    skipped_insufficient_words = 0  # dry-run: student word count below threshold
     errors = 0
 
     repository = GradingRepository(database_url) if args.execute else None
@@ -224,15 +248,38 @@ async def run(args: argparse.Namespace) -> int:
             print(f"{mode}  skip  {sid_short}  reason=grace_window  ended_at={ended_fmt}")
             continue
 
+        # Dry-run: use eligibility helper for accurate per-reason categorization.
+        if not args.execute:
+            result = evaluate_grading_eligibility(
+                raw_json, min_student_words=args.min_student_words
+            )
+            if result.eligible:
+                would_process += 1
+                print(
+                    f"{mode}  would  {sid_short}"
+                    f"  user_turns={result.user_turn_count}"
+                    f"  student_words={result.student_word_count}"
+                    f"  ended_at={ended_fmt}"
+                )
+            else:
+                if result.reason == "invalid_raw_backup":
+                    skipped_invalid_raw += 1
+                elif result.reason == "no_user_turns":
+                    skipped_no_user_turns += 1
+                elif result.reason == "insufficient_words":
+                    skipped_insufficient_words += 1
+                print(
+                    f"{mode}  skip  {sid_short}"
+                    f"  reason={result.reason}"
+                    f"  ended_at={ended_fmt}"
+                )
+            continue
+
+        # Execute path: unchanged — original _count_user_turns + require_user_turn gate.
         user_turns = _count_user_turns(raw_json)
         if args.require_user_turn and user_turns == 0:
             skipped_no_user_turn += 1
             print(f"{mode}  skip  {sid_short}  reason=no_user_turn  ended_at={ended_fmt}")
-            continue
-
-        if not args.execute:
-            would_process += 1
-            print(f"{mode}  would  {sid_short}  user_turns={user_turns}  ended_at={ended_fmt}")
             continue
 
         # Live path: use the same code as the grading worker.
@@ -277,7 +324,9 @@ async def run(args: argparse.Namespace) -> int:
             f"  would_process={would_process}"
             f"  skipped_no_raw={skipped_no_raw}"
             f"  skipped_grace_window={skipped_grace_window}"
-            f"  skipped_no_user_turn={skipped_no_user_turn}"
+            f"  skipped_invalid_raw={skipped_invalid_raw}"
+            f"  skipped_no_user_turns={skipped_no_user_turns}"
+            f"  skipped_insufficient_words={skipped_insufficient_words}"
         )
 
     return 1 if (args.execute and errors > 0) else 0
@@ -339,6 +388,17 @@ def main() -> None:
         help="Disable the filter requiring at least one accepted USER_TURN event.",
     )
     parser.set_defaults(require_user_turn=True)
+    parser.add_argument(
+        "--min-student-words",
+        type=int,
+        default=_parse_min_student_words_env(os.environ.get("GRADING_MIN_STUDENT_WORDS")),
+        metavar="N",
+        help=(
+            "Minimum student word count for dry-run eligibility categorization "
+            "(default: GRADING_MIN_STUDENT_WORDS env or %(default)s). "
+            "Does not affect execute behavior in this patch."
+        ),
+    )
     parser.add_argument(
         "--sleep-ms",
         type=int,
