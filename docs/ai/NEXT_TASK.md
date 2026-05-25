@@ -266,43 +266,49 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; 45/45 targeted tests passed; 105/105 full suite passed (60 pre-existing + 45 new); import smoke `eligibility_import_smoke_ok`; static safety check — `session_eligibility` referenced only in helper file and tests; not wired into scanner, backfill, or worker.
 * No Groq calls. No services started. No DB writes. No RabbitMQ operations. No scanner/backfill execution. No sessions.
 
+### Task 30: Patch 7G-4B Implementation — Scanner Dry-Run Categorization (commit `5714ae4`).
+* Wired `reconciliation_scanner.py` dry-run path to `evaluate_grading_eligibility` from `src.session_eligibility`.
+* Added `_parse_min_student_words_env(value: str | None) -> int` pure helper (None/negative/non-numeric → default; 0 allowed).
+* Restructured candidate loop: `if not args.execute: ... continue` short-circuits before `_count_user_turns` — execute path code untouched.
+* Added counters: `skipped_invalid_raw`, `skipped_no_user_turns`, `skipped_insufficient_words` (dry-run only).
+* Added `--min-student-words N` CLI flag (default: `GRADING_MIN_STUDENT_WORDS` env or 25).
+* Updated dry-run `would` output to include `user_turns=` and `student_words=`; updated dry-run summary to include per-reason skip counts.
+* Added `services/grading-worker/tests/test_reconciliation_scanner_patch7g4b.py` — 25 mocked unit tests; no DB/RabbitMQ/live services.
+* **Verification:** py_compile OK; 25/25 new tests passed; 130/130 full suite passed; execute path behavior confirmed unchanged (structural gap test documents that `_count_user_turns` does not handle event-key alias — Patch 7G-4C scope).
+* No Groq calls. No services started. No DB writes. No RabbitMQ operations. No scanner `--execute`. No sessions.
+
 ---
 
 ## Current Task
-**Mode: CODE + TESTS / DRY-RUN ONLY / NO EXECUTE / NO DB WRITES / NO RABBITMQ PUBLISH**
+**Mode: CODE + TESTS / NO LIVE SCANNER / NO DB WRITES / NO RABBITMQ / NO GROQ**
 
-### Patch 7G-4B Implementation: Scanner Dry-Run Categorization Using Session Eligibility Helper
+### Patch 7G-4C Implementation: Scanner Execute-Path Eligibility Gate
 
-**Goal:** Wire `reconciliation_scanner.py` dry-run categorization to the `session_eligibility` helper so dry-run output reports accurate per-reason buckets. The execute path is unchanged in this sub-patch.
+**Goal:** Gate the scanner execute path so that sessions ineligible per `evaluate_grading_eligibility` are skipped before `process_session_completed_job` is called. This closes the operational gap where the scanner prints misleading `ok` output for sessions the worker silently skips.
 
 **Background:**
-Patch 7G-4A established the shared eligibility helper with correct type/event alias handling, Mapping-compatible guards, and word-counting logic. Patch 7G-4B wires the helper into the scanner's dry-run path only, replacing the defective `_count_user_turns()` inline logic with `evaluate_grading_eligibility()`. The execute path (`process_session_completed_job()`) must remain unchanged until Patch 7G-4C.
+Patch 7G-4B wired the dry-run path to `evaluate_grading_eligibility`. The execute path still calls `_count_user_turns` + `require_user_turn` only — it does not enforce `GRADING_MIN_STUDENT_WORDS`. Below-threshold sessions reach `process_session_completed_job`, which silently skips them via the Patch 7E gate, produces no grading row, prints `ok`, and causes perpetual re-selection. Patch 7G-4C adds an explicit eligibility check in the execute path before `process_session_completed_job`.
 
 **Scope — modify only:**
 * `services/grading-worker/scripts/reconciliation_scanner.py`
-* New test file: `services/grading-worker/tests/test_scanner_patch7g4b.py` (mocked/unit only)
+* New or extended test file: `services/grading-worker/tests/test_reconciliation_scanner_patch7g4c.py` (mocked/unit only)
 
-**Dry-run output must report per-reason buckets:**
-* `eligible` — sessions that would be submitted to grading
-* `skipped_existing_grading` — sessions already have a `grading_results` row
-* `skipped_no_raw_backup` — `raw_backup_json` is `None`
-* `skipped_invalid_raw_backup` — present but not parseable as JSON array
-* `skipped_no_user_turns` — no `USER_TURN` events found
-* `skipped_insufficient_words` — student word count < threshold
-
-**Allowed scanner changes in this sub-patch:**
-* Replace/wrap `_count_user_turns()` dry-run categorization with `evaluate_grading_eligibility()`.
-* Add `--min-student-words N` CLI flag (default: `GRADING_MIN_STUDENT_WORDS` env or 25).
-* Update dry-run summary output to include `eligible_total` and per-reason skip counts.
+**Execute-path changes required:**
+* After the grace-window check and before `user_turns = _count_user_turns(raw_json)`, call `evaluate_grading_eligibility(raw_json, min_student_words=args.min_student_words)`.
+* If `not result.eligible`, skip the session: increment the appropriate skip counter, print the skip reason, and `continue` — do not call `process_session_completed_job`.
+* Replace or supersede the `require_user_turn` / `_count_user_turns` gate with the eligibility helper result (the helper already covers the `no_user_turns` reason).
+* Update execute-path summary output to include per-reason skip counts.
 
 **Not allowed in this sub-patch:**
-* Do not change the execute path (`--execute` behavior).
-* Do not call `process_session_completed_job()` with different arguments.
-* Do not add any early-return or skip logic to the execute path — that is Patch 7G-4C scope.
+* Do not change the `process_session_completed_job` call signature.
+* Do not touch `services/grading-worker/src/worker.py`.
+* Do not run scanner with `--execute`.
+* Do not add DB columns, migrations, or schema changes.
 
 **Tests must:**
 * Be mocked/unit tests only — do not run scanner against live DB or queue.
-* Cover each reason bucket in dry-run output.
+* Mock `process_session_completed_job` and verify it is called only for eligible sessions.
+* Cover: eligible → `process_session_completed_job` called; `no_raw_backup` → skipped; `invalid_raw_backup` → skipped; `no_user_turns` → skipped; `insufficient_words` → skipped; `eligible` with word count exactly at threshold → called.
 * Not call Groq, start services, write DB, publish/consume/purge RabbitMQ, or run any session.
 
 **Constraints:**
@@ -314,19 +320,18 @@ Patch 7G-4A established the shared eligibility helper with correct type/event al
 * Do not run TEN/browser sessions.
 * Do not write DB.
 * Do not publish/consume/purge RabbitMQ.
-* Do not change scanner execute behavior (Patch 7G-4C scope).
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
 * Do not print secrets, API keys, `DATABASE_URL`, raw transcript, or auth tokens.
 
 **Verification:**
 * `py_compile services/grading-worker/scripts/reconciliation_scanner.py`
 * `pytest` on new scanner tests — all pass
-* `pytest services/grading-worker/tests/ -q` — all pre-existing 105 tests still pass
-* Execute path behavior confirmed unchanged
+* `pytest services/grading-worker/tests/ -q` — all pre-existing 130 tests still pass
+* Confirm `process_session_completed_job` is not called for below-threshold candidates in mocked tests
 
 **Deliverable:**
-* `scripts/reconciliation_scanner.py` updated (dry-run categorization only).
-* New scanner mocked tests committed.
+* `scripts/reconciliation_scanner.py` updated (execute path eligibility gate).
+* New mocked tests proving execute path only calls `process_session_completed_job` for eligible candidates.
 * Execute path verified unchanged.
 * `py_compile` + `pytest` confirmed before commit.
 

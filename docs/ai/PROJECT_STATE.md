@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
-* **Latest runtime/tooling baseline:** `462f5a4` — test(grading-worker): add session eligibility helper (Patch 7G-4A session eligibility helper + 45 unit tests; no runtime behavior change).
+* **Latest runtime/tooling baseline:** `5714ae4` — test(grading-worker): categorize scanner dry-run eligibility (Patch 7G-4B scanner dry-run categorization + 25 unit tests; no execute-path behavior change).
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `5714ae4` - test(grading-worker): categorize scanner dry-run eligibility (Patch 7G-4B — scanner dry-run path wired to `evaluate_grading_eligibility`; per-reason skip counts; `_parse_min_student_words_env` helper; `--min-student-words` CLI flag; 25 mocked unit tests; execute path unchanged; py_compile + 130/130 tests passed; no DB/RabbitMQ/Groq).
 * `462f5a4` - test(grading-worker): add session eligibility helper (Patch 7G-4A — pure Python `session_eligibility.py` helper + 45 unit tests; py_compile OK; 105/105 full suite passed; no runtime behavior change; scanner/backfill/worker not yet wired).
 * `55a4d02` - fix(core-api): harden grading status UI contract (Patch 7G-3 — `GradingStatusRead.status` narrowed to `Literal["graded", "pending", "insufficient_evidence"]`; `fetchAndShowGrading` hardened with 401/403 auth guard and unknown-status fail-closed guard before `/grading` fetch; response JSON values and all existing UI branches unchanged; py_compile + schema Literal smoke + UI route-intercept smoke 22/22 passed; no DB migration; no worker changes).
 * `24fef0b` - fix(core-api): align grading status word count detection (Patch 7G-2 — `_compute_student_word_count` now accepts both `"type"` and `"event"` keys for USER_TURN; Mapping-compatible event/payload checks; 8/8 helper smoke passed; py_compile OK; no DB migration; no API or UI changes).
@@ -830,7 +831,7 @@ Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
 - [ ] CORS lockdown (`allow_origins=["*"]` → explicit list)
 - [ ] Persistent skip/status strategy approved and migrated (`grading_skip_log` or accepted limitation documented)
 - [ ] Migration strategy finalized (numbered SQL migrations directory proposed and reviewed)
-- [ ] Scanner `--min-words` threshold parity (Patch 7G-4 — audit complete; 7G-4A helper committed `462f5a4`; scanner wiring pending 7G-4B/C)
+- [ ] Scanner `--min-words` threshold parity (Patch 7G-4 — audit complete; 7G-4A helper committed; 7G-4B dry-run wired `5714ae4`; execute gate pending 7G-4C)
 - [x] Word-count event-alias parity fix (Patch 7G-2 — commit `24fef0b`)
 - [x] Status schema Literal + UI fail-closed handling (Patch 7G-3 — commit `55a4d02`)
 - [ ] Fake fallback gated or disabled (Patch 7G-5)
@@ -1099,9 +1100,67 @@ Scanner threshold parity is a **production blocker** before enabling recurring s
 
 #### Remaining
 
-* Scanner dry-run categorization is not yet wired to the helper — Patch 7G-4B.
 * Scanner execute path is unchanged and must not be trusted for recurring use until Patch 7G-4C is merged.
 * Backfill parity is not yet wired — Patch 7G-4D.
+
+### Patch 7G-4B — Scanner Dry-run Eligibility Categorization
+
+**Runtime/test commit: `5714ae4` test(grading-worker): categorize scanner dry-run eligibility**
+
+**Files changed:**
+* `services/grading-worker/scripts/reconciliation_scanner.py` — dry-run path wired to helper; new CLI flag; updated counters and summary
+* `services/grading-worker/tests/test_reconciliation_scanner_patch7g4b.py` — 25 mocked unit tests (new file)
+
+#### Behavior
+
+Dry-run path (`if not args.execute`) now short-circuits via `evaluate_grading_eligibility(raw_json, min_student_words=args.min_student_words)` and `continue` — before the execute-path `user_turns = _count_user_turns(raw_json)` line. Execute path is completely untouched.
+
+New pure helper `_parse_min_student_words_env(value: str | None) -> int`:
+* `None` → `DEFAULT_MIN_STUDENT_WORDS`; negative → `DEFAULT_MIN_STUDENT_WORDS`; non-integer string → `DEFAULT_MIN_STUDENT_WORDS`; `0` → `0` (gate-disable allowed)
+* Used to set the `--min-student-words` CLI argument default from `GRADING_MIN_STUDENT_WORDS` env
+
+New counters in `run()`:
+* `skipped_invalid_raw` — dry-run: `raw_backup_json` present but not parseable as JSON array
+* `skipped_no_user_turns` — dry-run: no `USER_TURN` events found
+* `skipped_insufficient_words` — dry-run: student word count < threshold
+
+Dry-run `would` output now includes `user_turns=` and `student_words=` from `GradingEligibility`.
+
+Dry-run summary now includes `skipped_invalid_raw`, `skipped_no_user_turns`, `skipped_insufficient_words`.
+
+Execute path: `_count_user_turns`, `require_user_turn` gate, and `process_session_completed_job` call are unchanged. `_count_user_turns` docstring updated to note execute-path-only use.
+
+#### Known Patch 7G-4B Limitation
+
+`_count_user_turns` (execute path) still checks only `"type"` key and `isinstance(e, dict)` — does not handle `"event"` alias. Execute-path parity is Patch 7G-4C scope. Documented by `test_dry_run_recognizes_event_key_execute_path_does_not`.
+
+#### Verification
+
+* `py_compile scripts/reconciliation_scanner.py` — `py_compile_ok`
+* `pytest tests/test_reconciliation_scanner_patch7g4b.py -q` — **25 passed**
+* `pytest tests/ -q` — **130 passed** (105 pre-existing + 25 new)
+* Scope guard: execute path behavior confirmed unchanged
+* No Groq calls. No services started. No DB writes. No RabbitMQ operations. No scanner `--execute`. No sessions.
+
+#### Test Coverage
+
+* `_parse_min_student_words_env` — 7 tests (None, valid int string, zero, invalid string, negative, float string, empty string)
+* Dry-run categorization via `evaluate_grading_eligibility` — 8 tests (all reason codes, boundary, both key aliases)
+* Summary counts — 2 tests (mixed candidates produce correct per-reason counts; no transcript text in summary)
+* Execute path guard — 5 tests (`_count_user_turns` callable, type-key counted, event-key NOT counted, None→0, invalid→0)
+* Structural gap — 1 test (dry-run handles event-key; execute path does not — intentional, documents Patch 7G-4C scope)
+* Transcript leakage — 2 tests (eligible + ineligible `GradingEligibility` results contain no transcript text)
+
+#### DevOps/SRE Value
+
+* Dry-run output is now operationally honest: per-reason buckets distinguish `invalid_raw_backup`, `no_user_turns`, and `insufficient_words` instead of lumping all non-eligible sessions together.
+* `--min-student-words N` CLI flag matches `GRADING_MIN_STUDENT_WORDS` env default — dry-run threshold is inspectable and overridable without env changes.
+* No DB/RabbitMQ/Groq changes — rollback is a single-commit revert.
+
+#### Remaining
+
+* Execute path still calls `process_session_completed_job` for all sessions that pass the `require_user_turn` check — it does not yet enforce `GRADING_MIN_STUDENT_WORDS`. Below-threshold sessions are silently skipped by the worker's internal gate (Patch 7E), not by the scanner. Patch 7G-4C will add an explicit eligibility gate before `process_session_completed_job`.
+* Backfill parity not yet wired — Patch 7G-4D.
 
 ---
 
@@ -1117,6 +1176,6 @@ Scanner threshold parity is a **production blocker** before enabling recurring s
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed (`462f5a4`) — see Section 19 Patch 7G-4A subsection; scanner dry-run wiring is next (7G-4B).
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4B scanner dry-run categorization committed (`5714ae4`) — see Section 19 Patch 7G-4B subsection; execute-path gate is next (7G-4C).
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
