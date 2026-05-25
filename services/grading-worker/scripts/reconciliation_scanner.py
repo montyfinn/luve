@@ -99,9 +99,9 @@ def _count_user_turns(raw_json_text: str | None) -> int:
     Pure Python parse — does not rely on JSONB operators in the DB.
     Returns 0 on any parse failure.
 
-    Used by the execute path only. Dry-run uses evaluate_grading_eligibility
-    (session_eligibility module) which also handles the "event" key alias and
-    Mapping subclasses — see Patch 7G-4B/C for full parity.
+    No longer called in the main candidate loop (superseded by
+    evaluate_grading_eligibility in Patch 7G-4C). Retained for tests that
+    document the known type-key-only limitation vs. the full helper.
     """
     if not raw_json_text:
         return 0
@@ -198,8 +198,7 @@ async def run(args: argparse.Namespace) -> int:
         f"{mode} execute={args.execute}"
         f"  limit={args.limit}"
         f"  grace_minutes={args.grace_minutes}"
-        f"  require_user_turn={args.require_user_turn}"
-        + (f"  min_student_words={args.min_student_words}" if not args.execute else "")
+        f"  min_student_words={args.min_student_words}"
         + (f"  since={args.since}" if args.since else "")
         + ("  session_id=<provided>" if args.session_id else "")
     )
@@ -220,12 +219,11 @@ async def run(args: argparse.Namespace) -> int:
     candidates_seen = len(rows)
     would_process = 0
     processed = 0
-    skipped_no_raw = 0
+    skipped_no_raw_backup = 0
     skipped_grace_window = 0
-    skipped_no_user_turn = 0       # execute path only
-    skipped_invalid_raw = 0        # dry-run: raw_backup_json present but not parseable as JSON array
-    skipped_no_user_turns = 0      # dry-run: no USER_TURN events found
-    skipped_insufficient_words = 0  # dry-run: student word count below threshold
+    skipped_invalid_raw = 0        # both paths: raw_backup_json present but not parseable as JSON array
+    skipped_no_user_turns = 0      # both paths: no USER_TURN events found
+    skipped_insufficient_words = 0  # both paths: student word count below threshold
     errors = 0
 
     repository = GradingRepository(database_url) if args.execute else None
@@ -239,8 +237,8 @@ async def run(args: argparse.Namespace) -> int:
 
         # Belt-and-suspenders: SQL already filters, but re-check in Python.
         if not raw_json:
-            skipped_no_raw += 1
-            print(f"{mode}  skip  {sid_short}  reason=no_raw_backup_json  ended_at={ended_fmt}")
+            skipped_no_raw_backup += 1
+            print(f"{mode}  skip  {sid_short}  reason=no_raw_backup  ended_at={ended_fmt}")
             continue
 
         if ended_at is not None and ended_at.replace(tzinfo=timezone.utc) >= grace_threshold:
@@ -275,11 +273,21 @@ async def run(args: argparse.Namespace) -> int:
                 )
             continue
 
-        # Execute path: unchanged — original _count_user_turns + require_user_turn gate.
-        user_turns = _count_user_turns(raw_json)
-        if args.require_user_turn and user_turns == 0:
-            skipped_no_user_turn += 1
-            print(f"{mode}  skip  {sid_short}  reason=no_user_turn  ended_at={ended_fmt}")
+        # Execute path: eligibility gate prevents ineligible sessions from reaching
+        # process_session_completed_job — matches dry-run categorization semantics.
+        result = evaluate_grading_eligibility(raw_json, min_student_words=args.min_student_words)
+        if not result.eligible:
+            if result.reason == "invalid_raw_backup":
+                skipped_invalid_raw += 1
+            elif result.reason == "no_user_turns":
+                skipped_no_user_turns += 1
+            elif result.reason == "insufficient_words":
+                skipped_insufficient_words += 1
+            print(
+                f"{mode}  skip  {sid_short}"
+                f"  reason={result.reason}"
+                f"  ended_at={ended_fmt}"
+            )
             continue
 
         # Live path: use the same code as the grading worker.
@@ -292,7 +300,7 @@ async def run(args: argparse.Namespace) -> int:
             }
             await process_session_completed_job(payload, repository=repository)
             processed += 1
-            print(f"{mode}  ok    {sid_short}  user_turns={user_turns}  ended_at={ended_fmt}")
+            print(f"{mode}  ok    {sid_short}  user_turns={result.user_turn_count}  ended_at={ended_fmt}")
         except Exception as exc:
             errors += 1
             print(
@@ -312,9 +320,11 @@ async def run(args: argparse.Namespace) -> int:
             f"{mode} done"
             f"  candidates_seen={candidates_seen}"
             f"  processed={processed}"
-            f"  skipped_no_raw={skipped_no_raw}"
+            f"  skipped_no_raw_backup={skipped_no_raw_backup}"
             f"  skipped_grace_window={skipped_grace_window}"
-            f"  skipped_no_user_turn={skipped_no_user_turn}"
+            f"  skipped_invalid_raw={skipped_invalid_raw}"
+            f"  skipped_no_user_turns={skipped_no_user_turns}"
+            f"  skipped_insufficient_words={skipped_insufficient_words}"
             f"  errors={errors}"
         )
     else:
@@ -322,7 +332,7 @@ async def run(args: argparse.Namespace) -> int:
             f"{mode} done"
             f"  candidates_seen={candidates_seen}"
             f"  would_process={would_process}"
-            f"  skipped_no_raw={skipped_no_raw}"
+            f"  skipped_no_raw_backup={skipped_no_raw_backup}"
             f"  skipped_grace_window={skipped_grace_window}"
             f"  skipped_invalid_raw={skipped_invalid_raw}"
             f"  skipped_no_user_turns={skipped_no_user_turns}"
@@ -394,9 +404,9 @@ def main() -> None:
         default=_parse_min_student_words_env(os.environ.get("GRADING_MIN_STUDENT_WORDS")),
         metavar="N",
         help=(
-            "Minimum student word count for dry-run eligibility categorization "
-            "(default: GRADING_MIN_STUDENT_WORDS env or %(default)s). "
-            "Does not affect execute behavior in this patch."
+            "Minimum student word count for eligibility categorization — "
+            "applies to both dry-run and execute paths "
+            "(default: GRADING_MIN_STUDENT_WORDS env or %(default)s)."
         ),
     )
     parser.add_argument(
