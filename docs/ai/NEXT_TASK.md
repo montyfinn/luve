@@ -174,14 +174,31 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Remaining structural gap:** grammar and vocab both weighted 0.35 — g/v swaps produce identical overall. Not root cause, but masks sub-score sensitivity.
 * **SRE conclusion:** Do not expand `GRADING_PROVIDER=llm` use until transcript quality gate is implemented (Patch 7E). Sessions with 14 words or severe STT noise currently receive authoritative numeric scores without confidence indication.
 
+### Task 20: Patch 7E Audit/Design — Transcript Quality Gate.
+* Conducted 13-section SRE-level audit: gate placement comparison (Options A–E), threshold recommendation, insufficient-evidence behavior comparison, schema constraints, API/UI impact, idempotency, observability plan, mocked test plan, rollback plan, risk register, minimal implementation proposal.
+* **Gate placement:** `worker.py` after `has_student_turns` guard (Option B) — single-file change, prevents Groq spend before any network call, testable with `FakeRepository`, no DB changes.
+* **Threshold:** `GRADING_MIN_STUDENT_WORDS=25` — captures `f56364d6` (14w) and `218666a0` (23w) as below; `a3d35b36` (74w) and `98a58d10` (92w) pass.
+* **Behavior:** early return, no upsert — `GradingRead` requires non-nullable `float` scores; 404 from API already handled by UI as "pending" with retry button.
+* **Log event:** `grading.skipped_insufficient_evidence session_id=... user_turn_count=... student_word_count=... min_student_words=...` (no transcript text).
+* **No DB schema, API, UI, or migration changes** in the implementation patch.
+* Audit/design only — no Groq calls, no worker, no DB writes.
+
+### Task 21: Patch 7E Implementation — Runtime Transcript Quality Gate (commit `8b16c50`).
+* Implemented word-count gate in `services/grading-worker/src/worker.py` (+12 lines after `has_student_turns` guard).
+* `GRADING_MIN_STUDENT_WORDS` read at call time via `os.getenv()` (not module import) so `monkeypatch.setenv` works in tests.
+* Double-safety cast: `int(quality_signals.get("student_word_count", 0) or 0)` guards against `None` or non-numeric values.
+* Updated `services/grading-worker/tests/test_worker_patch2a.py`: existing `_SESSION_ROW_WITH_TURNS` fixture text updated to 34 student words; `_SESSION_ROW_SHORT_WORDS` added (4 words); 3 new gate tests added (skip, pass, gate-disabled-at-zero).
+* **Verification:** `py_compile` 5 modules passed; 60/60 mocked tests passed (`test_worker_patch2a.py` 21 + `test_llm_grader.py` 17 + `test_grading_provider_client.py` 22). No live services, no Groq, no DB, no RabbitMQ.
+* Committed as `8b16c50`. No docs staged in that commit (docs follow in this task).
+
 ---
 
 ## Current Task
 **Mode: AUDIT / DESIGN ONLY — do not call Groq without explicit approval, do not run worker, do not create sessions, do not write DB, do not purge RabbitMQ without approval.**
 
-### Patch 7E Audit/Design: Transcript Quality Gate and Insufficient-Evidence Behavior
+### Patch 7F Audit/Design: Insufficient-Evidence API/UI Status and Operational Visibility
 
-**Goal:** Design a transcript quality gate that prevents numeric scores from being issued when the student transcript is too short, too noisy, or otherwise insufficient for reliable grading. Produce an implementation plan with clear placement, threshold recommendations, mocked tests, and rollback behavior. Do not implement yet.
+**Goal:** Design an explicit "insufficient evidence" status path so users and operators can distinguish "session too short to grade" from "grading is pending." Produce a design recommendation covering API contract, DB implications, UI display, observability, and idempotency — without implementing yet.
 
 **Do not in this task without explicit approval:**
 * Do not call Groq.
@@ -189,20 +206,21 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Do not run a new TEN session.
 * Do not write DB rows.
 * Do not modify runtime code yet.
-* Do not change the grading prompt yet.
-* Do not change the scoring formula yet.
-* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript, `raw_backup_json`, or auth tokens.
+* Do not modify the grading schema or DB migrations yet.
+* Do not change the grading prompt, scoring formula, or `evaluation_input_builder.py` yet.
+* Do not touch `.understand-anything/` or `docs/system-map.md`.
+* Do not print secrets, API keys, `DATABASE_URL` credentials, raw transcript, `raw_backup_json`, or auth tokens.
 
 **What this audit must answer:**
-1. Should grading skip issuing numeric scores when `total_user_words` or `user_turn_count` falls below a threshold — and what are the right thresholds based on the four session observations?
-2. What should the output be when a session is below threshold: no grading row at all, a row with a special marker, or a row with `"insufficient_evidence"` grader_version?
-3. How will the API (`GradingRead`) and UI (Session Analysis card) display "insufficient evidence" — returning 404, a separate field, or a special score value?
-4. Where should the gate live: `evaluation_input_builder.py` (quality signals), `worker.py` (early return before grading), `llm_grader.py` (pre-call guard), or `grading_repository.py` (before upsert)?
-5. How does this interact with the existing `has_student_turns` early return in `worker.py` — is a separate word-count gate additive or a replacement?
-6. What mocked unit tests are needed to cover: below-threshold skip, above-threshold grade, boundary at threshold, and idempotent behavior on regrade?
-7. What rollback behavior applies if a session was previously graded (has an existing row) but would now be skipped by the gate — does the worker skip the upsert entirely or leave the existing row intact?
-8. How does this affect observability: what log line, metric, or marker should appear when a session is skipped for insufficient evidence?
-9. How to preserve idempotency: if the same low-quality session message is consumed twice, does the gate produce the same outcome both times?
+1. Should skipped sessions remain HTTP 404 / "pending" in the UI, or should the API return an explicit `insufficient_evidence` status distinct from "not yet graded"?
+2. If a distinct status is needed: should it come from a new `grading_status` column in `grading_results`, a separate `grading_skip_log` table, a special `grader_version` sentinel row, or a new API response field sourced elsewhere?
+3. How does any DB approach interact with `GradingRead`'s non-nullable `float` score fields — can a "no score" row coexist with the current Pydantic schema, or does the schema need an `Optional` refactor?
+4. How should `GET /api/v1/sessions/{id}/grading` respond for skipped sessions — HTTP 200 with `grading_status="insufficient_evidence"`, HTTP 422, HTTP 200 with null scores, or a new dedicated endpoint?
+5. How should the Session Analysis card UI distinguish "pending" from "insufficient evidence" — new message text, a different state in JS, or driven by a new API field?
+6. How to preserve backward compatibility: existing `GradingRead` consumers must not break when a skip-status response is introduced.
+7. How to observe skip counts operationally: log aggregation on `grading.skipped_insufficient_evidence`, Prometheus/metrics counter, or periodic DB query?
+8. If the `GRADING_MIN_STUDENT_WORDS` threshold is changed (raised or lowered), how can previously skipped or previously graded sessions be re-evaluated — is re-publish to queue sufficient, or is a scanner/backfill pattern needed?
+9. How to preserve idempotency: if a skip-status row exists in DB and the same session is re-queued, should the worker skip upsert, overwrite, or check the existing status before acting?
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.

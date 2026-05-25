@@ -8,12 +8,13 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 
 ## 1. Current Expected Git State
 
-* **Worktree:** No tracked modifications; only untracked IDE artifacts (`.codegraph/`, `.cursor/`).
-* **Latest runtime/tooling baseline:** `1cae30b` — feat(grading-worker): add Groq grading provider client.
+* **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
+* **Latest runtime/tooling baseline:** `8b16c50` — fix(grading-worker): skip insufficient transcript evidence (Patch 7E word-count gate).
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `8b16c50` - fix(grading-worker): skip insufficient transcript evidence (Patch 7E — word-count quality gate in `worker.py`; `GRADING_MIN_STUDENT_WORDS` env var, default 25; logs `grading.skipped_insufficient_evidence`; 60/60 mocked tests pass; no live services touched).
 * `1cae30b` - feat(grading-worker): add Groq grading provider client (`GroqClient` via raw `httpx` REST; `_build_grader_client()` reads `LLM_PROVIDER`/`GROQCLOUD_API_KEY`/`GROQ_MODEL`/`GROQ_TIMEOUT_SECONDS`; `httpx` declared in `requirements.txt`; 57/57 mocked tests pass; real Groq live test not yet run).
 * `06acf97` - feat(grading-worker): add safe grading provider dispatch (`GRADING_PROVIDER` env-flag dispatch with fake default; `GRADING_PROVIDER=llm` falls back to fake until real provider client exists; no-user-turn sessions skip without upsert; 34/34 mocked tests pass).
 * `675e3a2` - feat(grading-worker): add offline LLM grader scaffold (loosen `grader_version` Literal, add `llm_grader.py` prompt builder + response parser/validator, add 22 mocked tests; worker still uses `fake_grader.v1` only).
@@ -455,6 +456,75 @@ Do not enable broader `GRADING_PROVIDER=llm` use until a transcript quality gate
 **Constraints respected:**
 * No runtime source files modified. No DB writes. No RabbitMQ operations. No secrets or raw transcripts printed. Exactly 1 Groq call made (Patch 7D-B). Git worktree clean throughout.
 
+## 17. Patch 7E — Transcript Quality Gate
+
+**Runtime commit: `8b16c50` fix(grading-worker): skip insufficient transcript evidence**
+
+**Files changed:**
+* `services/grading-worker/src/worker.py` — +12 lines (gate logic)
+* `services/grading-worker/tests/test_worker_patch2a.py` — +81 lines (fixture update + 3 new gate tests; existing fixture word count increased to 34 student words so existing tests pass the gate)
+
+### Behavior
+
+A second early-return guard was added to `process_session_completed_job` immediately after the existing `has_student_turns` check and before provider dispatch:
+
+```
+if not has_student_turns → existing gate (unchanged)
+↓
+min_student_words = int(os.getenv("GRADING_MIN_STUDENT_WORDS", "25"))
+student_word_count = int(quality_signals.get("student_word_count", 0) or 0)
+if student_word_count < min_student_words → new gate
+    log grading.skipped_insufficient_evidence + return
+↓
+provider dispatch → Groq / fake (unchanged)
+```
+
+* **Default threshold:** 25 student words (`GRADING_MIN_STUDENT_WORDS=25`).
+* **Threshold read at call time** (not module import) so `monkeypatch.setenv` works in tests.
+* **Below threshold:** logs `grading.skipped_insufficient_evidence` with `session_id`, `user_turn_count`, `student_word_count`, `min_student_words` — no transcript text in logs. Returns immediately. No `_build_grader_client()` call, no `llm_grade_with_client()` call, no `fake_grade()` call, no `repository.upsert_grading_result()` call.
+* **Above threshold:** existing provider dispatch / fallback / upsert behavior unchanged.
+* **Gate disabled:** `GRADING_MIN_STUDENT_WORDS=0` disables the gate (all sessions with at least one student turn proceed to provider dispatch).
+* **Idempotency:** early return is clean (`None`); RabbitMQ `message.process(requeue=False)` ACKs the message regardless; same message redelivered produces same early return.
+
+### Calibration basis
+
+| Session | student_word_count | gate outcome at threshold=25 |
+|---|---|---|
+| `f56364d6` | ~14 | **skipped** |
+| `218666a0` | ~23 | **skipped** |
+| `a3d35b36` | ~74 | passes gate → Groq call |
+| `98a58d10` | ~92 | passes gate → Groq call |
+
+The 25-word threshold is conservative — it targets only sessions that are objectively too thin for reliable scoring. It does not gate longer-but-noisy STT transcripts.
+
+### Verification
+
+* `py_compile` passed for 5 grading-worker modules: `worker.py`, `llm_grader.py`, `grading_provider_client.py`, `evaluation_input_builder.py`, `grading_repository.py`.
+* **60/60 mocked tests passed** across `test_worker_patch2a.py` (21), `test_llm_grader.py` (17), `test_grading_provider_client.py` (22).
+* No live services started. No Groq calls. No DB writes. No RabbitMQ operations.
+
+### DevOps/SRE value
+
+* Reduces misleading authoritative numeric scores for sessions too short to grade reliably.
+* Reduces avoidable Groq spend on sessions where the model cannot produce a meaningful result.
+* Logs include counts (not text) — log-safe and grep-able for skip rate monitoring.
+* No DB schema changes, no API changes, no UI changes, no migration required.
+
+### Known limitations (as of Patch 7E)
+
+* Below-threshold sessions produce **no `grading_results` row**. `GET /api/v1/sessions/{id}/grading` returns HTTP 404. UI shows "Grading pending — try again later." indefinitely. There is no user-facing "session too short to grade" status.
+* No DB marker or row exists for skipped sessions — skips are observable only via logs (`grading.skipped_insufficient_evidence`).
+* Gate checks minimum word count only. Longer transcripts with severe STT noise (e.g., `98a58d10` at 92 words) still pass the gate and receive a Groq call.
+* `GRADING_MIN_STUDENT_WORDS` set to a non-integer string would cause `int()` to raise `ValueError` inside `process_session_completed_job` — caught by the outer `except Exception` handler in `consume_forever()`, logged as `grading.job_failed`, message ACK'd. Env validation hardening is future work.
+
+### Future work (beyond Patch 7E)
+
+* Explicit "insufficient evidence" API/UI status so users see a meaningful message instead of "pending" (Patch 7F).
+* Top-level `grader_version` / `grading_status` field in `GradingRead` or a separate status endpoint.
+* Optional transcript noise / STT-confidence gate for transcripts that pass word-count but have high character-level noise.
+* Monitoring: skip count rate, fallback count rate, score distribution over time, queue depth.
+* Regrade mechanism: if `GRADING_MIN_STUDENT_WORDS` threshold is lowered, previously skipped sessions have no DB row and no queue message — a reconciliation re-publish or direct one-shot call would be needed.
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -467,6 +537,6 @@ Do not enable broader `GRADING_PROVIDER=llm` use until a transcript quality gate
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Transcript quality gate required before wider use (Patch 7E).
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. UI still shows 404/pending for skipped sessions — explicit insufficient-evidence status is Patch 7F.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
