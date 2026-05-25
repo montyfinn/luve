@@ -191,36 +191,49 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** `py_compile` 5 modules passed; 60/60 mocked tests passed (`test_worker_patch2a.py` 21 + `test_llm_grader.py` 17 + `test_grading_provider_client.py` 22). No live services, no Groq, no DB, no RabbitMQ.
 * Committed as `8b16c50`. No docs staged in that commit (docs follow in this task).
 
+### Task 22: Patch 7F Audit/Design — Insufficient-Evidence API/UI Status and Operational Visibility.
+* Conducted 13-section SRE-level audit: API contract options (new endpoint vs modifying existing `/grading`), DB approach options (new column, separate table, sentinel row, dynamic inference), `GradingRead` non-nullable float constraint analysis, UI state branching, backward compatibility, observability, threshold-change re-evaluation, and idempotency.
+* **Key finding:** DB score columns are `NUMERIC(4,2)` without NOT NULL — nullable at DB level, but `GradingRead.overall_score: float` is the binding non-nullable constraint. Adding a null-score "skip" row would require an `Optional[float]` refactor of `GradingRead` or a separate schema — both are high-risk to existing consumers.
+* **No `grading_status` column** in `grading_results`. No Alembic or migration runner in repo — only `infrastructure/db-init/01-init.sql`. No `grader_version` DB column — stored only inside `detailed_corrections[0]` JSONB.
+* **Recommended Path B:** New read-only `GET /sessions/{id}/grading/status` endpoint computing status dynamically from `grading_results` existence + `raw_backup_json` word count. No DB migration. No worker changes. `GradingRead` untouched.
+* Audit/design only — no Groq calls, no worker, no DB writes.
+
+### Task 23: Patch 7F-1 Implementation — Grading Status Endpoint and Insufficient-Evidence UI (commit `ddb46ec`).
+* Added `GradingStatusRead` schema to `services/core-api/src/schemas/session.py`: `session_id`, `status` (str), `student_word_count` (int | None).
+* Added three pure helpers to `services/core-api/src/services/session_service.py`: `_parse_raw_backup_events`, `_compute_student_word_count`, `_get_min_student_words`. Handle SQLAlchemy (decoded JSONB) and asyncpg (string JSONB) shapes; malformed `GRADING_MIN_STUDENT_WORDS` falls back to 25.
+* Added `get_session_grading_status()` service function: LEFT JOIN query, dynamic status inference (graded / insufficient_evidence / pending), logs `grading.status_inferred`.
+* Added `GET /{session_id}/grading/status` route to `services/core-api/src/api/v1/sessions.py` before existing `/grading` route.
+* Updated `fetchAndShowGrading` in `services/core-api/src/static/index.html` to call `/grading/status` first: `insufficient_evidence` → "Not enough speech to grade. Try a longer session." (no Retry); `pending` → existing Retry flow; `graded` → calls `/grading` and renders score tiles as before.
+* **Verification:** `py_compile` OK (3 modules); import smoke OK (routes verified, `GradingRead.overall_score` still `float`, `GradingStatusRead` has `student_word_count`); helper smoke OK (5 assertions, all input shapes); UI grep OK (4 patterns confirmed). No Groq, no worker, no DB writes, no RabbitMQ, no sessions.
+* Committed as `ddb46ec`.
+
 ---
 
 ## Current Task
-**Mode: AUDIT / DESIGN ONLY — do not call Groq without explicit approval, do not run worker, do not create sessions, do not write DB, do not purge RabbitMQ without approval.**
+**Mode: READ-ONLY / NO GROQ / NO DB WRITES — do not call Groq, do not run worker, do not create sessions, do not write DB, do not purge/consume/publish RabbitMQ without approval.**
 
-### Patch 7F Audit/Design: Insufficient-Evidence API/UI Status and Operational Visibility
+### Patch 7F-2 Read-only Smoke Test: grading/status API and UI State Verification
 
-**Goal:** Design an explicit "insufficient evidence" status path so users and operators can distinguish "session too short to grade" from "grading is pending." Produce a design recommendation covering API contract, DB implications, UI display, observability, and idempotency — without implementing yet.
+**Goal:** Verify the Patch 7F-1 endpoint and UI changes work correctly against the live core-api using existing DB data. No new sessions, no Groq calls, no DB writes.
 
-**Do not in this task without explicit approval:**
+**Constraints:**
 * Do not call Groq.
 * Do not start the grading-worker.
 * Do not run a new TEN session.
 * Do not write DB rows.
-* Do not modify runtime code yet.
-* Do not modify the grading schema or DB migrations yet.
-* Do not change the grading prompt, scoring formula, or `evaluation_input_builder.py` yet.
+* Do not purge, consume, or publish RabbitMQ messages.
+* Do not modify any runtime or test files.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
 * Do not print secrets, API keys, `DATABASE_URL` credentials, raw transcript, `raw_backup_json`, or auth tokens.
 
-**What this audit must answer:**
-1. Should skipped sessions remain HTTP 404 / "pending" in the UI, or should the API return an explicit `insufficient_evidence` status distinct from "not yet graded"?
-2. If a distinct status is needed: should it come from a new `grading_status` column in `grading_results`, a separate `grading_skip_log` table, a special `grader_version` sentinel row, or a new API response field sourced elsewhere?
-3. How does any DB approach interact with `GradingRead`'s non-nullable `float` score fields — can a "no score" row coexist with the current Pydantic schema, or does the schema need an `Optional` refactor?
-4. How should `GET /api/v1/sessions/{id}/grading` respond for skipped sessions — HTTP 200 with `grading_status="insufficient_evidence"`, HTTP 422, HTTP 200 with null scores, or a new dedicated endpoint?
-5. How should the Session Analysis card UI distinguish "pending" from "insufficient evidence" — new message text, a different state in JS, or driven by a new API field?
-6. How to preserve backward compatibility: existing `GradingRead` consumers must not break when a skip-status response is introduced.
-7. How to observe skip counts operationally: log aggregation on `grading.skipped_insufficient_evidence`, Prometheus/metrics counter, or periodic DB query?
-8. If the `GRADING_MIN_STUDENT_WORDS` threshold is changed (raised or lowered), how can previously skipped or previously graded sessions be re-evaluated — is re-publish to queue sufficient, or is a scanner/backfill pattern needed?
-9. How to preserve idempotency: if a skip-status row exists in DB and the same session is re-queued, should the worker skip upsert, overwrite, or check the existing status before acting?
+**Verification targets:**
+1. Core-api process imports and starts cleanly if not already running (or confirm already running via health check).
+2. `GET /api/v1/sessions/{session_id}/grading/status` returns `"graded"` for a known graded session (e.g., `9de7a1e3-e374-487e-af91-4d0b218666a0` from Patch 4/5).
+3. `GET /api/v1/sessions/{session_id}/grading/status` returns `"insufficient_evidence"` for a known short/skipped session if one is available in DB with `raw_backup_json` present and word count below 25 — use existing data only, no DB writes.
+4. `GET /api/v1/sessions/{session_id}/grading/status` returns `"pending"` for a session with no grading row but above-threshold word count if one is available.
+5. UI renders `"insufficient_evidence"` state correctly: "Not enough speech to grade. Try a longer session." visible; no Retry button; no score tiles.
+6. UI still renders graded score card correctly for a known graded session.
+7. Confirm no Groq calls were made, no worker was started, no DB rows were written.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
