@@ -257,7 +257,7 @@ This file is a scoped task memo, not the global repo state source of truth.
 **Goal:** Audit `reconciliation_scanner.py` and `backfill_completed_sessions.py` to determine whether the scanner can enqueue below-threshold sessions, bypassing the Patch 7E word-count gate. Design a safe `--min-words` / dry-run / execute behavior. Do not implement yet.
 
 **Background:**
-`scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running the scanner with `--execute` and `GRADING_PROVIDER=llm` would submit below-threshold sessions to Groq, undoing the Patch 7E safety gate. This is a high-severity production blocker: sessions the worker deliberately skipped would receive authoritative-looking scores.
+`scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running the scanner with `--execute` may route below-threshold sessions through the grading path, causing queue/job churn and future Groq spend if worker safeguards change; the audit must confirm the exact execute behavior before any runtime changes.
 
 **Constraints:**
 * Do not call Groq.

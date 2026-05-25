@@ -730,9 +730,9 @@ Not implemented yet. Migration directory and scripts are Patch 7G-7 scope.
 
 ### 4. Reconciliation Scanner Critical Gap
 
-**Finding:** `scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running `--execute` with `GRADING_PROVIDER=llm` would submit below-threshold sessions to Groq, undoing the Patch 7E safety gate.
+**Finding:** `scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running the scanner with `--execute` may route below-threshold sessions through the grading path, causing queue/job churn and future Groq spend if worker safeguards change; the audit must confirm the exact execute behavior before any runtime changes.
 
-**Risk severity: High.** Sessions the worker deliberately skipped would receive authoritative-looking scores, misleading users about short or noisy transcripts.
+**Risk severity: Medium.** The worker's Patch 7E gate fires even when called directly from the scanner, preventing Groq calls for below-threshold sessions today. Real harms: misleading `ok` output (worker gate silently skips → scanner counts it as `processed`); perpetual re-selection (no grading row created = session always a candidate on next run); fragile dependency on the worker's internal gate remaining in place.
 
 **Fix planned in Patch 7G-4:** Add `--min-words` argument (default: `GRADING_MIN_STUDENT_WORDS` env, fallback 25). Gate scanner candidates by student word count before any submission.
 
