@@ -239,47 +239,56 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; helper smoke 8/8 PASS — `type_key_user_turn`, `event_key_user_turn`, `mixed_type_and_event`, `json_string_event_key`, `double_encoded_event_key`, `mapping_like_event_payload`, `none_raw`, `invalid_json`.
 * No Groq calls, no worker/core-api started, no DB writes, no RabbitMQ operations, no sessions.
 
+### Task 27: Patch 7G-3 Implementation — Status Literal Schema and UI Defensive Handling (commit `55a4d02`).
+* Changed `GradingStatusRead.status` from `str` to `Literal["graded", "pending", "insufficient_evidence"]` in `services/core-api/src/schemas/session.py`. Pydantic now raises `ValidationError` on unexpected values.
+* Added 401/403 auth guard in `fetchAndShowGrading` in `services/core-api/src/static/index.html` — after the 404 check, before the generic `!statusRes.ok` check. Shows "Session expired or unauthorized. Please refresh your token and try again." and returns before `/grading`.
+* Added unknown-status fail-closed guard after the `pending` block — `status !== "graded"` shows "Unknown grading status. Please refresh and try again." and returns before `/grading`.
+* `GradingRead`, `student_word_count`, `/grading` endpoint, and all three existing UI branches (`insufficient_evidence`, `pending`, `graded`) preserved unchanged.
+* **Verification:** py_compile OK; schema Literal smoke — `schema_literal_smoke_ok`, `grading_score_type_is_float: True`; UI grep confirmed all 5 branches; Playwright route-intercept branch smoke **22/22 PASS** — 6 cases (401, 403, unknown_status, insufficient_evidence, pending, graded), dummy token, `file://` page, no live API calls.
+* No Groq calls, no worker/core-api started, no DB writes, no RabbitMQ operations, no sessions.
+
 ---
 
 ## Current Task
-**Mode: CODE / NO GROQ / NO DB WRITES / NO WORKER / NO MIGRATION**
+**Mode: AUDIT / DESIGN ONLY — NO RUNTIME CODE CHANGES**
 
-### Patch 7G-3 Implementation: Status Literal Schema and UI Defensive Handling
+### Patch 7G-4 Audit/Design: Reconciliation Scanner Threshold Parity
 
-**Goal:** Harden the grading status API schema and UI against unexpected values. Change `GradingStatusRead.status` from `str` to a constrained `Literal` type, add an unknown-status fallback branch in `fetchAndShowGrading`, and add 401/session-expired error handling for the status call.
+**Goal:** Audit `reconciliation_scanner.py` and `backfill_completed_sessions.py` to determine whether the scanner can enqueue below-threshold sessions, bypassing the Patch 7E word-count gate. Design a safe `--min-words` / dry-run / execute behavior. Do not implement yet.
 
 **Background:**
-`GradingStatusRead.status` is currently typed as `str`. An unexpected value from a bug or future code change would pass Pydantic validation silently and reach the UI with no error. The UI `fetchAndShowGrading` also has no `else` fallback after the `pending` branch — a fourth status string falls through with no user-visible update. An expired auth token currently renders no error to the user.
+`scripts/reconciliation_scanner.py` `_count_user_turns()` counts `USER_TURN` events but does **not** enforce `GRADING_MIN_STUDENT_WORDS`. Running the scanner with `--execute` and `GRADING_PROVIDER=llm` would submit below-threshold sessions to Groq, undoing the Patch 7E safety gate. This is a high-severity production blocker: sessions the worker deliberately skipped would receive authoritative-looking scores.
 
 **Constraints:**
 * Do not call Groq.
 * Do not start the grading-worker.
-* Do not run a new TEN session.
+* Do not start core-api.
+* Do not run scanner with `--execute`.
+* Do not run scanner/backfill against live queue.
+* Do not run TEN/browser sessions.
 * Do not write DB rows.
+* Do not publish/consume/purge RabbitMQ.
 * Do not add migration files.
-* Do not run scanner/backfill.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
-* Do not modify `/grading` endpoint or `GradingRead` schema.
-* Do not change response JSON values — `"graded"`, `"pending"`, `"insufficient_evidence"` strings must remain identical.
+* Do not modify runtime code yet (audit/design only).
 * Do not print secrets, API keys, `DATABASE_URL`, raw transcript, `raw_backup_json`, or auth tokens.
 
-**Implementation scope:**
-1. In `services/core-api/src/schemas/session.py`:
-   - Change `GradingStatusRead.status: str` to `status: Literal["graded", "pending", "insufficient_evidence"]`.
-   - Keep `session_id` and `student_word_count` fields unchanged.
-   - Keep `GradingRead` entirely unchanged.
-2. In `services/core-api/src/static/index.html`:
-   - Add an `else` fallback branch after the `pending` branch in `fetchAndShowGrading` — show a generic error message if status is unrecognised, then return.
-   - Add 401 handling for the `/grading/status` fetch: if `statusRes.status === 401`, show a "Session expired — please reload" message and return early.
-   - Do not change the `insufficient_evidence`, `pending`, or `graded` branch logic.
-   - Do not add new API calls.
-3. No DB schema changes. No new endpoints. No migration.
+**Audit scope:**
+1. Read `scripts/reconciliation_scanner.py` — identify where `_count_user_turns()` is used, whether any word-count threshold check exists, and what the `--execute` code path does with candidate sessions.
+2. Read `scripts/backfill_completed_sessions.py` — identify whether it enforces a word-count threshold before submitting sessions.
+3. Determine: can either script enqueue a session that the Patch 7E gate would skip?
+4. Design a safe `--min-words` argument for the scanner:
+   - Default: read `GRADING_MIN_STUDENT_WORDS` env var, fallback `25`.
+   - Dry-run must show which candidates would be filtered.
+   - Execute must gate candidates by student word count before any submission.
+   - Must not call `process_session_completed_job` for below-threshold candidates.
+5. Propose tests without running scanner against live queue.
+6. Document findings and proposed implementation in a design section (docs only, not code).
 
-**Verification:**
-* `py_compile` on modified Python files.
-* Import smoke: confirm `GradingStatusRead.status` is `Literal` (check annotation, not `str`).
-* UI grep: confirm `else` fallback branch present; confirm `=== 401` handling present; confirm `insufficient_evidence`, `pending`, `graded` branches unchanged.
-* No Groq calls. No worker started. No DB writes. No RabbitMQ. No sessions.
+**Deliverable:**
+* Audit findings recorded in `docs/ai/PROJECT_STATE.md` Section 19 under a new "Patch 7G-4 Audit" subsection.
+* Updated `docs/ai/NEXT_TASK.md` with Patch 7G-4 design complete and Patch 7G-5 as next task.
+* No runtime files modified.
 
 ## Out of Scope (requires separate approved prompt)
 * Patch 7G-4 (scanner `--min-words` hardening).
