@@ -66,6 +66,18 @@ async def process_session_completed_job(
         logger.warning("grading.no_user_turns_skip session_id=%s", job.session_id)
         return
 
+    min_student_words = int(os.getenv("GRADING_MIN_STUDENT_WORDS", "25"))
+    student_word_count = int(evaluation_input.quality_signals.get("student_word_count", 0) or 0)
+    if student_word_count < min_student_words:
+        logger.warning(
+            "grading.skipped_insufficient_evidence session_id=%s user_turn_count=%d student_word_count=%d min_student_words=%d",
+            job.session_id,
+            int(evaluation_input.quality_signals.get("user_turn_count", 0) or 0),
+            student_word_count,
+            min_student_words,
+        )
+        return
+
     provider = _get_grading_provider()
     result: GradingResult
 

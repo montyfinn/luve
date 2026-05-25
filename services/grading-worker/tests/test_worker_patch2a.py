@@ -35,11 +35,12 @@ _SESSION_ROW_WITH_TURNS: dict[str, Any] = {
     "raw_backup_json": [
         {
             "type": "USER_TURN",
-            "payload": {"text": "Hello, how are you?"},
+            # 34 words — above the default 25-word gate threshold so existing tests pass
+            "payload": {"text": "Hello, how are you today? I would like to practice my English conversation skills. Last weekend I visited the local market with my family and we had a great time shopping for fresh vegetables."},
         },
         {
             "type": "AI_TURN",
-            "payload": {"text": "I am fine, thanks!"},
+            "payload": {"text": "That sounds wonderful! Tell me more."},
         },
     ],
     "started_at": "2026-01-01T00:00:00+00:00",
@@ -49,6 +50,21 @@ _SESSION_ROW_WITH_TURNS: dict[str, Any] = {
 _SESSION_ROW_NO_TURNS: dict[str, Any] = {
     **_SESSION_ROW_WITH_TURNS,
     "raw_backup_json": [],
+}
+
+# 4 student words — below default 25-word threshold; used to test the quality gate
+_SESSION_ROW_SHORT_WORDS: dict[str, Any] = {
+    **_SESSION_ROW_WITH_TURNS,
+    "raw_backup_json": [
+        {
+            "type": "USER_TURN",
+            "payload": {"text": "Hello, how are you?"},
+        },
+        {
+            "type": "AI_TURN",
+            "payload": {"text": "I am fine, thanks!"},
+        },
+    ],
 }
 
 
@@ -317,3 +333,64 @@ async def test_llm_provider_missing_key_falls_back_to_fake(monkeypatch: pytest.M
     await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
     assert repo.upserted is not None
     assert repo.upserted.grader_version == "fake_grader.v1"
+
+
+# ---------------------------------------------------------------------------
+# Word-count quality gate (Patch 7E)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_short_transcript_skips_upsert_and_provider(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_MIN_STUDENT_WORDS", "25")
+    called: list[str] = []
+    with (
+        patch("src.worker._build_grader_client", side_effect=lambda: called.append("build")),
+        patch("src.worker.llm_grade_with_client", new=AsyncMock(side_effect=lambda *a, **kw: called.append("grade"))),
+    ):
+        repo = FakeRepository(session_row=_SESSION_ROW_SHORT_WORDS)
+        with caplog.at_level(logging.WARNING, logger="src.worker"):
+            await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+    assert repo.upsert_call_count == 0
+    assert "build" not in called
+    assert "grade" not in called
+    assert any("skipped_insufficient_evidence" in r.message for r in caplog.records)
+    skip_msg = next(r.message for r in caplog.records if "skipped_insufficient_evidence" in r.message)
+    assert "student_word_count=" in skip_msg
+    assert "min_student_words=" in skip_msg
+    # no raw transcript text in any log record
+    for record in caplog.records:
+        assert "Hello, how are you?" not in record.message
+
+
+@pytest.mark.asyncio
+async def test_sufficient_transcript_proceeds_to_grade(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_MIN_STUDENT_WORDS", "25")
+    mock_client = object()
+    llm_result = _fake_llm_result()
+    with (
+        patch("src.worker._build_grader_client", return_value=mock_client),
+        patch("src.worker.llm_grade_with_client", new=AsyncMock(return_value=llm_result)),
+    ):
+        repo = FakeRepository()  # _SESSION_ROW_WITH_TURNS has 34 student words
+        await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+    assert repo.upsert_call_count == 1
+    assert repo.upserted is not None
+    assert repo.upserted.grader_version == "llm_grader.v1"
+
+
+@pytest.mark.asyncio
+async def test_word_count_gate_disabled_at_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_MIN_STUDENT_WORDS", "0")
+    mock_client = object()
+    llm_result = _fake_llm_result()
+    with (
+        patch("src.worker._build_grader_client", return_value=mock_client),
+        patch("src.worker.llm_grade_with_client", new=AsyncMock(return_value=llm_result)),
+    ):
+        repo = FakeRepository(session_row=_SESSION_ROW_SHORT_WORDS)  # 4 words, passes gate when threshold=0
+        await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+    assert repo.upsert_call_count == 1
