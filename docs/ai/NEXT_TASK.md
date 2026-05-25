@@ -207,33 +207,42 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** `py_compile` OK (3 modules); import smoke OK (routes verified, `GradingRead.overall_score` still `float`, `GradingStatusRead` has `student_word_count`); helper smoke OK (5 assertions, all input shapes); UI grep OK (4 patterns confirmed). No Groq, no worker, no DB writes, no RabbitMQ, no sessions.
 * Committed as `ddb46ec`.
 
+### Task 24: Patch 7F-2 — Read-only Smoke Test (PASS).
+* Verified Patch 7F-1 endpoint and UI against live core-api using existing DB data. READ-ONLY throughout.
+* **Static checks:** `py_compile` OK (3 modules); import smoke confirmed `has_status_route=True`, `has_grading_route=True`, `GradingRead.overall_score` is `float`, `GradingStatusRead` has `student_word_count`.
+* **DB candidate discovery (SELECT-only):** graded=`98a58d10` (wc=92, has_grading=True); insufficient_evidence=`3d1eca15` (wc=5, has_grading=False); pending=`49639bde` (wc=None, has_grading=False). Real candidates for all three statuses — no mock needed.
+* **API smoke (5/5):** `GET /grading/status` → `graded` (HTTP 200); `GET /grading` → scores numeric, `llm_grader.v1`, feedback_len=226 (HTTP 200); `GET /grading/status` → `insufficient_evidence` wc=5 (HTTP 200); `GET /grading` for insufficient session → 404 (correct, no row); `GET /grading/status` → `pending` wc=None (HTTP 200).
+* **UI smoke (13/13 PASS):** Playwright 1.60 + headless Chrome. Port 8080 not running — UI loaded via `file://…/static/index.html` with `luve.control.coreApiUrl` localStorage override to `http://localhost:8000`; API calls hit live core-api. Assertions: graded score tiles rendered; insufficient message "Not enough speech to grade. Try a longer session." visible; no Retry button in insufficient state; no `/grading` call made after `insufficient_evidence`; Retry button present in pending state.
+* **Side effects confirmed absent:** no files modified, no Groq calls, no worker started, no TEN sessions, no DB writes, no RabbitMQ operations (queue `messages=0` pre/post), no secrets/raw data printed.
+* **SRE conclusions:** `NULL raw_backup_json` → `pending` (no false insufficient_evidence); `/grading` backward compatibility intact; UI branch prevents retry treadmill.
+
 ---
 
 ## Current Task
-**Mode: READ-ONLY / NO GROQ / NO DB WRITES — do not call Groq, do not run worker, do not create sessions, do not write DB, do not purge/consume/publish RabbitMQ without approval.**
+**Mode: AUDIT / DESIGN ONLY — do not call Groq, do not start worker, do not run sessions, do not write DB, do not add migration yet, do not modify runtime code yet.**
 
-### Patch 7F-2 Read-only Smoke Test: grading/status API and UI State Verification
+### Patch 7G Audit/Design: Production Hardening for Grading Status Observability and Migration Strategy
 
-**Goal:** Verify the Patch 7F-1 endpoint and UI changes work correctly against the live core-api using existing DB data. No new sessions, no Groq calls, no DB writes.
+**Goal:** Assess what is required to move the Patch 7E/7F grading status and quality gate system toward production readiness. Produce a design recommendation covering DB persistence, observability, code quality, operational tooling, and deployment prerequisites — without implementing yet.
 
 **Constraints:**
 * Do not call Groq.
 * Do not start the grading-worker.
 * Do not run a new TEN session.
 * Do not write DB rows.
-* Do not purge, consume, or publish RabbitMQ messages.
-* Do not modify any runtime or test files.
+* Do not add migration files yet.
+* Do not modify runtime code yet.
 * Do not touch `.understand-anything/` or `docs/system-map.md`.
 * Do not print secrets, API keys, `DATABASE_URL` credentials, raw transcript, `raw_backup_json`, or auth tokens.
 
-**Verification targets:**
-1. Core-api process imports and starts cleanly if not already running (or confirm already running via health check).
-2. `GET /api/v1/sessions/{session_id}/grading/status` returns `"graded"` for a known graded session (e.g., `9de7a1e3-e374-487e-af91-4d0b218666a0` from Patch 4/5).
-3. `GET /api/v1/sessions/{session_id}/grading/status` returns `"insufficient_evidence"` for a known short/skipped session if one is available in DB with `raw_backup_json` present and word count below 25 — use existing data only, no DB writes.
-4. `GET /api/v1/sessions/{session_id}/grading/status` returns `"pending"` for a session with no grading row but above-threshold word count if one is available.
-5. UI renders `"insufficient_evidence"` state correctly: "Not enough speech to grade. Try a longer session." visible; no Retry button; no score tiles.
-6. UI still renders graded score card correctly for a known graded session.
-7. Confirm no Groq calls were made, no worker was started, no DB rows were written.
+**What this audit must answer:**
+1. Should `grading_status` / skip state become DB-persistent? What are the trade-offs of dynamic inference vs. a persisted `grading_status` column in `grading_results` or a separate `grading_skip_log` table?
+2. What migration strategy is safe given no Alembic and only `infrastructure/db-init/01-init.sql`? What is the safest way to add a nullable column to `grading_results` without downtime or data loss?
+3. Should the 8080/control-center static serving be standardised (e.g., `StaticFiles` mount in `main.py` or Nginx config) so that smoke tests do not require `file://` workarounds?
+4. Should `_compute_student_word_count` be extracted to a shared module used by both the grading worker and the status endpoint, to prevent the two from drifting apart if the word-count logic changes?
+5. Should observability move from `logger.info(grading.status_inferred …)` to a metrics counter (Prometheus, StatsD) or structured log aggregation? What is the minimum viable skip-rate monitoring approach?
+6. If `GRADING_MIN_STUDENT_WORDS` threshold is lowered, previously skipped sessions have no `grading_results` row and no queue message. What is the recommended regrade mechanism: re-publish to queue, direct one-shot call, or reconciliation scanner extension?
+7. What is the minimum checklist to call the grading pipeline (Patch 7E + 7F) production-ready? Consider: multi-tenant correctness, load/concurrency, token expiry handling, error rate alerting, and rollback plan.
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.

@@ -594,14 +594,76 @@ Three pure helpers added to `session_service.py`:
 * No DB audit trail for skipped sessions — skip state is dynamic inference, not a persisted row.
 * Status inference is threshold-dependent: if `GRADING_MIN_STUDENT_WORDS` is changed, the same session may infer differently on a subsequent `/grading/status` call.
 * No persistent `grading_status` column yet — adding one requires a migration strategy that does not currently exist in the repo.
-* No full live API/browser smoke test has been run yet after this commit. Patch 7F-2 covers this.
 
-### Future work (beyond Patch 7F-1)
+### Future work (beyond Patch 7F-1/7F-2)
 
-* Live read-only smoke test: `/grading/status` returns correct values for known graded, pending, and insufficient-evidence sessions; UI renders all three states correctly (Patch 7F-2).
-* Docs-only commit (this section).
 * Metrics/log aggregation for skip and pending rates over time.
 * Eventual DB-backed `grading_status` column once a migration strategy is established.
+* Production hardening: shared quality helper between worker and status endpoint, 8080/control-center proxy standardisation, regrade mechanism for threshold changes (Patch 7G).
+
+### Patch 7F-2 — Read-only Smoke Test (PASS)
+
+**Verdict: PASS — all 5 API checks and 13/13 UI assertions passed.**
+
+**Candidate sessions (SELECT-only, no raw transcripts printed):**
+
+| Type | Suffix | student_word_count | has_grading |
+|---|---|---|---|
+| graded | `98a58d10` (`9bc88289-…`) | 92 | True |
+| insufficient_evidence | `3d1eca15` (`f794869a-…`) | 5 | False |
+| pending | `49639bde` (`4e624753-…`) | None (NULL raw_backup_json) | False |
+
+Real candidates existed for all three statuses — no route interception mock needed.
+
+**API smoke results (curl, Bearer token from `/tmp/luve_token`, token never printed):**
+
+| Call | Expected | Result |
+|---|---|---|
+| `GET /grading/status` — graded | `200 status=graded` | ✅ 200 graded |
+| `GET /grading` — graded | `200 numeric scores, llm_grader.v1` | ✅ 200 overall=2.95 feedback_len=226 |
+| `GET /grading/status` — insufficient | `200 status=insufficient_evidence wc=5` | ✅ 200 insufficient_evidence wc=5 |
+| `GET /grading` — insufficient | `404 Grading result not ready` | ✅ 404 |
+| `GET /grading/status` — pending | `200 status=pending wc=None` | ✅ 200 pending wc=None |
+
+**UI smoke results (Playwright 1.60, headless Chrome `/usr/bin/google-chrome`):**
+
+Port 8080 Nginx proxy was not running. UI loaded via `file:///…/static/index.html` with `luve.control.coreApiUrl` localStorage override pointing to `http://localhost:8000`. All API calls hit the live core-api on port 8000.
+
+| Assertion | Result |
+|---|---|
+| graded — card visible | ✅ PASS |
+| graded — score tiles present (Overall/Fluency/Grammar/Vocab) | ✅ PASS |
+| graded — no insufficient message | ✅ PASS |
+| graded — no Retry button | ✅ PASS |
+| insufficient — card visible | ✅ PASS |
+| insufficient — "Not enough speech to grade. Try a longer session." | ✅ PASS |
+| insufficient — no score tiles | ✅ PASS |
+| insufficient — no Retry button | ✅ PASS |
+| insufficient — `/grading` not called after `status=insufficient_evidence` | ✅ PASS |
+| pending — card visible | ✅ PASS |
+| pending — "Grading pending — try again later." | ✅ PASS |
+| pending — Retry button present | ✅ PASS |
+| pending — no score tiles | ✅ PASS |
+
+**13/13 PASS**
+
+**DevOps/SRE conclusions:**
+* `NULL raw_backup_json` → `student_word_count=None` → conservatively infers `pending`, preventing false `insufficient_evidence` for sessions with no event log.
+* `/grading/status` and `/grading` routes both live and returning correct data.
+* `/grading` backward compatibility fully preserved — existing consumers unaffected.
+* UI branch prevents `/grading` fetch after `insufficient_evidence` — no retry treadmill.
+
+**Side effects confirmed absent:**
+* No files modified or staged during smoke.
+* No Groq calls. No grading-worker started. No TEN/browser sessions.
+* No DB writes. RabbitMQ queue: `messages=0`, `consumers=0` unchanged pre/post.
+* No secrets, raw transcripts, `raw_backup_json`, or full feedback printed.
+* `.understand-anything/` and `docs/system-map.md` untouched.
+
+**Remaining limitations after Patch 7F-2:**
+* Status is still dynamically inferred on each request — no persistent DB audit trail for skips.
+* Port 8080 Nginx/proxy was not part of this smoke (UI loaded via `file://`).
+* No DB-backed `grading_status` column yet.
 
 ## 12. Known Limitations & Gaps
 
