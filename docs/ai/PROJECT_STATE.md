@@ -411,6 +411,50 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 **Constraints respected:**
 * No runtime source files modified. No DB writes beyond worker-initiated upserts. No RabbitMQ purged. No secrets printed. Git worktree clean throughout.
 
+## 16. Patch 7D-A/B — Grader Calibration and Sanitized Transcript Review
+
+**Patch 7D-B synthetic calibration test and Patch 7D-A sanitized transcript review are complete. Both were read/call-only; no files, DB rows, or RabbitMQ messages were modified.**
+
+### Patch 7D-B: Synthetic Direct Calibration Test (1 Groq call, no DB write)
+
+A synthetic strong English transcript was constructed in code — no STT, no RabbitMQ, no DB, no session. `llm_grade_with_client` was called directly with `GroqClient` using `llama-3.1-8b-instant` at `temperature=0`.
+
+**Result:**
+* `fluency_score`: 8.00
+* `grammar_score`: 9.00
+* `vocab_score`: 8.50
+* `overall_score`: 8.52
+* `grader_version`: `llm_grader.v1`
+* `high_score_pass`: True (all 3 sub-scores ≥ 7.0)
+
+**Conclusion:** Prompt and model are fully capable of producing high scores when input is clean and well-structured. A prompt calibration floor or model floor does **not** exist — these hypotheses are ruled out.
+
+### Patch 7D-A: Sanitized Transcript Quality Review (read-only)
+
+SELECT-only DB access. No `raw_backup_json` printed. USER_TURN `.payload.text` fields extracted, sanitized, and analyzed per session.
+
+| Session | Turns | Words | Avg chars/turn | Key STT issue | Scores |
+|---|---|---|---|---|---|
+| `a3d35b36` | 15 | 74 | 23 | Fragmented informal, short turns, "Worship man!", "I am very love you" | 2.95 / 4.00 / 2.00 / 3.00 |
+| `218666a0` | 4 | 23 | 28 | Very short; "first hot. Yes, first hot." is a clear STT artifact | 2.95 / 4.00 / 2.00 / 3.00 |
+| `f56364d6` | 2 | 14 | 34 | Only 2 of 3 intended sentences captured; "buyed" → "apply" (STT misrecognition) | 2.95 / 4.00 / 2.00 / 3.00 |
+| `98a58d10` | 10 | 92 | 47 | Severe STT noise first half ("last whisker", "first pressed pull and break and break and break"); cleaner second half | 2.95 / 4.00 / 3.00 / 2.00 |
+
+### Root-Cause Conclusion
+
+**Confirmed primary cause:** STT/transcript quality. All four live sessions contained short, fragmented, noisy, or grammatically limited transcripts. The grader scored each session correctly for what it received. The synthetic test (8.52 overall from clean input) proves the grader is functional.
+
+**Ruled out:** Prompt calibration anchoring, parser defaults, model hard floor.
+
+**Remaining structural gap (not primary cause):** Grammar and vocab both carry weight 0.35 in `overall = fluency×0.30 + grammar×0.35 + vocab×0.35`. Any g/v swap produces identical overall. Session B (`98a58d10`) returned g=3/v=2 instead of g=2/v=3 — real sub-score change, but invisible at the overall level. The formula is not the root cause of the repeated 2.95, but it masks sub-score sensitivity.
+
+### SRE Warning
+
+Do not enable broader `GRADING_PROVIDER=llm` use until a transcript quality gate or "insufficient evidence" behavior is implemented (Patch 7E). Sessions with 14 words or severe STT noise currently receive authoritative numeric scores, which misrepresents grading confidence to users. No production-readiness claim is made.
+
+**Constraints respected:**
+* No runtime source files modified. No DB writes. No RabbitMQ operations. No secrets or raw transcripts printed. Exactly 1 Groq call made (Patch 7D-B). Git worktree clean throughout.
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -423,6 +467,6 @@ grading.completed session_id=9de7a1e3-... overall_score=2.95 provider_requested=
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed, score calibration/sensitivity unresolved (all sessions returned `overall=2.95`). No further Groq calls until Patch 7D prompt/transcript audit is complete.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Transcript quality gate required before wider use (Patch 7E).
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

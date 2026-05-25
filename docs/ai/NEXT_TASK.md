@@ -163,34 +163,46 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Verdict: INVESTIGATE. Pipeline reliability confirmed across multiple sequential runs. Score sensitivity unresolved — no dimension changed ≥1.5 across any session pair; `overall=2.95` identical across all four graded sessions (Patches 3, 4, 7C-A, 7C-B).
 * SRE conclusion: no further Groq calls until prompt/rubric and STT transcript quality are audited in Patch 7D.
 
+### Task 19: Patch 7D-A/B — Grader Calibration and Sanitized Transcript Review.
+* **7D-B (synthetic calibration test):** Direct call to `llm_grade_with_client` with a synthetic strong transcript — no DB write, no RabbitMQ, no worker, 1 Groq call. Returned `fluency=8.0`, `grammar=9.0`, `vocab=8.5`, `overall=8.52`. `high_score_pass=True`. Prompt/model can produce high scores; prompt anchoring and model floor ruled out.
+* **7D-A (sanitized transcript review):** SELECT-only DB query extracting USER_TURN text for all four live sessions. No `raw_backup_json` printed. Key findings:
+  * `a3d35b36`: 15 turns, 74 words — fragmented informal chat, avg 23 chars/turn.
+  * `218666a0`: 4 turns, 23 words — very short, clear STT artifact ("first hot. Yes, first hot.").
+  * `f56364d6`: 2 turns, 14 words — only partial script captured; "buyed" → "apply" (STT misrecognition).
+  * `98a58d10`: 10 turns, 92 words — severe STT noise first half ("last whisker", "first pressed pull and break and break and break"), cleaner second half.
+* **Root-cause confirmed:** STT/transcript quality is the primary cause of repeated `overall=2.95`. Grader scored each session correctly for what it received. Prompt calibration and model floor ruled out.
+* **Remaining structural gap:** grammar and vocab both weighted 0.35 — g/v swaps produce identical overall. Not root cause, but masks sub-score sensitivity.
+* **SRE conclusion:** Do not expand `GRADING_PROVIDER=llm` use until transcript quality gate is implemented (Patch 7E). Sessions with 14 words or severe STT noise currently receive authoritative numeric scores without confidence indication.
+
 ---
 
 ## Current Task
 **Mode: AUDIT / DESIGN ONLY — do not call Groq without explicit approval, do not run worker, do not create sessions, do not write DB, do not purge RabbitMQ without approval.**
 
-### Patch 7D Audit/Design: LLM Grader Prompt Calibration and Transcript Quality Review
+### Patch 7E Audit/Design: Transcript Quality Gate and Insufficient-Evidence Behavior
 
-**Goal:** Investigate why all four live-graded sessions returned `overall=2.95` despite different transcript lengths and quality. Determine whether the repeated score is caused by prompt/rubric anchoring, a model floor effect at `temperature=0`, STT transcript noise, or overall formula weighting. Produce a recommendation for the smallest safe calibration experiment (at most 1 Groq call).
+**Goal:** Design a transcript quality gate that prevents numeric scores from being issued when the student transcript is too short, too noisy, or otherwise insufficient for reliable grading. Produce an implementation plan with clear placement, threshold recommendations, mocked tests, and rollback behavior. Do not implement yet.
 
 **Do not in this task without explicit approval:**
 * Do not call Groq.
-* Do not run a new TEN session.
 * Do not start the grading-worker.
+* Do not run a new TEN session.
 * Do not write DB rows.
-* Do not print raw transcript text unless the user explicitly approves a sanitized transcript review.
-* Do not change the grader prompt.
-* Do not change the model.
-* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript, raw_backup_json, or auth tokens.
+* Do not modify runtime code yet.
+* Do not change the grading prompt yet.
+* Do not change the scoring formula yet.
+* Do not print secrets, API keys, DATABASE_URL credentials, raw transcript, `raw_backup_json`, or auth tokens.
 
 **What this audit must answer:**
-1. Is the repeated `overall=2.95` caused by prompt/rubric score anchoring (e.g., example scores in the prompt biasing output)?
-2. Does the overall formula (`fluency×0.30 + grammar×0.35 + vocab×0.35`) overweight grammar/vocab in a way that masks fluency differences across sessions?
-3. Is STT transcript quality too noisy at typical TEN session lengths for the grader to distinguish quality bands reliably?
-4. Should we inspect sanitized transcripts for Session A (`f56364d6`) and Session B (`98a58d10`) — and if so, what must be redacted?
-5. Should the `llm_grader` prompt include stronger calibration anchors or few-shot scoring examples to break the anchoring effect?
-6. Should the provider model be changed (e.g., a larger Groq model) or a non-zero temperature tested?
-7. Should a top-level `grader_version` field be added to `GradingRead` (Patch 7D output candidate) before further UI work?
-8. What is the smallest safe calibration experiment — design it so it requires at most 1 Groq call and produces a falsifiable score difference.
+1. Should grading skip issuing numeric scores when `total_user_words` or `user_turn_count` falls below a threshold — and what are the right thresholds based on the four session observations?
+2. What should the output be when a session is below threshold: no grading row at all, a row with a special marker, or a row with `"insufficient_evidence"` grader_version?
+3. How will the API (`GradingRead`) and UI (Session Analysis card) display "insufficient evidence" — returning 404, a separate field, or a special score value?
+4. Where should the gate live: `evaluation_input_builder.py` (quality signals), `worker.py` (early return before grading), `llm_grader.py` (pre-call guard), or `grading_repository.py` (before upsert)?
+5. How does this interact with the existing `has_student_turns` early return in `worker.py` — is a separate word-count gate additive or a replacement?
+6. What mocked unit tests are needed to cover: below-threshold skip, above-threshold grade, boundary at threshold, and idempotent behavior on regrade?
+7. What rollback behavior applies if a session was previously graded (has an existing row) but would now be skipped by the gate — does the worker skip the upsert entirely or leave the existing row intact?
+8. How does this affect observability: what log line, metric, or marker should appear when a session is skipped for insufficient evidence?
+9. How to preserve idempotency: if the same low-quality session message is consumed twice, does the gate produce the same outcome both times?
 
 ## Out of Scope (requires separate approved prompt)
 * Transactional outbox implementation.
