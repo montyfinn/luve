@@ -9,7 +9,7 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
-* **Latest runtime/tooling baseline:** `7d522d9` — fix(core-api): serve control center and lock down CORS (Patch 7G-6 — CORS wildcard replaced with 8-origin local allowlist via `get_cors_allow_origins()`; `StaticFiles` mount at `/static`; `/control-center` FileResponse route; `src/core/cors.py` CORS helper; 15/15 mocked tests; py_compile OK; no DB/RabbitMQ/Groq). Latest infrastructure commit: `d2bb908` db: add grading skip log migration (Patch 7G-8A — `infrastructure/db-migrations/0001_grading_skip_log.sql` created; migration not yet applied). Patch 7G-8B apply/verify plan complete (planning only; no DB commands run; execute is next — requires explicit user approval).
+* **Latest runtime/tooling baseline:** `7d522d9` — fix(core-api): serve control center and lock down CORS (Patch 7G-6 — CORS wildcard replaced with 8-origin local allowlist via `get_cors_allow_origins()`; `StaticFiles` mount at `/static`; `/control-center` FileResponse route; `src/core/cors.py` CORS helper; 15/15 mocked tests; py_compile OK; no DB/RabbitMQ/Groq). Latest infrastructure commit: `d2bb908` db: add grading skip log migration (Patch 7G-8A — `infrastructure/db-migrations/0001_grading_skip_log.sql` created; migration not yet applied). Patch 7G-8B apply/verify plan complete (planning only; no DB commands run; execute is next — requires explicit user approval). Patch 7G-8C app integration audit/design complete (audit/design only; no DB commands run; no files modified except docs; no app integration implemented; `grading_skip_log` table should still be treated as not existing until 7G-8B Execute is explicitly approved and verified).
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
@@ -703,7 +703,7 @@ CREATE TABLE IF NOT EXISTS grading_skip_log (
 CREATE UNIQUE INDEX IF NOT EXISTS grading_skip_log_session_id_key ON grading_skip_log (session_id);
 ```
 
-Migration SQL file created in Patch 7G-8A (commit `d2bb908`): `infrastructure/db-migrations/0001_grading_skip_log.sql` exists and is committed. **Migration not yet applied.** No DB commands run; `grading_skip_log` table does not yet exist in the database. Patch 7G-8B apply/verify plan is complete (planning only — no DB commands run; see Patch 7G-8B subsection in Section 19). Execute step requires explicit user approval; app integration (worker/scanner/backfill writing skip rows, `/grading/status` reading skip rows) is Patch 7G-8C+ scope.
+Migration SQL file created in Patch 7G-8A (commit `d2bb908`): `infrastructure/db-migrations/0001_grading_skip_log.sql` exists and is committed. **Migration not yet applied.** No DB commands run; `grading_skip_log` table does not yet exist in the database. Patch 7G-8B apply/verify plan is complete (planning only — no DB commands run; see Patch 7G-8B subsection in Section 19). Execute step requires explicit user approval. Patch 7G-8C app integration audit/design is complete (audit/design only — no files modified except docs; see Patch 7G-8C subsection in Section 19); implementation is blocked until 7G-8B Execute is completed and verified.
 
 ### 2. Migration Strategy
 
@@ -833,6 +833,7 @@ Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
 - [ ] Persistent skip/status active: `grading_skip_log` migration applied/verified + worker/scanner/backfill writing skip rows + `/grading/status` reading skip rows
 - [x] Migration SQL file created (Patch 7G-8A — `infrastructure/db-migrations/0001_grading_skip_log.sql` committed, commit `d2bb908`; not yet applied to DB)
 - [x] Migration apply plan documented (Patch 7G-8B planning — apply/verify/rollback plan complete; `docker exec luve_postgres` path confirmed; host psql/pg_dump unavailable; execute is next)
+- [x] App integration audit/design complete (Patch 7G-8C — repository/worker/scanner/backfill/core-api integration design documented; implementation blocked until 7G-8B Execute completes and is verified)
 - [x] Migration strategy finalized (Patch 7G-7 — `infrastructure/db-migrations/README.md` created, commit `bac73d2`)
 - [x] Scanner `--min-words` threshold parity (Patch 7G-4 — 7G-4A helper `462f5a4`; 7G-4B dry-run `5714ae4`; 7G-4C execute gate `7dcc9e8`)
 - [x] Backfill threshold parity (Patch 7G-4D — commit `80d4db7`)
@@ -861,7 +862,8 @@ Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
 | 7G-7 | Migration strategy docs + numbered migration directory proposal | Yes |
 | 7G-8A | `grading_skip_log` migration SQL file created (not yet applied) | Yes |
 | 7G-8B | Apply/verify `0001_grading_skip_log.sql` on local DB — plan complete (Patch 7G-8B planning); execute pending user approval | Yes |
-| 7G-8C+ | App integration: worker/scanner/backfill write skip rows; `/grading/status` reads skip rows | After 7G-8B |
+| 7G-8C | App integration audit/design complete (Patch 7G-8C planning only); implementation blocked until 7G-8B Execute completes | After 7G-8B |
+| 7G-8C-1 to 7G-8C-4 | App integration implementation: repository, worker, scanner/backfill, core-api status — blocked until 7G-8B Execute + verify | After 7G-8B Execute |
 | 7G-9 | DLQ + Prometheus counters + regrade tooling | Recommended |
 
 **Final recommendation:** Do not jump to DB migration. Do not run 7G-2 and 7G-3 in parallel. The DevOps/SRE-safe implementation order is strictly sequential:
@@ -1596,6 +1598,81 @@ S1: dirty tracked files. S2: HEAD mismatch. S3: `luve_postgres` not running. S4:
 
 ---
 
+### Patch 7G-8C — grading_skip_log App Integration Audit/Design
+
+**Status: Audit/design complete. No DB commands run. No files modified except docs. No app integration implemented.**
+
+**Audit/design only — no files created or modified (except docs), no DB commands run, no app integration implemented. `grading_skip_log` table must be treated as not existing until 7G-8B Execute is explicitly approved and verified. Do not implement or deploy app integration before 7G-8B Execute applies and verifies the DB migration.**
+
+#### Source Files Audited (read-only)
+
+| File | Key finding |
+|---|---|
+| `grading_repository.py` | Two async methods; each opens own asyncpg connection, try/finally close. No `log_grading_skip()` exists. |
+| `worker.py` | Calls `build_evaluation_input` BEFORE eligibility. Does NOT call `evaluate_grading_eligibility`. Two skip paths collapse four reason codes: `no_raw_backup`/`invalid_raw_backup`/`no_user_turns` → `grading.no_user_turns_skip`; `insufficient_words` → `grading.skipped_insufficient_evidence`. |
+| `session_eligibility.py` | `evaluate_grading_eligibility(raw_backup_json, min_student_words)` → `GradingEligibility`. Four ineligible reason codes. `student_word_count=None` for `no_raw_backup`/`invalid_raw_backup`. |
+| `reconciliation_scanner.py` | Already calls `evaluate_grading_eligibility` on both dry-run and execute paths. Tracks all four reason counters. Does NOT write to `grading_skip_log`. |
+| `backfill_completed_sessions.py` | Same as scanner. Already uses `evaluate_grading_eligibility` on both paths. Does NOT write to `grading_skip_log`. |
+| `session_service.py` | `get_session_grading_status` LEFT JOINs sessions + grading_results only. Re-derives word count locally via `_compute_student_word_count`, NOT `evaluate_grading_eligibility`. No skip log query. |
+| `schemas/session.py` | `GradingStatusRead.status: Literal["graded", "pending", "insufficient_evidence"]`. No `skipped_reason` field. |
+
+#### Recommended Integration Split
+
+**7G-8C-1 — Repository** (`grading_repository.py`):
+- Add `async def log_grading_skip(self, session_id, reason, source="worker", student_word_count=None, min_words_threshold=None) -> None`
+- SQL: `INSERT INTO grading_skip_log ... ON CONFLICT (session_id) DO UPDATE SET skipped_reason=..., source=..., student_word_count=..., min_words_threshold=..., updated_at=CURRENT_TIMESTAMP`
+- Pattern: open own asyncpg connection, try/finally close — same as existing methods
+- Privacy: no raw transcript, no `raw_backup_json`, no PII; only UUIDs and integer counts
+
+**7G-8C-2 — Worker** (`worker.py`):
+- Call `evaluate_grading_eligibility(session_row["raw_backup_json"], min_student_words=min_student_words)` BEFORE `build_evaluation_input`
+- Replace ad-hoc `has_student_turns` and word-count guards with one unified ineligible branch
+- Write skip row best-effort with `source="worker"`: wrap `log_grading_skip` in try/except (non-fatal — `consume_forever` uses `requeue=False`)
+- No Groq call and no `upsert_grading_result` for ineligible sessions
+- Existing log key `grading.skipped_insufficient_evidence` (referenced in `test_worker_patch7g5.py:test_insufficient_evidence_skips_before_fallback_gate`) changes — test must be updated alongside worker refactor
+
+**7G-8C-3 — Scanner/Backfill** (`reconciliation_scanner.py`, `backfill_completed_sessions.py`):
+- Execute mode only: after `evaluate_grading_eligibility` ineligibility check, add best-effort `log_grading_skip` call with `source="scanner"` or `source="backfill"`
+- Guard with `if repository is not None:` (execute mode only; `repository=None` in dry-run)
+- Dry-run: no DB write, existing behavior preserved
+- Summary counters unchanged
+
+**7G-8C-4 — Core-API status** (`session_service.py`, `schemas/session.py`):
+- Add `LEFT JOIN grading_skip_log sl ON sl.session_id = s.id` to `get_session_grading_status` query
+- If skip log row present: use persisted `skipped_reason` rather than re-deriving from `raw_backup_json`
+- **Deploy last** — query fails with relation-not-found error if migration not applied; this is a synchronous query that will 500 all `/grading/status` requests if the table is missing
+- Schema option A (no API change): map all skip reasons to `"insufficient_evidence"` (minimal blast radius)
+- Schema option B (schema change): add `"ineligible"` literal and optional `skipped_reason` field to `GradingStatusRead` (semantically correct)
+- Recommendation: Option A for minimal patch unless API schema expansion is explicitly authorized
+
+#### Test Plan
+
+- **Repository** (`test_grading_repository_patch7g8c.py`): asyncpg mock tests — INSERT called with correct params; connection closed in finally; `student_word_count=None` for non-word-count reasons; upsert on conflict
+- **Worker** (`test_worker_patch7g8c.py`): extend `_FakeRepo` with `log_grading_skip`; test all four skip reasons; eligible path does not call `log_grading_skip`; `log_grading_skip` failure does not raise; no Groq call or `upsert_grading_result` on any skip; update `test_worker_patch7g5.py` assertion on old log key `skipped_insufficient_evidence`
+- **Scanner/Backfill**: execute mode calls `log_grading_skip(source="scanner"/"backfill")`; dry-run does not; failure does not fail run
+- **Core-API status**: `get_session_grading_status` with skip log row returns correct status; no skip row preserves existing behavior; graded result overrides skip row
+- **Privacy**: no raw transcript or `raw_backup_json` in `log_grading_skip` arguments
+
+#### Key Risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Core-API deployed before migration applied | High — 500 on all `/grading/status` requests | Deploy 7G-8C-4 last; verify migration in DB before deploying |
+| Worker deployed before migration applied | Low — try/except swallows error; skip log silently not written (data-loss risk, not crash) | Deploy after migration verified; optionally gate behind `ENABLE_GRADING_SKIP_LOG` env flag |
+| Old log key `grading.skipped_insufficient_evidence` changes | Medium — breaks `test_worker_patch7g5.py` assertion | Update test in same commit as worker refactor |
+| `repository=None` in scanner dry-run | Low — `if repository is not None:` guard prevents accidental write | Add explicit guard before `log_grading_skip` call |
+
+#### Safety
+
+* No `psql`, `pg_dump`, `alembic`, `docker`, or `docker compose` commands run.
+* No DB connection, no DB read, no DB write.
+* No `.env` values printed.
+* No app code, infrastructure, or test files modified.
+* No Groq calls. No RabbitMQ operations. No TEN/browser/Playwright.
+* No packages installed.
+
+---
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -1608,6 +1685,6 @@ S1: dirty tracked files. S2: HEAD mismatch. S3: `luve_postgres` not running. S4:
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate implemented (commit `dcdf9ba`): `GRADING_FAKE_FALLBACK` defaults to false; LLM failures log `grading.llm_failed_no_fallback` and re-raise instead of silently writing fake results. Patch 7G-6 StaticFiles/CORS lockdown implemented (commit `7d522d9`): CORS wildcard replaced with 8-origin local allowlist; `StaticFiles` at `/static`; `/control-center` FileResponse route; 15/15 tests passed. Patch 7G-7 migration strategy runbook established (commit `bac73d2`): `infrastructure/db-migrations/README.md` created; numbered SQL migration workflow, naming convention, backup/preflight/apply/verify/rollback/sync runbook defined; no Alembic adopted for now; no migration SQL applied; no schema changed. Patch 7G-8A migration SQL file committed (commit `d2bb908`): `0001_grading_skip_log.sql` created but not yet applied to the database; `grading_skip_log` table does not yet exist. Patch 7G-8B apply/verify plan complete (planning only; no DB commands run); execute step pending explicit user approval.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate implemented (commit `dcdf9ba`): `GRADING_FAKE_FALLBACK` defaults to false; LLM failures log `grading.llm_failed_no_fallback` and re-raise instead of silently writing fake results. Patch 7G-6 StaticFiles/CORS lockdown implemented (commit `7d522d9`): CORS wildcard replaced with 8-origin local allowlist; `StaticFiles` at `/static`; `/control-center` FileResponse route; 15/15 tests passed. Patch 7G-7 migration strategy runbook established (commit `bac73d2`): `infrastructure/db-migrations/README.md` created; numbered SQL migration workflow, naming convention, backup/preflight/apply/verify/rollback/sync runbook defined; no Alembic adopted for now; no migration SQL applied; no schema changed. Patch 7G-8A migration SQL file committed (commit `d2bb908`): `0001_grading_skip_log.sql` created but not yet applied to the database; `grading_skip_log` table does not yet exist. Patch 7G-8B apply/verify plan complete (planning only; no DB commands run); execute step pending explicit user approval. Patch 7G-8C app integration audit/design complete (audit/design only; no DB commands run; no app code modified; see Section 19 Patch 7G-8C subsection); implementation blocked until 7G-8B Execute completes and is verified.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.

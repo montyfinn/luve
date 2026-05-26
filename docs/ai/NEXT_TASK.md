@@ -321,6 +321,13 @@ This file is a scoped task memo, not the global repo state source of truth.
 * 12 stop conditions documented in `PROJECT_STATE.md` Section 19 Patch 7G-8B subsection.
 * **No DB commands run. Migration still not applied. `grading_skip_log` table does not yet exist in the database.**
 
+### Task 38: Patch 7G-8C Audit/Design — App Integration Plan for grading_skip_log (audit/design only, no DB commands run, no files modified except docs).
+* Audited source files (read-only): `grading_repository.py`, `worker.py`, `session_eligibility.py`, `reconciliation_scanner.py`, `backfill_completed_sessions.py`, `session_service.py`, `schemas/session.py`, `tests/test_worker_patch7g5.py`.
+* Key findings: `GradingRepository` has no `log_grading_skip()` yet. `worker.py` does not call `evaluate_grading_eligibility` — uses `build_evaluation_input` quality signals first, collapses `no_raw_backup`/`invalid_raw_backup`/`no_user_turns` into a single `has_student_turns=False` path. Scanner and backfill already call `evaluate_grading_eligibility` and track all four reason codes. `get_session_grading_status` re-derives eligibility from `raw_backup_json` locally; does not consult any skip log. `GradingStatusRead.status` supports only `"graded"`, `"pending"`, `"insufficient_evidence"` — no `skipped_reason` field.
+* Designed four-step integration split: 7G-8C-1 (Repository: `log_grading_skip()` with asyncpg ON CONFLICT DO UPDATE); 7G-8C-2 (Worker: refactor to call `evaluate_grading_eligibility` first, best-effort skip log with `source="worker"`); 7G-8C-3 (Scanner/Backfill: execute-mode-only skip log with `source="scanner"`/`"backfill"`, dry-run unchanged); 7G-8C-4 (Core-API status: LEFT JOIN `grading_skip_log`, deploy last — table missing = 500).
+* Full test plan documented: repository asyncpg mocks; worker `_FakeRepo` extension for all four skip reasons; scanner/backfill execute/dry-run coverage; core-api status with/without skip log row; old log key `grading.skipped_insufficient_evidence` assertion update required.
+* **No DB commands run. No files modified except docs. No app integration implemented. Implementation blocked until 7G-8B Execute completes and is verified.**
+
 ### Task 35: Patch 7G-7 Implementation — Migration Strategy Runbook (commit `bac73d2`).
 * Created `infrastructure/db-migrations/README.md` (261 lines): numbered SQL migration workflow and runbook.
 * Documented schema source of truth: `infrastructure/db-init/01-init.sql`; Docker `entrypoint-initdb.d` runs only on empty volumes; existing volumes require manual migration.
@@ -393,9 +400,9 @@ This file is a scoped task memo, not the global repo state source of truth.
 9. Report result. Update `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md` to record outcome. Do not proceed to app integration.
 
 ## Out of Scope (requires separate approved prompt)
-* App integration — Patch 7G-8C+.
-* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8C+.
-* Modifying `/grading/status` to consume skip rows — Patch 7G-8C+.
+* App integration implementation — Patch 7G-8C-1 through 7G-8C-4. **Blocked until 7G-8B Execute completes and is verified.** If the user says only "continue" or "next step", do not run DB commands and do not implement app integration.
+* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8C-1/7G-8C-2/7G-8C-3.
+* Modifying `/grading/status` to consume skip rows — Patch 7G-8C-4.
 * Updating `infrastructure/db-init/01-init.sql` — separate approved patch after migration applied and verified.
 * Docs commit until after apply/verify result is reviewed.
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
