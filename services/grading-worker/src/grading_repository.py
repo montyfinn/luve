@@ -33,6 +33,42 @@ class GradingRepository:
         finally:
             await connection.close()
 
+    async def log_grading_skip(
+        self,
+        session_id: UUID,
+        reason: str,
+        source: str = "worker",
+        student_word_count: int | None = None,
+        min_words_threshold: int | None = None,
+    ) -> None:
+        connection = await asyncpg.connect(self._database_url)
+        try:
+            await connection.execute(
+                """
+                INSERT INTO grading_skip_log (
+                    session_id,
+                    skipped_reason,
+                    source,
+                    student_word_count,
+                    min_words_threshold
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (session_id) DO UPDATE SET
+                    skipped_reason      = EXCLUDED.skipped_reason,
+                    source              = EXCLUDED.source,
+                    student_word_count  = EXCLUDED.student_word_count,
+                    min_words_threshold = EXCLUDED.min_words_threshold,
+                    updated_at          = CURRENT_TIMESTAMP
+                """,
+                session_id,
+                reason,
+                source,
+                student_word_count,
+                min_words_threshold,
+            )
+        finally:
+            await connection.close()
+
     async def upsert_grading_result(self, result: GradingResult) -> None:
         """Persist fake/real grading output using the current schema.
 
