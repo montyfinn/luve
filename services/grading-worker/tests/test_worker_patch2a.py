@@ -83,6 +83,9 @@ class FakeRepository:
         self.upserted = result
         self.upsert_call_count += 1
 
+    async def log_grading_skip(self, **kwargs: Any) -> None:
+        pass
+
 
 def _fake_llm_result() -> GradingResult:
     return GradingResult(
@@ -141,7 +144,7 @@ async def test_no_user_turns_skips_upsert(monkeypatch: pytest.MonkeyPatch, caplo
     with caplog.at_level(logging.WARNING, logger="src.worker"):
         await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
     assert repo.upsert_call_count == 0
-    assert any("no_user_turns_skip" in r.message for r in caplog.records)
+    assert any("session_ineligible" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -359,10 +362,10 @@ async def test_short_transcript_skips_upsert_and_provider(monkeypatch: pytest.Mo
     assert repo.upsert_call_count == 0
     assert "build" not in called
     assert "grade" not in called
-    assert any("skipped_insufficient_evidence" in r.message for r in caplog.records)
-    skip_msg = next(r.message for r in caplog.records if "skipped_insufficient_evidence" in r.message)
+    assert any("session_ineligible" in r.message for r in caplog.records)
+    skip_msg = next(r.message for r in caplog.records if "session_ineligible" in r.message)
     assert "student_word_count=" in skip_msg
-    assert "min_student_words=" in skip_msg
+    assert "min_words_threshold=" in skip_msg
     # no raw transcript text in any log record
     for record in caplog.records:
         assert "Hello, how are you?" not in record.message

@@ -13,6 +13,7 @@ from src.evaluation_input_builder import build_evaluation_input
 from src.fake_grader import fake_grade
 from src.grading_repository import GradingRepository
 from src.llm_grader import LLMGraderError, llm_grade_with_client
+from src.session_eligibility import evaluate_grading_eligibility
 
 
 logger = logging.getLogger(__name__)
@@ -66,23 +67,37 @@ async def process_session_completed_job(
         logger.warning("grading.session_missing session_id=%s", job.session_id)
         return
 
-    evaluation_input = build_evaluation_input(session_row)
-    if not evaluation_input.quality_signals.get("has_student_turns"):
-        logger.warning("grading.no_user_turns_skip session_id=%s", job.session_id)
-        return
-
     min_student_words = int(os.getenv("GRADING_MIN_STUDENT_WORDS", "25"))
-    student_word_count = int(evaluation_input.quality_signals.get("student_word_count", 0) or 0)
-    if student_word_count < min_student_words:
+    eligibility = evaluate_grading_eligibility(
+        session_row["raw_backup_json"],
+        min_student_words=min_student_words,
+    )
+    if not eligibility.eligible:
         logger.warning(
-            "grading.skipped_insufficient_evidence session_id=%s user_turn_count=%d student_word_count=%d min_student_words=%d",
+            "grading.session_ineligible session_id=%s reason=%s student_word_count=%s min_words_threshold=%s",
             job.session_id,
-            int(evaluation_input.quality_signals.get("user_turn_count", 0) or 0),
-            student_word_count,
-            min_student_words,
+            eligibility.reason,
+            eligibility.student_word_count,
+            min_student_words if eligibility.reason == "insufficient_words" else None,
         )
+        try:
+            await repository.log_grading_skip(
+                session_id=job.session_id,
+                reason=eligibility.reason,
+                source="worker",
+                student_word_count=eligibility.student_word_count,
+                min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "grading.skip_log_failed session_id=%s error=%s: %s",
+                job.session_id,
+                type(exc).__name__,
+                exc,
+            )
         return
 
+    evaluation_input = build_evaluation_input(session_row)
     provider = _get_grading_provider()
     result: GradingResult
 

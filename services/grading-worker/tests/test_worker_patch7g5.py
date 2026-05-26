@@ -71,6 +71,9 @@ class _FakeRepo:
         self.upserted = result
         self.upsert_call_count += 1
 
+    async def log_grading_skip(self, **kwargs: Any) -> None:
+        pass
+
 
 def _llm_result() -> GradingResult:
     return GradingResult(
@@ -358,4 +361,4 @@ async def test_insufficient_evidence_skips_before_fallback_gate(
         # must not raise even though fallback is disabled — skip gate fires first
         await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
     assert repo.upsert_call_count == 0
-    assert any("skipped_insufficient_evidence" in r.message for r in caplog.records)
+    assert any("session_ineligible" in r.message for r in caplog.records)
