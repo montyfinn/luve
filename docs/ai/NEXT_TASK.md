@@ -298,6 +298,17 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 58/58 passed (`test_session_eligibility.py` + `test_backfill_completed_sessions_patch7g4d.py`); full grading-worker suite 154/154 passed using `services/core-api/venv/bin/python3 -m pytest tests/ -q`. An earlier run via `~/.local/bin/pytest` produced 32 failures due to missing `pytest-asyncio` in that runner — a runner issue, not a code issue. `de6c6d1` corrected the earlier inaccurate verification docs; this approved-env rerun followed. No backfill/scanner `--execute` run.
 * Patch 7G-4 series complete and verified.
 
+### Task 35: Patch 7G-7 Implementation — Migration Strategy Runbook (commit `bac73d2`).
+* Created `infrastructure/db-migrations/README.md` (261 lines): numbered SQL migration workflow and runbook.
+* Documented schema source of truth: `infrastructure/db-init/01-init.sql`; Docker `entrypoint-initdb.d` runs only on empty volumes; existing volumes require manual migration.
+* Documented why no Alembic for now: only `users` has ORM model; `sessions`/`grading_results`/`lessons` are raw SQL; Alembic autogeneration would miss 3 of 4 tables.
+* Defined naming convention: `NNNN_<snake_case_description>.sql`; one migration per schema change; never reuse sequence numbers.
+* Defined mandatory migration file sections: Purpose, Scope, Preflight, Forward migration, Verification, Rollback Notes, Fresh DB Sync Note.
+* Defined 7-step safe apply runbook: backup → inspect → preflight → apply → verify → rollback → sync `01-init.sql`.
+* Documented privacy principle: no raw transcript text or audio in grading skip/status tables.
+* Included Patch 7G-8 `grading_skip_log` table sketch (non-executable, design-review-only).
+* **Explicit non-changes:** `infrastructure/db-init/01-init.sql` unchanged; `0001_grading_skip_log.sql` not created; no DB commands run; no schema applied; no services/tests/runtime files modified.
+
 ### Task 34: Patch 7G-6 Implementation — StaticFiles / Control-Center Serving and CORS Lockdown (commit `7d522d9`).
 * Extracted CORS origins into standalone `src/core/cors.py` helper: 8-origin local default (no wildcard), `CORS_ALLOW_ORIGINS` env var override, comma-split/trim/drop-empty parsing, explicit `"*"` opt-in.
 * Updated `src/main.py`: `allow_origins=get_cors_allow_origins()`, `allow_credentials=False`, `StaticFiles` at `/static`, `/control-center` FileResponse route using `Path(__file__).parent / "static"`.
@@ -319,41 +330,46 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-7: Migration Strategy Audit/Design — Numbered Migration Directory**
+**Patch 7G-8: Audit/Design — Persistent Grading Skip/Status Table (`grading_skip_log`)**
 
-**Status: Not yet started. AUDIT/DESIGN ONLY. Do not implement, modify, stage, or commit during this phase.**
+**Status: Not yet started. AUDIT / DESIGN ONLY. Do not create migration files, do not modify `db-init/`, do not apply schema, do not commit.**
 
 **Recommended model:**
-* **Sonnet high:** focused audit of existing DB init structure with clear prior art.
-* **Sonnet max:** if output is ambiguous, surprising schema findings, or migration safety analysis requires broader architecture judgment.
-* **Opus high/max:** only if broader DB migration framework decisions (Alembic vs. manual) require deeper architectural trade-off analysis.
+* **Sonnet high:** focused schema design with clear prior art from Patch 7G-7 runbook.
+* **Sonnet max:** if skip-reason semantics, status endpoint integration, or DB safety concerns are ambiguous.
+* **Opus high/max:** only if broader DB architecture or status model decisions require deeper trade-off analysis.
 
 **Background:**
-No Alembic or migration framework exists in the repo. Only `infrastructure/db-init/01-init.sql` (run once by Docker `entrypoint-initdb.d`). No `alembic_version` table. Patch 7G-8 (`grading_skip_log` table) and future schema changes require a safe, auditable migration path before any `CREATE TABLE` or `ALTER TABLE` is applied to the production database.
+The migration strategy and runbook are established (Patch 7G-7, commit `bac73d2`). The next step is to design the actual `0001_grading_skip_log.sql` migration and the corresponding app integration plan, but not to create or apply any files yet. The Patch 7G-7 README already contains a high-level table sketch; this audit confirms and firms up that design.
 
-**Goal:** Audit existing DB initialization structure; design a minimal numbered SQL migration directory proposal; produce an audit/design output before any files are created or modified.
+**Goal:** Design the complete `grading_skip_log` migration and app integration plan; produce an audit/design output before any migration file, service code, or DB change.
 
 Questions to answer:
-* What tables and constraints exist in `infrastructure/db-init/01-init.sql`?
-* Is `alembic_version` table absent from the DB (confirm from prior audit)?
-* What would `infrastructure/db-migrations/0001_grading_skip_log.sql` contain?
-* What preflight/backup/verify/rollback requirements must each migration script satisfy?
-* Is any Alembic tooling present or worth adding at this stage?
-* What is the safe execution order for `db-migrations/` scripts alongside `db-init/`?
+* What are the exact skip reasons emitted by worker, scanner, and backfill? Confirm from `session_eligibility.py` reason codes: `insufficient_words`, `no_user_turns`, `no_raw_backup`, `invalid_raw_backup`.
+* Confirm `grading_skip_log` schema: `session_id` FK, `skipped_reason` CHECK, `student_word_count` nullable, `min_words_threshold` nullable, `skipped_at`, UNIQUE on `session_id`, indexes.
+* Is one skip row per session the right design, or should all skips be logged (append-only)?
+* How should worker `process_session_completed_job` upsert skip rows? New `GradingRepository.log_grading_skip()` method?
+* How should scanner and backfill log skips? Same repository method?
+* How should `/grading/status` consume skip rows — JOIN vs. dynamic inference? Does it replace current dynamic word-count inference?
+* Privacy: confirm no transcript text, no audio, no PII stored.
+* Confirm migration file structure matches Patch 7G-7 runbook template.
+* Confirm `01-init.sql` mirror strategy: update after migration is verified, separate patch.
+* What verification/apply/rollback steps are needed? Do not run them yet.
 
-**Hard safety rules for this task:**
-* AUDIT/DESIGN ONLY — do not create migration files, modify `db-init/`, modify any service source, stage, or commit.
-* Do not run `psql`, `alembic`, or any DB-modifying command.
-* Do not start services, run Groq, publish RabbitMQ messages, or touch TEN/browser.
-* Do not print secrets, DATABASE_URL values, or DB credentials.
+**Hard safety rules:**
+* AUDIT/DESIGN ONLY — do not create `0001_grading_skip_log.sql`, do not modify `db-init/`, do not modify services or tests, do not stage or commit.
+* Do not run `psql`, `alembic`, `docker compose`, or any DB-modifying command.
+* Do not connect to DB. Do not start services. Do not run Groq, RabbitMQ, TEN, browser, or Playwright.
+* Do not print secrets, `DATABASE_URL`, DB credentials, or API keys.
 * Allowed read paths: `infrastructure/`, `services/core-api/src/`, `services/grading-worker/src/`, `docs/ai/`. No write paths.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-7 implementation (create migration files, modify `db-init/`) — audit/design only in current task.
-* Patch 7G-8 (`grading_skip_log` implementation — after 7G-7 approved).
+* Creating `infrastructure/db-migrations/0001_grading_skip_log.sql` — Patch 7G-8 implementation, after audit/design approved.
+* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8 implementation.
+* Modifying `/grading/status` to consume skip rows — Patch 7G-8 implementation.
+* Updating `infrastructure/db-init/01-init.sql` — after migration applied and verified.
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
-* New DB schema or migration files (blocked until Patch 7G-7 design approved).
 * Reconciliation scanner execution or modification.
 * Removing `SQLSessionStore.persist_event_log` dead code.
 * Removing DEV PREVIEW badge from UI.
