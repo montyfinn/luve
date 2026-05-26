@@ -29,6 +29,11 @@ def _get_grading_provider() -> str:
     return raw
 
 
+def _get_fake_fallback_enabled() -> bool:
+    value = os.getenv("GRADING_FAKE_FALLBACK", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _build_grader_client() -> Any:
     from src.grading_provider_client import GroqClient
     llm_provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
@@ -90,13 +95,22 @@ async def process_session_completed_job(
                 *result.detailed_corrections,
             ]
         except Exception as exc:
-            logger.warning(
-                "grading.llm_failed_fallback session_id=%s error=%s: %s",
-                job.session_id,
-                type(exc).__name__,
-                exc,
-            )
-            result = fake_grade(evaluation_input)
+            if _get_fake_fallback_enabled():
+                logger.warning(
+                    "grading.llm_failed_fallback session_id=%s error=%s: %s",
+                    job.session_id,
+                    type(exc).__name__,
+                    exc,
+                )
+                result = fake_grade(evaluation_input)
+            else:
+                logger.error(
+                    "grading.llm_failed_no_fallback session_id=%s error=%s: %s",
+                    job.session_id,
+                    type(exc).__name__,
+                    exc,
+                )
+                raise
     else:
         result = fake_grade(evaluation_input)
 

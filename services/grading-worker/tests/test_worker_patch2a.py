@@ -171,6 +171,7 @@ async def test_session_missing_skips_upsert(monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.mark.asyncio
 async def test_llm_provider_stub_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_FAKE_FALLBACK", "true")
     monkeypatch.delenv("GROQCLOUD_API_KEY", raising=False)  # ensure hermetic — key absent → LLMGraderError → fallback
     monkeypatch.delenv("LLM_PROVIDER", raising=False)  # default groq, key absent → raises
     repo = FakeRepository()
@@ -232,6 +233,7 @@ async def test_llm_provider_success_prepends_grader_info_marker(monkeypatch: pyt
 @pytest.mark.asyncio
 async def test_llm_grade_error_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_FAKE_FALLBACK", "true")
     mock_client = object()
 
     with (
@@ -250,6 +252,7 @@ async def test_llm_grade_error_falls_back_to_fake(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.asyncio
 async def test_timeout_error_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_FAKE_FALLBACK", "true")
     mock_client = object()
 
     with (
@@ -326,6 +329,7 @@ def test_build_grader_client_raises_on_invalid_timeout(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_llm_provider_missing_key_falls_back_to_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "llm")
+    monkeypatch.setenv("GRADING_FAKE_FALLBACK", "true")
     monkeypatch.setenv("LLM_PROVIDER", "groq")
     monkeypatch.delenv("GROQCLOUD_API_KEY", raising=False)
     repo = FakeRepository()
