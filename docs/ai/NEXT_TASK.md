@@ -328,6 +328,18 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Full test plan documented: repository asyncpg mocks; worker `_FakeRepo` extension for all four skip reasons; scanner/backfill execute/dry-run coverage; core-api status with/without skip log row; old log key `grading.skipped_insufficient_evidence` assertion update required.
 * **No DB commands run. No files modified except docs. No app integration implemented. Implementation blocked until 7G-8B Execute completes and is verified.**
 
+### Task 39: Patch 7G-8B Execute — Apply and verify `grading_skip_log` migration on local DB (complete 2026-05-26).
+* All DB commands run via `docker exec luve_postgres` — host `psql`/`pg_dump` not on PATH.
+* Git state verified: HEAD `2c293ff`, no tracked dirty files.
+* `luve_postgres` container confirmed running (`postgres:15-alpine`, port `5432:5432`).
+* Credentials assigned from container env only — values never printed or echoed.
+* **Backup:** `/home/minhthuy/db-backups/backup_pre_0001_grading_skip_log_20260526_145532.dump` — 111K, non-zero ✓
+* **Preflight (5/5 passed):** no active transactions >10s; `sessions_exists=t`; `not_yet_created=t`; `pgcrypto` present; `sessions.id` is `uuid`.
+* **Apply output (exit code 0):** `BEGIN` / `CREATE TABLE` / `CREATE INDEX` / `CREATE INDEX` / `COMMIT`
+* **Verification (all passed):** `table_exists=t`; `row_count=0`; 8 columns exact (`id uuid NOT NULL gen_random_uuid()`, `session_id uuid NOT NULL`, `skipped_reason text NOT NULL`, `student_word_count integer NULL`, `min_words_threshold integer NULL`, `source text NOT NULL 'worker'::text`, `skipped_at timestamptz NOT NULL`, `updated_at timestamptz NOT NULL`); 4 indexes (`grading_skip_log_pkey` implicit PK — expected, not an error; `session_id_key`; `skipped_at_idx`; `skipped_reason_idx`); 5 constraints (pkey, session_id_fkey, session_id_key, skipped_reason_check, source_check); FK `session_id → sessions(id) ON DELETE CASCADE` ✓.
+* **Current DB state:** `grading_skip_log` table now exists in local DB; `row_count=0`.
+* No files modified, staged, or committed during execute. No app integration. `infrastructure/db-init/01-init.sql` unchanged (mirror deferred to Patch 7G-8D). No services/tests/Groq/RabbitMQ/TEN/browser/scanner/backfill `--execute`. No secrets or credentials printed.
+
 ### Task 35: Patch 7G-7 Implementation — Migration Strategy Runbook (commit `bac73d2`).
 * Created `infrastructure/db-migrations/README.md` (261 lines): numbered SQL migration workflow and runbook.
 * Documented schema source of truth: `infrastructure/db-init/01-init.sql`; Docker `entrypoint-initdb.d` runs only on empty volumes; existing volumes require manual migration.
@@ -360,51 +372,78 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-8B Execute — Apply and verify `grading_skip_log` migration on local DB**
+**Patch 7G-8C-1 Implementation — Repository `log_grading_skip()`**
 
-**Status: BLOCKED until explicit user approval to run DB commands. This docs commit is not authorization. Do not run docker, pg_dump, psql, or any DB command unless the user explicitly says to proceed with DB apply.**
+**Status: Allowed now because 7G-8B Execute (Task 39) applied and verified the DB migration. Runtime/test changes only. Do not touch core-api/status yet. Do not touch scanner/backfill yet. Do not mirror 01-init.sql yet.**
 
 **Recommended model:**
-* **Sonnet max:** DB-changing step; schema touches live local DB; requires backup, preflight, apply, verification, and rollback discipline.
+* **Sonnet high** for repository method + mocked tests.
+* **Sonnet max** if repository asyncpg patterns are ambiguous.
+* Opus not needed.
 
-**Background:**
-`infrastructure/db-migrations/0001_grading_skip_log.sql` is committed (Patch 7G-8A, commit `d2bb908`). Patch 7G-8B apply/verify plan is complete (Task 37 — audit/plan only). The `grading_skip_log` table should be treated as not existing until apply/verify confirms otherwise. This task executes the approved plan.
+**Goal:** Add `GradingRepository.log_grading_skip(...)` to `services/grading-worker/src/grading_repository.py` with mocked tests only. No worker/scanner/backfill/core-api changes in this sub-patch.
 
-**Pre-conditions (all must be met before first DB command):**
-* Worktree is clean (`git status --short` shows no tracked dirty files).
-* `luve_postgres` container is running (`docker ps --filter "name=luve_postgres"`).
-* Backup taken and confirmed non-zero.
+**Files:**
+* `services/grading-worker/src/grading_repository.py` — add `log_grading_skip` method
+* New test file: `services/grading-worker/tests/test_grading_repository_patch7g8c.py`
 
-**Hard safety rules:**
-* **Authorization required:** The next Claude prompt must confirm explicit user authorization unless the user message itself explicitly says to apply the migration now. A prompt that only asks for "the next step" or "continue" is not authorization to run DB commands. If authorization is absent or ambiguous, stop before running docker, pg_dump, or psql.
-* **Must backup first** before any DB command. Backup to `/home/minhthuy/db-backups/`. Confirm non-zero bytes before proceeding.
-* **Must use `docker exec luve_postgres`** — host `psql` and `pg_dump` are not on PATH.
-* **Must use `-v ON_ERROR_STOP=1`** in psql apply command.
-* **Must stop** on any preflight, apply, or verification mismatch. See 12 stop conditions in `PROJECT_STATE.md` Section 19 Patch 7G-8B subsection.
-* **Do not print secrets** — `POSTGRES_PASSWORD`, `DATABASE_URL`, or any credential values. Read credentials from container env only: `$(docker exec luve_postgres printenv POSTGRES_USER)`.
-* **Do not echo or log `$PG_USER` or `$PG_DB`** after assignment.
-* **No app code changes** in this task.
-* **No `01-init.sql` mirror** in this task — deferred to a separate approved patch after successful apply/verify.
-* **No services/tests/Groq/RabbitMQ/TEN/browser** in this task.
-* **Do not stage or commit docs** until apply/verify result is reviewed.
+**Method signature:**
+```python
+async def log_grading_skip(
+    self,
+    session_id: UUID,
+    reason: str,
+    source: str = "worker",
+    student_word_count: int | None = None,
+    min_words_threshold: int | None = None,
+) -> None:
+```
 
-**Approved execution steps:**
-1. `git status --short` + `git show --stat --oneline HEAD` — verify clean worktree and correct HEAD.
-2. `docker ps --filter "name=luve_postgres" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"` — confirm running.
-3. Assign credentials: `PG_USER=$(docker exec luve_postgres printenv POSTGRES_USER)` and `PG_DB=$(docker exec luve_postgres printenv POSTGRES_DB)`. Do NOT echo these variables.
-4. `mkdir -p /home/minhthuy/db-backups` then `docker exec luve_postgres pg_dump -U "$PG_USER" -d "$PG_DB" -Fc > /home/minhthuy/db-backups/backup_pre_0001_grading_skip_log_$(date +%Y%m%d_%H%M%S).dump`.
-5. `ls -lh /home/minhthuy/db-backups/backup_pre_0001_*.dump | tail -1` — confirm non-zero. STOP if zero bytes.
-6. Run 5 preflight queries (batch) via `docker exec -i luve_postgres psql`. STOP on any failure.
-7. Apply: `docker exec -i luve_postgres psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" < infrastructure/db-migrations/0001_grading_skip_log.sql`. Expected: `BEGIN/CREATE TABLE/CREATE INDEX/CREATE INDEX/COMMIT`. STOP on mismatch.
-8. Run 6 verification queries (batch) via `docker exec -i luve_postgres psql`. STOP on any mismatch.
-9. Report result. Update `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md` to record outcome. Do not proceed to app integration.
+**SQL (asyncpg positional params):**
+```sql
+INSERT INTO grading_skip_log (
+    session_id,
+    skipped_reason,
+    source,
+    student_word_count,
+    min_words_threshold
+)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (session_id) DO UPDATE SET
+    skipped_reason      = EXCLUDED.skipped_reason,
+    source              = EXCLUDED.source,
+    student_word_count  = EXCLUDED.student_word_count,
+    min_words_threshold = EXCLUDED.min_words_threshold,
+    updated_at          = CURRENT_TIMESTAMP
+```
+
+**Implementation rules:**
+* Follow existing asyncpg connection pattern: open own connection, `try/finally` close — same as `fetch_session_row` and `upsert_grading_result`
+* No raw transcript, no `raw_backup_json`, no PII — only UUIDs and integer counts
+* No DB live tests (mocked asyncpg only)
+* No worker changes in this sub-patch
+* No scanner/backfill changes in this sub-patch
+* No core-api changes in this sub-patch
+
+**Mocked test coverage to write (`test_grading_repository_patch7g8c.py`):**
+* INSERT called with correct positional params ($1–$5)
+* Connection closed in `finally` even on exception
+* `student_word_count=None` and `min_words_threshold=None` passed for non-word-count reasons
+* `student_word_count` and `min_words_threshold` populated for `insufficient_words`
+* `source` defaults to `"worker"`
+* ON CONFLICT upsert path (second call same session_id succeeds)
+* No transcript or raw_backup_json in call args
+
+**Commit message (when user approves commit):**
+```
+feat(grading-worker): add log_grading_skip repository method (Patch 7G-8C-1)
+```
 
 ## Out of Scope (requires separate approved prompt)
-* App integration implementation — Patch 7G-8C-1 through 7G-8C-4. **Blocked until 7G-8B Execute completes and is verified.** If the user says only "continue" or "next step", do not run DB commands and do not implement app integration.
-* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8C-1/7G-8C-2/7G-8C-3.
-* Modifying `/grading/status` to consume skip rows — Patch 7G-8C-4.
-* Updating `infrastructure/db-init/01-init.sql` — separate approved patch after migration applied and verified.
-* Docs commit until after apply/verify result is reviewed.
+* Worker refactor to call `evaluate_grading_eligibility` before `build_evaluation_input` — Patch 7G-8C-2.
+* Scanner/backfill execute-mode `log_grading_skip` calls — Patch 7G-8C-3.
+* Core-API `/grading/status` LEFT JOIN `grading_skip_log` — Patch 7G-8C-4 (deploy last — table missing = 500 on all `/grading/status` requests).
+* Updating `infrastructure/db-init/01-init.sql` — Patch 7G-8D (separate approved patch after all 7G-8C sub-patches complete).
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
 * Reconciliation scanner execution or modification.
