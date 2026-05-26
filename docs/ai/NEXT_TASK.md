@@ -369,6 +369,11 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 50/50 passed; full grading-worker suite 183/183 passed. No live Groq, DB, RabbitMQ, services/TEN.
 * Queue note: exception escaping `process_session_completed_job` should cause `aio_pika`'s `message.process(requeue=False)` to NACK; actual DLQ delivery depends on RabbitMQ DLX configuration not declared in this codebase.
 
+### Task 41: Patch 7G-8C-2 AI Docs Update — Worker skip-log integration recorded (2026-05-26).
+* Recorded Patch 7G-8C-2 complete in `PROJECT_STATE.md`: Section 1, Section 2 commits, Production Readiness Checklist, Patch Sequence Table, new Patch 7G-8C-2 subsection, Known Limitations, Patch 7G-8A Explicit Non-Changes note, Section 19 §1 DB Persistence.
+* Updated `NEXT_TASK.md`: added Task 41; replaced Current Task with Patch 7G-8C-3 spec.
+* No implementation files modified. No DB commands run. No Groq/RabbitMQ/TEN.
+
 ### Task 40: Patch 7G-8C-1 Implementation — Repository `log_grading_skip()` (commit `cb79155`, 2026-05-26).
 * Added `GradingRepository.log_grading_skip(session_id, reason, source="worker", student_word_count=None, min_words_threshold=None) -> None` to `services/grading-worker/src/grading_repository.py`.
 * Follows existing asyncpg connection pattern: open own connection, `try/finally` close — same as `fetch_session_row` and `upsert_grading_result`.
@@ -381,54 +386,56 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-8C-2 Implementation — Worker eligibility refactor + skip-log write**
+**Patch 7G-8C-3 Implementation — Scanner/backfill execute-mode skip-log writes**
 
-**Status: Allowed now because Patch 7G-8C-1 (Task 40) implemented and committed `GradingRepository.log_grading_skip()`. Runtime/test changes to `worker.py` only. Do not touch scanner/backfill yet. Do not touch core-api yet. Do not mirror 01-init.sql yet.**
+**Status: Allowed now because Patch 7G-8C-2 (Task 40 impl + Task 41 docs) is complete. Execute-mode skip-log writes only. Dry-run paths must remain unchanged. Do not touch worker.py. Do not touch core-api. Do not mirror 01-init.sql yet.**
 
 **Recommended model:**
-* **Sonnet high** for worker refactor + mocked tests.
+* **Sonnet high** for scanner/backfill execute-mode extension + mocked tests.
 * Opus not needed.
 
-**Goal:** Refactor `worker.py` to call `evaluate_grading_eligibility` before `build_evaluation_input`, write a best-effort skip-log row for ineligible sessions, and update tests. No scanner/backfill/core-api changes in this sub-patch.
+**Goal:** Add best-effort `log_grading_skip` calls in execute-mode paths of `reconciliation_scanner.py` and `backfill_completed_sessions.py` after `evaluate_grading_eligibility` returns ineligible. Dry-run paths stay read-only (no `log_grading_skip` calls). New mocked tests only — no live DB, no `--execute`.
 
 **Files:**
-* `services/grading-worker/src/worker.py` — refactor eligibility check; add best-effort `log_grading_skip` call
-* `services/grading-worker/tests/test_worker_patch7g5.py` — update old `skipped_insufficient_evidence` assertion
-* New test file: `services/grading-worker/tests/test_worker_patch7g8c2.py` (or extend existing test file)
+* `services/grading-worker/scripts/reconciliation_scanner.py` — execute-mode ineligibility branch only
+* `services/grading-worker/scripts/backfill_completed_sessions.py` — execute-mode ineligibility branch only
+* New test files for execute-mode skip-log coverage
 
-**Refactor spec for `worker.py`:**
+**Refactor spec:**
 
-Replace the current ad-hoc `has_student_turns` / word-count guards in `process_session_completed_job` with a single unified ineligibility branch:
+Both scripts already call `evaluate_grading_eligibility` in their candidate loops (Patches 7G-4C/7G-4D). The change is additive only:
 
-1. Call `evaluate_grading_eligibility(session_row["raw_backup_json"], min_student_words=min_student_words)` BEFORE `build_evaluation_input`.
-2. If ineligible (`eligibility.is_eligible is False`):
-   - Log warning with the ineligibility reason.
-   - Best-effort skip log: `await repository.log_grading_skip(session_id=session_id, reason=eligibility.reason, source="worker", student_word_count=eligibility.student_word_count, min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None)` — wrapped in `try/except Exception` (non-fatal; `consume_forever` uses `requeue=False` so skip-log failure must not crash the message handler).
-   - `return` — no Groq call, no `upsert_grading_result`.
-3. If eligible: proceed with existing `build_evaluation_input` / provider dispatch / `upsert_grading_result` path unchanged.
+1. In execute-mode ineligibility branch (`if args.execute` and `not eligibility.eligible`):
+   - After incrementing the skip counter and before `continue`, add a best-effort `log_grading_skip` call.
+   - Guard: `if repository is not None:` (execute mode provides a real `GradingRepository`; dry-run uses `None`).
+   - Call: `await repository.log_grading_skip(session_id=session_id, reason=eligibility.reason, source="scanner", student_word_count=eligibility.student_word_count, min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None)`.
+   - Use `source="backfill"` for `backfill_completed_sessions.py`.
+   - Wrap in `try/except Exception`: on failure, log a warning (`grading.skip_log_failed`) and `continue` — do not crash the loop.
+2. Dry-run branch: no change. The dry-run path must not call `log_grading_skip`.
 
-**Log key change:** The old log key `grading.skipped_insufficient_evidence` (referenced in `test_worker_patch7g5.py`) is replaced. Update the relevant assertion in `test_worker_patch7g5.py` in the same commit.
+**Source values:**
+* `reconciliation_scanner.py` → `source="scanner"`
+* `backfill_completed_sessions.py` → `source="backfill"`
 
-**`_FakeRepo` extension for tests:** Add `log_grading_skip` to the `_FakeRepo` / mock repository used in grading-worker tests so the new call doesn't fail with `AttributeError`.
-
-**Mocked test coverage (`test_worker_patch7g8c2.py` or extended file):**
-* All four ineligible reasons (`no_raw_backup`, `invalid_raw_backup`, `no_user_turns`, `insufficient_words`) → `log_grading_skip` called once; no Groq call; no `upsert_grading_result`
-* Eligible session → `log_grading_skip` NOT called; existing provider/fallback/upsert path runs unchanged
-* `log_grading_skip` raising an exception → exception swallowed (non-fatal); no re-raise; message still processed
-* `insufficient_words` reason → `min_words_threshold` populated; other reasons → `min_words_threshold=None`
-* `source="worker"` passed on every skip call
-* No raw transcript or `raw_backup_json` in `log_grading_skip` arguments
+**Mocked test coverage:**
+* Scanner execute: all four ineligible reasons → `log_grading_skip` called once with correct `source="scanner"`
+* Scanner execute: `log_grading_skip` raises → exception swallowed; loop continues; no crash
+* Scanner dry-run: ineligible session → `log_grading_skip` NOT called (dry-run is read-only)
+* Backfill execute: same coverage as scanner (all four reasons + failure non-fatal)
+* Backfill dry-run: ineligible session → `log_grading_skip` NOT called
+* `min_words_threshold` populated only for `insufficient_words`; `None` for all other reasons
 
 **Implementation rules:**
 * No live DB — mocked repository only
-* No live Groq — mocked provider
-* No scanner/backfill changes in this sub-patch
-* No core-api changes in this sub-patch
+* No `--execute` runs
+* No `worker.py` changes
+* No core-api changes
 * No `infrastructure/db-init/01-init.sql` changes
+* No `grading_repository.py` changes
 
 **Commit message (when user approves commit):**
 ```
-fix(grading-worker): refactor eligibility gate and write skip log (Patch 7G-8C-2)
+fix(grading-worker): write skip log from scanner/backfill execute gate (Patch 7G-8C-3)
 ```
 
 ## Out of Scope (requires separate approved prompt)
