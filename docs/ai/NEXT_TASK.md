@@ -298,6 +298,15 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 58/58 passed (`test_session_eligibility.py` + `test_backfill_completed_sessions_patch7g4d.py`); full grading-worker suite 154/154 passed using `services/core-api/venv/bin/python3 -m pytest tests/ -q`. An earlier run via `~/.local/bin/pytest` produced 32 failures due to missing `pytest-asyncio` in that runner — a runner issue, not a code issue. `de6c6d1` corrected the earlier inaccurate verification docs; this approved-env rerun followed. No backfill/scanner `--execute` run.
 * Patch 7G-4 series complete and verified.
 
+### Task 34: Patch 7G-6 Implementation — StaticFiles / Control-Center Serving and CORS Lockdown (commit `7d522d9`).
+* Extracted CORS origins into standalone `src/core/cors.py` helper: 8-origin local default (no wildcard), `CORS_ALLOW_ORIGINS` env var override, comma-split/trim/drop-empty parsing, explicit `"*"` opt-in.
+* Updated `src/main.py`: `allow_origins=get_cors_allow_origins()`, `allow_credentials=False`, `StaticFiles` at `/static`, `/control-center` FileResponse route using `Path(__file__).parent / "static"`.
+* Created `tests/__init__.py` and `tests/test_main_patch7g6.py` (15 tests): 8 CORS helper unit tests, 5 StaticFiles/route tests via throwaway app factory, 2 CORS preflight tests.
+* Throwaway app factory avoids `get_settings()` ValidationError at import time — `src.main` never imported in tests.
+* No new dependencies: Starlette 1.0.0 uses `anyio` (already installed transitively via `uvicorn[standard]`).
+* **Verification:** py_compile OK; 15/15 mocked tests passed. No Groq, DB, RabbitMQ, live services.
+* **Not claimed:** browser E2E via `/control-center` URL not verified in this patch; TEN gateway CORS not addressed; no HTTPS/production domain origins; no DLQ yet.
+
 ### Task 33: Patch 7G-5 Implementation — Fake Fallback Env Gate (commit `dcdf9ba`).
 * Audited `process_session_completed_job` fake fallback path: broad `except Exception` silently called `fake_grade()` on every LLM failure, upserted fake scores indistinguishable from real `llm_grader.v1` rows.
 * Added `_get_fake_fallback_enabled() -> bool` to `worker.py`: reads `GRADING_FAKE_FALLBACK` env, default false; truthy values: `1`, `true`, `yes`, `on` (case-insensitive).
@@ -310,44 +319,46 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-6: StaticFiles / Control-Center Serving and CORS Lockdown**
+**Patch 7G-7: Migration Strategy Audit/Design — Numbered Migration Directory**
 
-**Status: Not yet started. Audit/design first. Do not implement during audit.**
+**Status: Not yet started. AUDIT/DESIGN ONLY. Do not implement, modify, stage, or commit during this phase.**
 
 **Recommended model:**
-* **Sonnet high:** focused serving/CORS config with clear prior art.
-* **Sonnet max:** if stale/mixed output, unexpected dirty files, or security-sensitive CORS/origin config is ambiguous.
-* **Opus high/max:** only if broader production deployment or security architecture decisions are needed.
+* **Sonnet high:** focused audit of existing DB init structure with clear prior art.
+* **Sonnet max:** if output is ambiguous, surprising schema findings, or migration safety analysis requires broader architecture judgment.
+* **Opus high/max:** only if broader DB migration framework decisions (Alembic vs. manual) require deeper architectural trade-off analysis.
 
 **Background:**
-The current core-api has `allow_origins=["*"]` CORS policy (production blocker) and the control center is served via a `file://` path workaround rather than a `StaticFiles` mount. Both need to be resolved before wider use.
+No Alembic or migration framework exists in the repo. Only `infrastructure/db-init/01-init.sql` (run once by Docker `entrypoint-initdb.d`). No `alembic_version` table. Patch 7G-8 (`grading_skip_log` table) and future schema changes require a safe, auditable migration path before any `CREATE TABLE` or `ALTER TABLE` is applied to the production database.
 
-**Goal:** Audit core-api serving and CORS configuration; design a minimal, demo-safe patch.
-* Determine how the control center is currently served and what `StaticFiles` mount would look like.
-* Audit `allow_origins=["*"]` usage and design `CORS_ALLOW_ORIGINS` env var replacement.
-* Produce a design doc / audit output before any code changes.
+**Goal:** Audit existing DB initialization structure; design a minimal numbered SQL migration directory proposal; produce an audit/design output before any files are created or modified.
+
+Questions to answer:
+* What tables and constraints exist in `infrastructure/db-init/01-init.sql`?
+* Is `alembic_version` table absent from the DB (confirm from prior audit)?
+* What would `infrastructure/db-migrations/0001_grading_skip_log.sql` contain?
+* What preflight/backup/verify/rollback requirements must each migration script satisfy?
+* Is any Alembic tooling present or worth adding at this stage?
+* What is the safe execution order for `db-migrations/` scripts alongside `db-init/`?
 
 **Hard safety rules for this task:**
-* No runtime changes during audit phase.
-* No services started unless explicitly approved in a follow-up prompt.
-* No DB writes.
-* No RabbitMQ.
-* No Groq.
-* No TEN/browser unless explicitly approved.
-* No package installs.
-* Do not stage or commit without explicit approval.
+* AUDIT/DESIGN ONLY — do not create migration files, modify `db-init/`, modify any service source, stage, or commit.
+* Do not run `psql`, `alembic`, or any DB-modifying command.
+* Do not start services, run Groq, publish RabbitMQ messages, or touch TEN/browser.
+* Do not print secrets, DATABASE_URL values, or DB credentials.
+* Allowed read paths: `infrastructure/`, `services/core-api/src/`, `services/grading-worker/src/`, `docs/ai/`. No write paths.
 
 ## Out of Scope (requires separate approved prompt)
-* Patch 7G-6 (`StaticFiles` mount, CORS lockdown).
-* Patch 7G-7 (migration strategy docs and numbered migration directory).
-* Patch 7G-8 (`grading_skip_log` implementation).
+* Patch 7G-7 implementation (create migration files, modify `db-init/`) — audit/design only in current task.
+* Patch 7G-8 (`grading_skip_log` implementation — after 7G-7 approved).
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
-* New DB schema or migration files.
+* New DB schema or migration files (blocked until Patch 7G-7 design approved).
 * Reconciliation scanner execution or modification.
 * Removing `SQLSessionStore.persist_event_log` dead code.
 * Removing DEV PREVIEW badge from UI.
 * Wiring `close_publisher()` into shutdown.
+* Browser E2E smoke of `/control-center` HTTP route (deferred from Patch 7G-6).
 
 ## Protected Runtime Files
 Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.

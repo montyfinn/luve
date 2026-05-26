@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
-* **Latest runtime/tooling baseline:** `dcdf9ba` — fix(grading-worker): gate fake fallback behind env flag (Patch 7G-5 — `GRADING_FAKE_FALLBACK` env var gates silent fake fallback; default false disables fake fallback for `GRADING_PROVIDER=llm` failures; `_get_fake_fallback_enabled()` helper; 29 new mocked tests; py_compile OK; 183/183 full suite passed; no DB/RabbitMQ/Groq).
+* **Latest runtime/tooling baseline:** `7d522d9` — fix(core-api): serve control center and lock down CORS (Patch 7G-6 — CORS wildcard replaced with 8-origin local allowlist via `get_cors_allow_origins()`; `StaticFiles` mount at `/static`; `/control-center` FileResponse route; `src/core/cors.py` CORS helper; 15/15 mocked tests; py_compile OK; no DB/RabbitMQ/Groq).
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `7d522d9` - fix(core-api): serve control center and lock down CORS (Patch 7G-6 — extracted `get_cors_allow_origins()` to `src/core/cors.py`; default 8-origin local allowlist, no wildcard; `CORS_ALLOW_ORIGINS` env override; `allow_credentials=False`; `StaticFiles` at `/static`; `/control-center` FileResponse; `tests/__init__.py` + `tests/test_main_patch7g6.py` with 15 mocked tests; py_compile OK; no DB/RabbitMQ/Groq).
 * `dcdf9ba` - fix(grading-worker): gate fake fallback behind env flag (Patch 7G-5 — added `_get_fake_fallback_enabled()` reading `GRADING_FAKE_FALLBACK` env; default false: LLM failures log `grading.llm_failed_no_fallback` at ERROR and re-raise; true: preserves `grading.llm_failed_fallback` warning + `fake_grade()` fallback; `GRADING_PROVIDER=fake` and skip gates unchanged; 29 new mocked tests; py_compile + 183/183 full suite passed; no DB/RabbitMQ/Groq).
 * `80d4db7` - fix(grading-worker): gate backfill execute by eligibility (Patch 7G-4D — backfill execute path gated by `evaluate_grading_eligibility` before `process_session_completed_job`; `_parse_min_student_words_env` helper added; `--min-student-words` CLI flag; counter names aligned with scanner; 13 mocked tests; py_compile OK; targeted 58/58 passed; full grading-worker suite 154/154 passed (project-venv python); no DB/RabbitMQ/Groq).
 * `7dcc9e8` - fix(grading-worker): gate scanner execute by eligibility (Patch 7G-4C — scanner execute path gated by `evaluate_grading_eligibility` before `process_session_completed_job`; ineligible sessions skipped with per-reason counters; execute and dry-run summary bucket naming unified; 11 mocked tests; py_compile + 141/141 tests passed; no DB/RabbitMQ/Groq).
@@ -775,21 +776,13 @@ Not implemented yet.
 
 ### 7. 8080/Control-Center Serving
 
-**Finding:** No Nginx in `docker-compose.yml`. No `StaticFiles` mount in `main.py`. Patch 7F-2 smoke required a `file://` URL workaround with `luve.control.coreApiUrl` localStorage injection.
+**Implemented in Patch 7G-6 (commit `7d522d9`).**
 
-**Planned fix (Patch 7G-6):**
-```python
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+`GET /control-center` route added to `main.py`; returns `FileResponse(_STATIC_DIR / "index.html")` where `_STATIC_DIR = Path(__file__).parent / "static"`. `StaticFiles` mount at `/static` serves CSS and other assets. Path computation is independent of uvicorn working directory. Paired with CORS lockdown in the same commit.
 
-app.mount("/static", StaticFiles(directory="src/static"), name="static")
+**No Nginx in `docker-compose.yml`** — still the case. The control center is now served directly by the FastAPI/Uvicorn process on port 8000. Port 8080 was a prior workaround; the canonical URL is now `http://localhost:8000/control-center`.
 
-@app.get("/control-center")
-async def control_center():
-    return FileResponse("src/static/index.html")
-```
-
-**Must be paired with CORS lockdown** (replacing `allow_origins=["*"]` with an explicit list via `CORS_ALLOW_ORIGINS` env var) before any broader exposure. Not implemented yet.
+**Starlette 1.0.0 uses `anyio`, not `aiofiles`:** `StaticFiles` and `FileResponse` use `anyio.open_file` and `anyio.to_thread.run_sync`. `anyio 4.13.0` is already installed transitively via `uvicorn[standard]`. No new dependency added to `requirements.txt`.
 
 ### 8. API/UI Hardening
 
@@ -824,7 +817,7 @@ Not implementing now. A `quality_flags JSONB` field on `grading_skip_log` can re
 
 ### 11. Security and Privacy
 
-- **CORS `allow_origins=["*"]`** — production blocker. Replace with explicit origins via `CORS_ALLOW_ORIGINS` env var. Must pair with Patch 7G-6.
+- **CORS lockdown (Patch 7G-6 — commit `7d522d9`):** `allow_origins=["*"]` replaced with 8-origin local allowlist (`localhost`/`127.0.0.1` on ports 3000/5173/8000/8080); `allow_credentials=False` (Bearer tokens in headers, not cookies); `CORS_ALLOW_ORIGINS` env var for operator override. No wildcard in default. Not browser-E2E-verified against a real origin; not tested with HTTPS or production domains.
 - **Auth token in localStorage** — acceptable for local single-origin control center. Future external exposure requires CSP header (`Content-Security-Policy: default-src 'self'`) and no third-party scripts.
 - **`raw_backup_json` not exposed** — confirmed: `/grading/status` response does not return transcript data.
 - **Session ownership enforced** — both `/grading/status` and `/grading` enforce `s.user_id = :user_id` in the SQL JOIN.
@@ -834,7 +827,7 @@ Not implementing now. A `quality_flags JSONB` field on `grading_skip_log` can re
 
 Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
 
-- [ ] CORS lockdown (`allow_origins=["*"]` → explicit list)
+- [x] CORS lockdown (`allow_origins=["*"]` → explicit list; Patch 7G-6 — commit `7d522d9`)
 - [ ] Persistent skip/status strategy approved and migrated (`grading_skip_log` or accepted limitation documented)
 - [ ] Migration strategy finalized (numbered SQL migrations directory proposed and reviewed)
 - [x] Scanner `--min-words` threshold parity (Patch 7G-4 — 7G-4A helper `462f5a4`; 7G-4B dry-run `5714ae4`; 7G-4C execute gate `7dcc9e8`)
@@ -1340,6 +1333,55 @@ Unchanged paths:
 
 ---
 
+### Patch 7G-6 — StaticFiles / Control-Center Serving and CORS Lockdown
+
+**Runtime/test commit: `7d522d9` fix(core-api): serve control center and lock down CORS**
+
+**Files changed:**
+* `services/core-api/src/main.py` — CORS wildcard replaced; `StaticFiles` mount; `/control-center` route
+* `services/core-api/src/core/cors.py` — new CORS helper (no settings/database imports)
+* `services/core-api/tests/__init__.py` — new empty package marker
+* `services/core-api/tests/test_main_patch7g6.py` — 15 mocked tests (new file)
+
+#### Behavior
+
+**CORS helper (`src/core/cors.py`):**
+* `get_cors_allow_origins() -> list[str]` reads `CORS_ALLOW_ORIGINS` env var.
+* Unset or empty string → 8-origin default list: `localhost` and `127.0.0.1` on ports 3000, 5173, 8000, 8080. No wildcard in default.
+* Non-empty env value → comma-split, strip whitespace, drop empty entries. `"*"` is an explicit operator opt-in.
+* No `os.environ` at import; reads at call time (module import in `main.py`). Origins fixed at startup — `CORS_ALLOW_ORIGINS` changes require process restart.
+* Standalone imports: only `os` and `__future__`. No `get_settings()` call — importable without `DATABASE_URL` or `SECRET_KEY` env vars.
+
+**`main.py` changes:**
+* `allow_origins=get_cors_allow_origins()` replaces hardcoded `["*"]`.
+* `allow_credentials=False` — correct because control center uses `Authorization: Bearer <token>` in request headers, not cookies. Browser credentials mode not required.
+* `app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")` — serves `src/static/` directory.
+* `_STATIC_DIR = Path(__file__).parent / "static"` — path relative to `main.py`, independent of uvicorn working directory.
+* `GET /control-center` route returns `FileResponse(_STATIC_DIR / "index.html")`.
+
+**No new dependency:** Starlette 1.0.0 (already installed) uses `anyio.open_file` for both `StaticFiles` and `FileResponse`. `anyio 4.13.0` is already present transitively via `uvicorn[standard]`. `aiofiles` is not needed.
+
+**Test strategy — throwaway app:** Tests do not import `src.main` directly. Importing `src.main` triggers `get_settings()` which validates `DATABASE_URL` and `SECRET_KEY` at module load time, raising `ValidationError` without env vars. Tests use a `_make_app(cors_origins)` factory (minimal FastAPI app mirroring main.py's mount/route/middleware pattern) so all 15 tests run without env var setup.
+
+#### Verification
+
+* `py_compile` — OK for `src/main.py` and `src/core/cors.py`. (Test files verified by pytest, not py_compile.)
+* `services/core-api/venv/bin/python3 -m pytest tests/test_main_patch7g6.py -q` — **15/15 passed**.
+  * 8 CORS helper unit tests (via `monkeypatch`): no wildcard default, `http://localhost:8000` and `http://127.0.0.1:8080` in default, single-origin override, whitespace trimming, empty-entry dropping, empty string falls back to default (>1 origin, no wildcard), explicit `"*"` opt-in.
+  * 5 StaticFiles/route tests via `TestClient`: `/control-center` returns HTTP 200 + `text/html`, body contains `"L.U.V.E"` or `"Control Center"`, `/static/styles.css` served with CSS content-type, `/api/v1/sentinel` not shadowed by static mount, `/api/v1/nonexistent_route_xyz` returns 404 not HTML.
+  * 2 CORS preflight tests: allowed origin echoed in `access-control-allow-origin` and is not `"*"`, unlisted origin gets no `access-control-allow-origin` header.
+* No Groq calls. No DB writes. No RabbitMQ operations. No live services started.
+
+#### Known Limitations (as of Patch 7G-6)
+
+* **Not browser-E2E-verified:** No Playwright run against `http://localhost:8000/control-center` in this patch. The prior Patch 7F-2 smoke used `file://` + `luve.control.coreApiUrl` localStorage override. A fresh browser smoke against `/control-center` route is deferred to a future browser-smoke task; it is not part of Patch 7G-7 migration audit.
+* **TEN gateway CORS not addressed:** TEN gateway (port 8080) has a separate CORS configuration. Only core-api CORS was changed in this patch.
+* **No HTTPS/domain origins in default list:** Default allowlist covers only `localhost`/`127.0.0.1` dev origins. Production domains require `CORS_ALLOW_ORIGINS` operator configuration.
+* **Origins fixed at startup:** `get_cors_allow_origins()` is called once at import time. Changing `CORS_ALLOW_ORIGINS` requires a process restart.
+* **No DLQ yet** — `consume_forever()` NACK behavior on re-raised exceptions depends on RabbitMQ DLX configuration not yet declared. Patch 7G-9 scope.
+
+---
+
 ## 12. Known Limitations & Gaps
 
 * **No Durable Outbox:** If RabbitMQ is down when a session finishes, the session event is not persisted locally for later retry. The reconciliation scanner provides partial automated recovery but is not a transactional outbox; missed sessions require scanner execution (cron or manual) to be graded.
@@ -1352,6 +1394,6 @@ Unchanged paths:
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate implemented (commit `dcdf9ba`): `GRADING_FAKE_FALLBACK` defaults to false; LLM failures log `grading.llm_failed_no_fallback` and re-raise instead of silently writing fake results. Patch 7G-6 (`StaticFiles`/CORS lockdown) is next.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate implemented (commit `dcdf9ba`): `GRADING_FAKE_FALLBACK` defaults to false; LLM failures log `grading.llm_failed_no_fallback` and re-raise instead of silently writing fake results. Patch 7G-6 StaticFiles/CORS lockdown implemented (commit `7d522d9`): CORS wildcard replaced with 8-origin local allowlist; `StaticFiles` at `/static`; `/control-center` FileResponse route; 15/15 tests passed. Patch 7G-7 (migration strategy docs + numbered migration directory) is next.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
