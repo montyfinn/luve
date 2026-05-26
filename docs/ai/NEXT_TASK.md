@@ -306,6 +306,21 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Read-only review passed before commit: no forbidden executable SQL; rollback DROP TABLE commented only; no privacy violations.
 * **Explicit non-changes:** Migration committed but not applied; `grading_skip_log` table does not exist in the database. `infrastructure/db-init/01-init.sql` unchanged. `infrastructure/db-migrations/README.md` unchanged. No services/tests/app code changed. No DB commands run. Persistent skip/status tracking not active.
 
+### Task 37: Patch 7G-8B Planning — Apply/Verify Plan for grading_skip_log Migration (audit/plan only, no DB commands run).
+* Confirmed Postgres container: `luve_postgres` (service `postgres_db`, image `postgres:15-alpine`, port `5432:5432`, volume `postgres_data`).
+* **Key finding:** host `psql` not on PATH; host `pg_dump` not on PATH. All DB operations must use `docker exec luve_postgres`.
+* Env var names confirmed with redaction (values never printed): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` present in `.env`.
+* Credential extraction strategy: `PG_USER=$(docker exec luve_postgres printenv POSTGRES_USER)` — reads from container env; no `.env` value echoed on host.
+* Auth: UNIX socket trust auth inside `postgres:15-alpine` — no `--password` flag required.
+* Backup plan: `/home/minhthuy/db-backups/` (outside repo; 282 GB free; `mkdir -p` before backup); backup via `docker exec luve_postgres pg_dump -Fc > ...`; confirm non-zero before apply.
+* Preflight plan: 5 queries — active transactions check (no duration > 10s); `sessions` table exists; `grading_skip_log` absent; `pgcrypto` extension present; `sessions.id` is `uuid`.
+* Apply: `docker exec -i luve_postgres psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" < infrastructure/db-migrations/0001_grading_skip_log.sql`. Expected output: `BEGIN/CREATE TABLE/CREATE INDEX/CREATE INDEX/COMMIT`.
+* Verification: 6 checks — table exists; `row_count=0`; 8 columns with correct types/nullability/defaults; 3 indexes (`session_id_key`, `skipped_reason_idx`, `skipped_at_idx`); 2 CHECK constraints (`skipped_reason`, `source`); FK `session_id → sessions(id)` ON DELETE CASCADE.
+* Rollback: `BEGIN; DROP TABLE IF EXISTS grading_skip_log CASCADE; COMMIT;` — only if verified schema defect before any app writes rows.
+* Sequencing: migration apply → app integration (Patch 7G-8C+) → `01-init.sql` mirror (separate patch). Do not deploy app code referencing table before migration verified.
+* 12 stop conditions documented in `PROJECT_STATE.md` Section 19 Patch 7G-8B subsection.
+* **No DB commands run. Migration still not applied. `grading_skip_log` table does not yet exist in the database.**
+
 ### Task 35: Patch 7G-7 Implementation — Migration Strategy Runbook (commit `bac73d2`).
 * Created `infrastructure/db-migrations/README.md` (261 lines): numbered SQL migration workflow and runbook.
 * Documented schema source of truth: `infrastructure/db-init/01-init.sql`; Docker `entrypoint-initdb.d` runs only on empty volumes; existing volumes require manual migration.
@@ -338,42 +353,51 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-8B: Audit/Plan — Apply `grading_skip_log` Migration Safely**
+**Patch 7G-8B Execute — Apply and verify `grading_skip_log` migration on local DB**
 
-**Status: Not yet started. AUDIT / PLAN ONLY. Do not run DB commands, do not apply migration, do not commit.**
+**Status: BLOCKED until explicit user approval to run DB commands. This docs commit is not authorization. Do not run docker, pg_dump, psql, or any DB command unless the user explicitly says to proceed with DB apply.**
 
 **Recommended model:**
-* **Sonnet max:** DB apply planning because this involves schema safety, secrets handling, and backup/rollback sequencing.
-* **Opus high/max:** only if broader DB deployment architecture decisions are needed.
+* **Sonnet max:** DB-changing step; schema touches live local DB; requires backup, preflight, apply, verification, and rollback discipline.
 
 **Background:**
-`infrastructure/db-migrations/0001_grading_skip_log.sql` is committed (Patch 7G-8A, commit `d2bb908`) but not yet applied. The `grading_skip_log` table does not yet exist in the database. This task plans the safe local DB apply/verify workflow before any commands are run.
+`infrastructure/db-migrations/0001_grading_skip_log.sql` is committed (Patch 7G-8A, commit `d2bb908`). Patch 7G-8B apply/verify plan is complete (Task 37 — audit/plan only). The `grading_skip_log` table should be treated as not existing until apply/verify confirms otherwise. This task executes the approved plan.
 
-**Goal:** Produce a concrete apply/verify plan for `0001_grading_skip_log.sql` on the local dev database. Do not run any DB commands in this task.
-
-Questions to answer:
-* Which DB container/env is the approved local target? How to identify DB name/user from `.env` without printing secrets?
-* Where should the `pg_dump` backup be stored outside the repo?
-* Which preflight queries should be run (active transactions, `sessions` table existence, `grading_skip_log` absence)?
-* What is the exact `psql` apply command (safe template, no credentials printed)?
-* Which verification queries confirm table/indexes/check constraints after apply?
-* What rollback command would be used if apply fails?
-* Should `01-init.sql` mirror happen only after successful DB apply/verify in a separate patch?
-* What is the deployment sequencing for app code changes that reference `grading_skip_log` (must migration come first)?
+**Pre-conditions (all must be met before first DB command):**
+* Worktree is clean (`git status --short` shows no tracked dirty files).
+* `luve_postgres` container is running (`docker ps --filter "name=luve_postgres"`).
+* Backup taken and confirmed non-zero.
 
 **Hard safety rules:**
-* AUDIT/PLAN ONLY — do not run `psql`, `alembic`, `docker compose`, or any DB command.
-* Do not connect to DB. Do not start services. Do not run Groq, RabbitMQ, TEN, browser, or Playwright.
-* Do not print secrets, `DATABASE_URL`, DB credentials, or API keys.
-* Do not modify migration file. Do not modify `db-init/`. Do not modify services or tests.
-* Do not stage or commit.
-* Allowed read paths: `infrastructure/`, `.env` structure (do not print values), `docs/ai/`. No write paths.
+* **Authorization required:** The next Claude prompt must confirm explicit user authorization unless the user message itself explicitly says to apply the migration now. A prompt that only asks for "the next step" or "continue" is not authorization to run DB commands. If authorization is absent or ambiguous, stop before running docker, pg_dump, or psql.
+* **Must backup first** before any DB command. Backup to `/home/minhthuy/db-backups/`. Confirm non-zero bytes before proceeding.
+* **Must use `docker exec luve_postgres`** — host `psql` and `pg_dump` are not on PATH.
+* **Must use `-v ON_ERROR_STOP=1`** in psql apply command.
+* **Must stop** on any preflight, apply, or verification mismatch. See 12 stop conditions in `PROJECT_STATE.md` Section 19 Patch 7G-8B subsection.
+* **Do not print secrets** — `POSTGRES_PASSWORD`, `DATABASE_URL`, or any credential values. Read credentials from container env only: `$(docker exec luve_postgres printenv POSTGRES_USER)`.
+* **Do not echo or log `$PG_USER` or `$PG_DB`** after assignment.
+* **No app code changes** in this task.
+* **No `01-init.sql` mirror** in this task — deferred to a separate approved patch after successful apply/verify.
+* **No services/tests/Groq/RabbitMQ/TEN/browser** in this task.
+* **Do not stage or commit docs** until apply/verify result is reviewed.
+
+**Approved execution steps:**
+1. `git status --short` + `git show --stat --oneline HEAD` — verify clean worktree and correct HEAD.
+2. `docker ps --filter "name=luve_postgres" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"` — confirm running.
+3. Assign credentials: `PG_USER=$(docker exec luve_postgres printenv POSTGRES_USER)` and `PG_DB=$(docker exec luve_postgres printenv POSTGRES_DB)`. Do NOT echo these variables.
+4. `mkdir -p /home/minhthuy/db-backups` then `docker exec luve_postgres pg_dump -U "$PG_USER" -d "$PG_DB" -Fc > /home/minhthuy/db-backups/backup_pre_0001_grading_skip_log_$(date +%Y%m%d_%H%M%S).dump`.
+5. `ls -lh /home/minhthuy/db-backups/backup_pre_0001_*.dump | tail -1` — confirm non-zero. STOP if zero bytes.
+6. Run 5 preflight queries (batch) via `docker exec -i luve_postgres psql`. STOP on any failure.
+7. Apply: `docker exec -i luve_postgres psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" < infrastructure/db-migrations/0001_grading_skip_log.sql`. Expected: `BEGIN/CREATE TABLE/CREATE INDEX/CREATE INDEX/COMMIT`. STOP on mismatch.
+8. Run 6 verification queries (batch) via `docker exec -i luve_postgres psql`. STOP on any mismatch.
+9. Report result. Update `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md` to record outcome. Do not proceed to app integration.
 
 ## Out of Scope (requires separate approved prompt)
-* Applying `0001_grading_skip_log.sql` — Patch 7G-8B execute, after apply/verify plan approved.
+* App integration — Patch 7G-8C+.
 * Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8C+.
 * Modifying `/grading/status` to consume skip rows — Patch 7G-8C+.
-* Updating `infrastructure/db-init/01-init.sql` — after migration applied and verified on real DB.
+* Updating `infrastructure/db-init/01-init.sql` — separate approved patch after migration applied and verified.
+* Docs commit until after apply/verify result is reviewed.
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
 * Reconciliation scanner execution or modification.
