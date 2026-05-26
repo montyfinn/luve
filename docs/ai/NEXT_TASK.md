@@ -369,78 +369,69 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 50/50 passed; full grading-worker suite 183/183 passed. No live Groq, DB, RabbitMQ, services/TEN.
 * Queue note: exception escaping `process_session_completed_job` should cause `aio_pika`'s `message.process(requeue=False)` to NACK; actual DLQ delivery depends on RabbitMQ DLX configuration not declared in this codebase.
 
+### Task 40: Patch 7G-8C-1 Implementation — Repository `log_grading_skip()` (commit `cb79155`, 2026-05-26).
+* Added `GradingRepository.log_grading_skip(session_id, reason, source="worker", student_word_count=None, min_words_threshold=None) -> None` to `services/grading-worker/src/grading_repository.py`.
+* Follows existing asyncpg connection pattern: open own connection, `try/finally` close — same as `fetch_session_row` and `upsert_grading_result`.
+* SQL: `INSERT INTO grading_skip_log ... ON CONFLICT (session_id) DO UPDATE SET skipped_reason, source, student_word_count, min_words_threshold, updated_at = CURRENT_TIMESTAMP` — idempotent upsert.
+* Privacy: no `raw_backup_json`, no transcript, no audio, no PII; only `session_id` UUID, reason string, source string, integer counts.
+* New test file `services/grading-worker/tests/test_grading_repository_patch7g8c.py` — 5 mocked asyncpg tests; no live DB; all tests use `unittest.mock.AsyncMock` + `patch("src.grading_repository.asyncpg.connect", ...)`.
+* **5/5 tests pass.** No live DB, no worker/scanner/backfill/core-api changes in this sub-patch.
+* **Explicit non-changes:** `worker.py` unchanged. `reconciliation_scanner.py` unchanged. `backfill_completed_sessions.py` unchanged. `session_service.py` unchanged. `infrastructure/db-init/01-init.sql` unchanged. No DB commands run. No Groq/RabbitMQ/TEN/browser.
+
 ---
 
 ## Current Task
-**Patch 7G-8C-1 Implementation — Repository `log_grading_skip()`**
+**Patch 7G-8C-2 Implementation — Worker eligibility refactor + skip-log write**
 
-**Status: Allowed now because 7G-8B Execute (Task 39) applied and verified the DB migration. Runtime/test changes only. Do not touch core-api/status yet. Do not touch scanner/backfill yet. Do not mirror 01-init.sql yet.**
+**Status: Allowed now because Patch 7G-8C-1 (Task 40) implemented and committed `GradingRepository.log_grading_skip()`. Runtime/test changes to `worker.py` only. Do not touch scanner/backfill yet. Do not touch core-api yet. Do not mirror 01-init.sql yet.**
 
 **Recommended model:**
-* **Sonnet high** for repository method + mocked tests.
-* **Sonnet max** if repository asyncpg patterns are ambiguous.
+* **Sonnet high** for worker refactor + mocked tests.
 * Opus not needed.
 
-**Goal:** Add `GradingRepository.log_grading_skip(...)` to `services/grading-worker/src/grading_repository.py` with mocked tests only. No worker/scanner/backfill/core-api changes in this sub-patch.
+**Goal:** Refactor `worker.py` to call `evaluate_grading_eligibility` before `build_evaluation_input`, write a best-effort skip-log row for ineligible sessions, and update tests. No scanner/backfill/core-api changes in this sub-patch.
 
 **Files:**
-* `services/grading-worker/src/grading_repository.py` — add `log_grading_skip` method
-* New test file: `services/grading-worker/tests/test_grading_repository_patch7g8c.py`
+* `services/grading-worker/src/worker.py` — refactor eligibility check; add best-effort `log_grading_skip` call
+* `services/grading-worker/tests/test_worker_patch7g5.py` — update old `skipped_insufficient_evidence` assertion
+* New test file: `services/grading-worker/tests/test_worker_patch7g8c2.py` (or extend existing test file)
 
-**Method signature:**
-```python
-async def log_grading_skip(
-    self,
-    session_id: UUID,
-    reason: str,
-    source: str = "worker",
-    student_word_count: int | None = None,
-    min_words_threshold: int | None = None,
-) -> None:
-```
+**Refactor spec for `worker.py`:**
 
-**SQL (asyncpg positional params):**
-```sql
-INSERT INTO grading_skip_log (
-    session_id,
-    skipped_reason,
-    source,
-    student_word_count,
-    min_words_threshold
-)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (session_id) DO UPDATE SET
-    skipped_reason      = EXCLUDED.skipped_reason,
-    source              = EXCLUDED.source,
-    student_word_count  = EXCLUDED.student_word_count,
-    min_words_threshold = EXCLUDED.min_words_threshold,
-    updated_at          = CURRENT_TIMESTAMP
-```
+Replace the current ad-hoc `has_student_turns` / word-count guards in `process_session_completed_job` with a single unified ineligibility branch:
+
+1. Call `evaluate_grading_eligibility(session_row["raw_backup_json"], min_student_words=min_student_words)` BEFORE `build_evaluation_input`.
+2. If ineligible (`eligibility.is_eligible is False`):
+   - Log warning with the ineligibility reason.
+   - Best-effort skip log: `await repository.log_grading_skip(session_id=session_id, reason=eligibility.reason, source="worker", student_word_count=eligibility.student_word_count, min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None)` — wrapped in `try/except Exception` (non-fatal; `consume_forever` uses `requeue=False` so skip-log failure must not crash the message handler).
+   - `return` — no Groq call, no `upsert_grading_result`.
+3. If eligible: proceed with existing `build_evaluation_input` / provider dispatch / `upsert_grading_result` path unchanged.
+
+**Log key change:** The old log key `grading.skipped_insufficient_evidence` (referenced in `test_worker_patch7g5.py`) is replaced. Update the relevant assertion in `test_worker_patch7g5.py` in the same commit.
+
+**`_FakeRepo` extension for tests:** Add `log_grading_skip` to the `_FakeRepo` / mock repository used in grading-worker tests so the new call doesn't fail with `AttributeError`.
+
+**Mocked test coverage (`test_worker_patch7g8c2.py` or extended file):**
+* All four ineligible reasons (`no_raw_backup`, `invalid_raw_backup`, `no_user_turns`, `insufficient_words`) → `log_grading_skip` called once; no Groq call; no `upsert_grading_result`
+* Eligible session → `log_grading_skip` NOT called; existing provider/fallback/upsert path runs unchanged
+* `log_grading_skip` raising an exception → exception swallowed (non-fatal); no re-raise; message still processed
+* `insufficient_words` reason → `min_words_threshold` populated; other reasons → `min_words_threshold=None`
+* `source="worker"` passed on every skip call
+* No raw transcript or `raw_backup_json` in `log_grading_skip` arguments
 
 **Implementation rules:**
-* Follow existing asyncpg connection pattern: open own connection, `try/finally` close — same as `fetch_session_row` and `upsert_grading_result`
-* No raw transcript, no `raw_backup_json`, no PII — only UUIDs and integer counts
-* No DB live tests (mocked asyncpg only)
-* No worker changes in this sub-patch
+* No live DB — mocked repository only
+* No live Groq — mocked provider
 * No scanner/backfill changes in this sub-patch
 * No core-api changes in this sub-patch
-
-**Mocked test coverage to write (`test_grading_repository_patch7g8c.py`):**
-* INSERT called with correct positional params ($1–$5)
-* Connection closed in `finally` even on exception
-* `student_word_count=None` and `min_words_threshold=None` passed for non-word-count reasons
-* `student_word_count` and `min_words_threshold` populated for `insufficient_words`
-* `source` defaults to `"worker"`
-* ON CONFLICT upsert path (second call same session_id succeeds)
-* No transcript or raw_backup_json in call args
+* No `infrastructure/db-init/01-init.sql` changes
 
 **Commit message (when user approves commit):**
 ```
-feat(grading-worker): add log_grading_skip repository method (Patch 7G-8C-1)
+fix(grading-worker): refactor eligibility gate and write skip log (Patch 7G-8C-2)
 ```
 
 ## Out of Scope (requires separate approved prompt)
-* Worker refactor to call `evaluate_grading_eligibility` before `build_evaluation_input` — Patch 7G-8C-2.
 * Scanner/backfill execute-mode `log_grading_skip` calls — Patch 7G-8C-3.
 * Core-API `/grading/status` LEFT JOIN `grading_skip_log` — Patch 7G-8C-4 (deploy last — table missing = 500 on all `/grading/status` requests).
 * Updating `infrastructure/db-init/01-init.sql` — Patch 7G-8D (separate approved patch after all 7G-8C sub-patches complete).
