@@ -1,6 +1,6 @@
 # Test Cases — LUVE Thesis Evidence
 
-Legend: **[A]** = Automated by `run_thesis_evidence.sh` | **[M]** = Manual / approved live
+Legend: **[A]** = Automated by `run_thesis_evidence.sh` | **[M]** = Manual / approved live | **[L]** = Live runner (`run_multigateway_smoke.sh`, requires `--i-understand-this-is-live`)
 
 ---
 
@@ -48,6 +48,34 @@ Legend: **[A]** = Automated by `run_thesis_evidence.sh` | **[M]** = Manual / app
 **Pass:** All collected tests PASSED, 0 failures.  
 **Fail:** Any FAILED or ERROR result.  
 **Commit evidence:** 85ce409
+
+---
+
+## TC-MG-001: Formal multi-gateway live smoke [L]
+
+**Purpose:** Verify N concurrent users can hold simultaneous WebRTC sessions across N independent gateway processes. Maps to thesis scale-out evidence (TC-08 extended).  
+**Runner:** `scripts/testing/run_multigateway_smoke.sh`  
+**Pre-condition:**
+- Core API running on :8000
+- N gateway processes running on ports 8081…8081+(N-1)
+- Postgres, RabbitMQ, Redis up
+- `GROQ_API_KEY` set in gateway environment
+
+**Command:**
+```
+bash scripts/testing/run_multigateway_smoke.sh \
+  --i-understand-this-is-live \
+  --gateways <2|4|6|8>
+```
+
+**Pass:**
+- All gateways: `offer=200`, `failures: []` in stress artifact
+- `active_sessions=0` on all gateways after cooldown
+- No CUDA OOM, no gateway crash, no traceback in gateway logs
+
+**Fail:** Any gateway returns non-200 offer, non-empty `failures`, or `active_sessions > 0` after cooldown.  
+**Report artifact:** `test-results/YYYYMMDD_HHMMSS-multigateway-N.md`  
+**Captured evidence:** See `test-results/20260526_2user_multigateway_smoke.md` (2-user), `test-results/20260526_multigateway_scale_summary.md` (2/4/6 comparative).
 
 ---
 
