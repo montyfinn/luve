@@ -298,6 +298,14 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 58/58 passed (`test_session_eligibility.py` + `test_backfill_completed_sessions_patch7g4d.py`); full grading-worker suite 154/154 passed using `services/core-api/venv/bin/python3 -m pytest tests/ -q`. An earlier run via `~/.local/bin/pytest` produced 32 failures due to missing `pytest-asyncio` in that runner — a runner issue, not a code issue. `de6c6d1` corrected the earlier inaccurate verification docs; this approved-env rerun followed. No backfill/scanner `--execute` run.
 * Patch 7G-4 series complete and verified.
 
+### Task 36: Patch 7G-8A Implementation — grading_skip_log Migration SQL File (commit `d2bb908`).
+* Created `infrastructure/db-migrations/0001_grading_skip_log.sql` (123 lines): first numbered SQL migration file.
+* Schema: `CREATE TABLE IF NOT EXISTS grading_skip_log` — `id UUID PRIMARY KEY`, `session_id UUID NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE`, `skipped_reason TEXT NOT NULL CHECK ('no_raw_backup','invalid_raw_backup','no_user_turns','insufficient_words')`, `student_word_count INT` (nullable), `min_words_threshold INT` (nullable), `source TEXT NOT NULL DEFAULT 'worker' CHECK ('worker','scanner','backfill','manual')`, `skipped_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
+* Two supporting indexes: `grading_skip_log_skipped_reason_idx`, `grading_skip_log_skipped_at_idx`.
+* Migration structure: header block, preflight comments, `BEGIN;`/forward DDL/`COMMIT;`, verification comments, rollback notes (commented), fresh DB sync note.
+* Read-only review passed before commit: no forbidden executable SQL; rollback DROP TABLE commented only; no privacy violations.
+* **Explicit non-changes:** Migration committed but not applied; `grading_skip_log` table does not exist in the database. `infrastructure/db-init/01-init.sql` unchanged. `infrastructure/db-migrations/README.md` unchanged. No services/tests/app code changed. No DB commands run. Persistent skip/status tracking not active.
+
 ### Task 35: Patch 7G-7 Implementation — Migration Strategy Runbook (commit `bac73d2`).
 * Created `infrastructure/db-migrations/README.md` (261 lines): numbered SQL migration workflow and runbook.
 * Documented schema source of truth: `infrastructure/db-init/01-init.sql`; Docker `entrypoint-initdb.d` runs only on empty volumes; existing volumes require manual migration.
@@ -330,44 +338,42 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-8: Audit/Design — Persistent Grading Skip/Status Table (`grading_skip_log`)**
+**Patch 7G-8B: Audit/Plan — Apply `grading_skip_log` Migration Safely**
 
-**Status: Not yet started. AUDIT / DESIGN ONLY. Do not create migration files, do not modify `db-init/`, do not apply schema, do not commit.**
+**Status: Not yet started. AUDIT / PLAN ONLY. Do not run DB commands, do not apply migration, do not commit.**
 
 **Recommended model:**
-* **Sonnet high:** focused schema design with clear prior art from Patch 7G-7 runbook.
-* **Sonnet max:** if skip-reason semantics, status endpoint integration, or DB safety concerns are ambiguous.
-* **Opus high/max:** only if broader DB architecture or status model decisions require deeper trade-off analysis.
+* **Sonnet max:** DB apply planning because this involves schema safety, secrets handling, and backup/rollback sequencing.
+* **Opus high/max:** only if broader DB deployment architecture decisions are needed.
 
 **Background:**
-The migration strategy and runbook are established (Patch 7G-7, commit `bac73d2`). The next step is to design the actual `0001_grading_skip_log.sql` migration and the corresponding app integration plan, but not to create or apply any files yet. The Patch 7G-7 README already contains a high-level table sketch; this audit confirms and firms up that design.
+`infrastructure/db-migrations/0001_grading_skip_log.sql` is committed (Patch 7G-8A, commit `d2bb908`) but not yet applied. The `grading_skip_log` table does not yet exist in the database. This task plans the safe local DB apply/verify workflow before any commands are run.
 
-**Goal:** Design the complete `grading_skip_log` migration and app integration plan; produce an audit/design output before any migration file, service code, or DB change.
+**Goal:** Produce a concrete apply/verify plan for `0001_grading_skip_log.sql` on the local dev database. Do not run any DB commands in this task.
 
 Questions to answer:
-* What are the exact skip reasons emitted by worker, scanner, and backfill? Confirm from `session_eligibility.py` reason codes: `insufficient_words`, `no_user_turns`, `no_raw_backup`, `invalid_raw_backup`.
-* Confirm `grading_skip_log` schema: `session_id` FK, `skipped_reason` CHECK, `student_word_count` nullable, `min_words_threshold` nullable, `skipped_at`, UNIQUE on `session_id`, indexes.
-* Is one skip row per session the right design, or should all skips be logged (append-only)?
-* How should worker `process_session_completed_job` upsert skip rows? New `GradingRepository.log_grading_skip()` method?
-* How should scanner and backfill log skips? Same repository method?
-* How should `/grading/status` consume skip rows — JOIN vs. dynamic inference? Does it replace current dynamic word-count inference?
-* Privacy: confirm no transcript text, no audio, no PII stored.
-* Confirm migration file structure matches Patch 7G-7 runbook template.
-* Confirm `01-init.sql` mirror strategy: update after migration is verified, separate patch.
-* What verification/apply/rollback steps are needed? Do not run them yet.
+* Which DB container/env is the approved local target? How to identify DB name/user from `.env` without printing secrets?
+* Where should the `pg_dump` backup be stored outside the repo?
+* Which preflight queries should be run (active transactions, `sessions` table existence, `grading_skip_log` absence)?
+* What is the exact `psql` apply command (safe template, no credentials printed)?
+* Which verification queries confirm table/indexes/check constraints after apply?
+* What rollback command would be used if apply fails?
+* Should `01-init.sql` mirror happen only after successful DB apply/verify in a separate patch?
+* What is the deployment sequencing for app code changes that reference `grading_skip_log` (must migration come first)?
 
 **Hard safety rules:**
-* AUDIT/DESIGN ONLY — do not create `0001_grading_skip_log.sql`, do not modify `db-init/`, do not modify services or tests, do not stage or commit.
-* Do not run `psql`, `alembic`, `docker compose`, or any DB-modifying command.
+* AUDIT/PLAN ONLY — do not run `psql`, `alembic`, `docker compose`, or any DB command.
 * Do not connect to DB. Do not start services. Do not run Groq, RabbitMQ, TEN, browser, or Playwright.
 * Do not print secrets, `DATABASE_URL`, DB credentials, or API keys.
-* Allowed read paths: `infrastructure/`, `services/core-api/src/`, `services/grading-worker/src/`, `docs/ai/`. No write paths.
+* Do not modify migration file. Do not modify `db-init/`. Do not modify services or tests.
+* Do not stage or commit.
+* Allowed read paths: `infrastructure/`, `.env` structure (do not print values), `docs/ai/`. No write paths.
 
 ## Out of Scope (requires separate approved prompt)
-* Creating `infrastructure/db-migrations/0001_grading_skip_log.sql` — Patch 7G-8 implementation, after audit/design approved.
-* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8 implementation.
-* Modifying `/grading/status` to consume skip rows — Patch 7G-8 implementation.
-* Updating `infrastructure/db-init/01-init.sql` — after migration applied and verified.
+* Applying `0001_grading_skip_log.sql` — Patch 7G-8B execute, after apply/verify plan approved.
+* Modifying worker/scanner/backfill/repository to write skip rows — Patch 7G-8C+.
+* Modifying `/grading/status` to consume skip rows — Patch 7G-8C+.
+* Updating `infrastructure/db-init/01-init.sql` — after migration applied and verified on real DB.
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
 * Reconciliation scanner execution or modification.
