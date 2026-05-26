@@ -298,31 +298,43 @@ This file is a scoped task memo, not the global repo state source of truth.
 * **Verification:** py_compile OK; targeted 58/58 passed (`test_session_eligibility.py` + `test_backfill_completed_sessions_patch7g4d.py`); full grading-worker suite 154/154 passed using `services/core-api/venv/bin/python3 -m pytest tests/ -q`. An earlier run via `~/.local/bin/pytest` produced 32 failures due to missing `pytest-asyncio` in that runner — a runner issue, not a code issue. `de6c6d1` corrected the earlier inaccurate verification docs; this approved-env rerun followed. No backfill/scanner `--execute` run.
 * Patch 7G-4 series complete and verified.
 
+### Task 33: Patch 7G-5 Implementation — Fake Fallback Env Gate (commit `dcdf9ba`).
+* Audited `process_session_completed_job` fake fallback path: broad `except Exception` silently called `fake_grade()` on every LLM failure, upserted fake scores indistinguishable from real `llm_grader.v1` rows.
+* Added `_get_fake_fallback_enabled() -> bool` to `worker.py`: reads `GRADING_FAKE_FALLBACK` env, default false; truthy values: `1`, `true`, `yes`, `on` (case-insensitive).
+* Gated `except Exception` block: fallback disabled (default) → logs `grading.llm_failed_no_fallback` at ERROR and re-raises; no `fake_grade()` call, no DB upsert. Fallback enabled (`GRADING_FAKE_FALLBACK=true`) → preserves previous `grading.llm_failed_fallback` WARNING + `fake_grade()` path.
+* `GRADING_PROVIDER=fake` and skip gates (insufficient evidence, no user turns) unchanged.
+* Added `test_worker_patch7g5.py` — 29 mocked test cases; updated 4 legacy tests in `test_worker_patch2a.py` with `GRADING_FAKE_FALLBACK=true` to preserve their intent.
+* **Verification:** py_compile OK; targeted 50/50 passed; full grading-worker suite 183/183 passed. No live Groq, DB, RabbitMQ, services/TEN.
+* Queue note: exception escaping `process_session_completed_job` should cause `aio_pika`'s `message.process(requeue=False)` to NACK; actual DLQ delivery depends on RabbitMQ DLX configuration not declared in this codebase.
+
 ---
 
 ## Current Task
-**Patch 7G-5: Fake Fallback Env Gate**
+**Patch 7G-6: StaticFiles / Control-Center Serving and CORS Lockdown**
 
-**Status: Not yet started. Awaiting approved prompt.**
+**Status: Not yet started. Audit/design first. Do not implement during audit.**
 
 **Recommended model:**
-* **Sonnet high:** focused runtime patch with clear prior art (`worker.py`, existing test patterns).
-* **Sonnet max:** if stale/mixed output, unexpected dirty files, or tricky NACK/error-handling semantics.
-* **Opus high/max:** only if broader worker/RabbitMQ/DLQ architecture decisions are needed.
+* **Sonnet high:** focused serving/CORS config with clear prior art.
+* **Sonnet max:** if stale/mixed output, unexpected dirty files, or security-sensitive CORS/origin config is ambiguous.
+* **Opus high/max:** only if broader production deployment or security architecture decisions are needed.
 
 **Background:**
-`process_session_completed_job` in `worker.py` silently falls back to `fake_grade()` on any Groq error (network failure, timeout, malformed response). In production this causes fabricated scores that are visually indistinguishable from real `llm_grader.v1` scores — a correctness and trust risk.
+The current core-api has `allow_origins=["*"]` CORS policy (production blocker) and the control center is served via a `file://` path workaround rather than a `StaticFiles` mount. Both need to be resolved before wider use.
 
-**Goal:** Gate the silent fake fallback behind `GRADING_FAKE_FALLBACK` env var.
-* Default `GRADING_FAKE_FALLBACK=false` — fallback disabled; Groq failures NACK the message → DLQ.
-* `GRADING_FAKE_FALLBACK=true` — existing behavior preserved for local dev/testing.
-* `GRADING_PROVIDER=fake` — always uses fake grader regardless; unaffected by this flag (fake is the requested provider, not a fallback path).
+**Goal:** Audit core-api serving and CORS configuration; design a minimal, demo-safe patch.
+* Determine how the control center is currently served and what `StaticFiles` mount would look like.
+* Audit `allow_origins=["*"]` usage and design `CORS_ALLOW_ORIGINS` env var replacement.
+* Produce a design doc / audit output before any code changes.
 
 **Hard safety rules for this task:**
-* No Groq live calls unless explicitly approved.
-* No DB writes unless explicitly approved.
-* No RabbitMQ live operations unless explicitly approved.
-* No services/TEN/browser unless explicitly approved.
+* No runtime changes during audit phase.
+* No services started unless explicitly approved in a follow-up prompt.
+* No DB writes.
+* No RabbitMQ.
+* No Groq.
+* No TEN/browser unless explicitly approved.
+* No package installs.
 * Do not stage or commit without explicit approval.
 
 ## Out of Scope (requires separate approved prompt)

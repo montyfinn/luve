@@ -9,11 +9,12 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
-* **Latest runtime/tooling baseline:** `80d4db7` — fix(grading-worker): gate backfill execute by eligibility (Patch 7G-4D backfill execute path gated by `evaluate_grading_eligibility`; `--min-student-words` CLI flag; 13 mocked tests; py_compile OK; targeted 58/58 passed; full grading-worker suite 154/154 passed using project-venv python — verified; no DB/RabbitMQ/Groq).
+* **Latest runtime/tooling baseline:** `dcdf9ba` — fix(grading-worker): gate fake fallback behind env flag (Patch 7G-5 — `GRADING_FAKE_FALLBACK` env var gates silent fake fallback; default false disables fake fallback for `GRADING_PROVIDER=llm` failures; `_get_fake_fallback_enabled()` helper; 29 new mocked tests; py_compile OK; 183/183 full suite passed; no DB/RabbitMQ/Groq).
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
 ## 2. Latest Important Commits
 
+* `dcdf9ba` - fix(grading-worker): gate fake fallback behind env flag (Patch 7G-5 — added `_get_fake_fallback_enabled()` reading `GRADING_FAKE_FALLBACK` env; default false: LLM failures log `grading.llm_failed_no_fallback` at ERROR and re-raise; true: preserves `grading.llm_failed_fallback` warning + `fake_grade()` fallback; `GRADING_PROVIDER=fake` and skip gates unchanged; 29 new mocked tests; py_compile + 183/183 full suite passed; no DB/RabbitMQ/Groq).
 * `80d4db7` - fix(grading-worker): gate backfill execute by eligibility (Patch 7G-4D — backfill execute path gated by `evaluate_grading_eligibility` before `process_session_completed_job`; `_parse_min_student_words_env` helper added; `--min-student-words` CLI flag; counter names aligned with scanner; 13 mocked tests; py_compile OK; targeted 58/58 passed; full grading-worker suite 154/154 passed (project-venv python); no DB/RabbitMQ/Groq).
 * `7dcc9e8` - fix(grading-worker): gate scanner execute by eligibility (Patch 7G-4C — scanner execute path gated by `evaluate_grading_eligibility` before `process_session_completed_job`; ineligible sessions skipped with per-reason counters; execute and dry-run summary bucket naming unified; 11 mocked tests; py_compile + 141/141 tests passed; no DB/RabbitMQ/Groq).
 * `5714ae4` - test(grading-worker): categorize scanner dry-run eligibility (Patch 7G-4B — scanner dry-run path wired to `evaluate_grading_eligibility`; per-reason skip counts; `_parse_min_student_words_env` helper; `--min-student-words` CLI flag; 25 mocked unit tests; execute path unchanged; py_compile + 130/130 tests passed; no DB/RabbitMQ/Groq).
@@ -801,9 +802,12 @@ No breaking changes to `GradingRead`. Response JSON values (`"graded"`, `"pendin
 
 ### 9. Queue/Worker Production Safety
 
-**Fake fallback risk (production blocker):** `grading.llm_failed_fallback` silently upserts `fake_grader.v1` scores on every Groq failure. In production, users would receive fabricated scores visually indistinguishable from real grading.
+**Fake fallback risk (resolved in Patch 7G-5, commit `dcdf9ba`):** `grading.llm_failed_fallback` previously silently upserted `fake_grader.v1` scores on every Groq failure. In production, users would receive fabricated scores visually indistinguishable from real grading. **This production blocker is now gated.**
 
-**Immediate fix (Patch 7G-5):** Gate fake fallback behind `GRADING_FAKE_FALLBACK` env var (default `false`). With fallback disabled, Groq failures NACK the message → DLQ.
+**Implemented (Patch 7G-5):** `GRADING_FAKE_FALLBACK` env var controls behavior:
+- Default (unset/false): LLM failures log `grading.llm_failed_no_fallback` at ERROR and re-raise — no fake result written to DB. Exception escaping `process_session_completed_job` should cause `aio_pika`'s `message.process(requeue=False)` to NACK; actual DLQ delivery depends on RabbitMQ DLX configuration, which is not declared in this codebase.
+- `GRADING_FAKE_FALLBACK=true`: Preserves previous fallback behavior — logs `grading.llm_failed_fallback` at WARNING and calls `fake_grade()`. Local dev escape hatch.
+- `GRADING_PROVIDER=fake`: Explicit fake provider path; unaffected by this flag.
 
 **DLQ (Patch 7G-9):** Add `grading.dlq` exchange + `grading_dead_letter` queue with `x-dead-letter-exchange` binding. Failed jobs accumulate for SRE inspection rather than being silently lost. Not implemented yet.
 
@@ -837,7 +841,7 @@ Must-complete before enabling `GRADING_PROVIDER=llm` for real users:
 - [x] Backfill threshold parity (Patch 7G-4D — commit `80d4db7`)
 - [x] Word-count event-alias parity fix (Patch 7G-2 — commit `24fef0b`)
 - [x] Status schema Literal + UI fail-closed handling (Patch 7G-3 — commit `55a4d02`)
-- [ ] Fake fallback gated or disabled (Patch 7G-5)
+- [x] Fake fallback gated (Patch 7G-5 — commit `dcdf9ba`)
 - [ ] DLQ configured (Patch 7G-9)
 - [ ] Rate limiting on `/grading/status`
 - [ ] Metrics/log runbook written
@@ -1274,7 +1278,65 @@ Counter names aligned with scanner (Patch 7G-4C):
 #### Remaining
 
 * Patch 7G-4 series complete. Verification cleanup completed after approved-env rerun: 154/154 full suite passed via project-venv python.
-* Patch 7G-5 (fake fallback env gate) is the next production blocker.
+* Patch 7G-5 (fake fallback env gate) implemented — see Patch 7G-5 subsection below.
+
+---
+
+### Patch 7G-5 — Fake Fallback Env Gate
+
+**Runtime/test commit: `dcdf9ba` fix(grading-worker): gate fake fallback behind env flag**
+
+**Files changed:**
+* `services/grading-worker/src/worker.py` — added `_get_fake_fallback_enabled()` helper; gated `except Exception` fallback block on new helper
+* `services/grading-worker/tests/test_worker_patch2a.py` — added `GRADING_FAKE_FALLBACK=true` to 4 legacy fallback tests to preserve their intent
+* `services/grading-worker/tests/test_worker_patch7g5.py` — 29 new mocked tests (new file)
+
+#### Behavior
+
+New helper `_get_fake_fallback_enabled() -> bool`:
+* Reads `GRADING_FAKE_FALLBACK` env var; strips, lowercases, checks membership in `{"1", "true", "yes", "on"}`.
+* Default (unset or any other value) → `False`.
+
+In `process_session_completed_job`, `provider == "llm"` exception branch now:
+* `GRADING_FAKE_FALLBACK` truthy: logs `grading.llm_failed_fallback` at WARNING and calls `fake_grade()` — identical to previous behavior. Local dev escape hatch.
+* `GRADING_FAKE_FALLBACK` unset/falsy (default): logs `grading.llm_failed_no_fallback` at ERROR and bare `raise`. No `fake_grade()` call. No `upsert_grading_result` call. No fake row written to DB.
+
+Unchanged paths:
+* `GRADING_PROVIDER=fake` (else branch) — calls `fake_grade()` directly as explicit provider, not fallback. Unaffected.
+* Insufficient-evidence gate — fires before provider/fallback logic. Unaffected.
+* No-student-turns gate — fires before provider/fallback logic. Unaffected.
+* `consume_forever()` — unchanged. Exception escaping `process_session_completed_job` should cause `aio_pika`'s `message.process(requeue=False)` to NACK; actual DLQ delivery depends on RabbitMQ DLX configuration, which is not declared in this codebase.
+
+#### Verification
+
+* `py_compile src/worker.py` — OK
+* Targeted pytest (`test_worker_patch2a.py` + `test_worker_patch7g5.py`) — **50/50 passed**
+* Full grading-worker suite — **183/183 passed** using `services/core-api/venv/bin/python3 -m pytest tests/ -q`
+* No live Groq calls. No DB writes/connections. No RabbitMQ operations. No services/TEN. No scanner/backfill `--execute`.
+
+#### Test Coverage (29 mocked test cases)
+
+* `GRADING_PROVIDER=fake` unaffected by `GRADING_FAKE_FALLBACK` (unset/true/false) — 3 cases
+* LLM success writes LLM result; no fallback regardless of flag — 1 case
+* LLM failure + fallback unset → raises; no upsert — 1 case
+* LLM failure + fallback=false → raises; no upsert — 1 case
+* `asyncio.TimeoutError` + fallback unset → raises; no upsert — 1 case
+* LLM failure + fallback=true → fake upserted — 1 case
+* Truthy parsing: `1`, `true`, `True`, `TRUE`, `yes`, `YES`, `on`, `ON` — 8 parametrized cases
+* Falsey parsing: `0`, `false`, `no`, `off`, `bogus`, `""`, `"  "` — 7 parametrized cases
+* Unset env → disables fallback — 1 case
+* Log key `grading.llm_failed_no_fallback` when disabled — 1 case
+* Log key `grading.llm_failed_fallback` when enabled — 1 case
+* No transcript leakage in logs (disabled path) — 1 case
+* No transcript leakage in logs (enabled path) — 1 case
+* Insufficient evidence skips before fallback gate; no raise — 1 case
+
+#### DevOps/SRE Value
+
+* Prevents silent fake score writes when `GRADING_PROVIDER=llm` and Groq fails — the core production trust risk.
+* Distinguishable log keys (`llm_failed_no_fallback` at ERROR vs `llm_failed_fallback` at WARNING) — alertable without log parsing.
+* Rollback: set `GRADING_FAKE_FALLBACK=true` env var (immediate, no redeployment) or `git revert dcdf9ba`.
+* No DB migration, no API changes, no RabbitMQ config changes.
 
 ---
 
@@ -1290,6 +1352,6 @@ Counter names aligned with scanner (Patch 7G-4C):
 * **`SQLSessionStore.persist_event_log` is dead code:** Defined in `services/core-api/src/realtime/session_store.py` with an identical NULL-producing if/else pattern; appears unused by current call-site search. Removal should be a separate cleanup with verification.
 * **Connection Shutdown:** `close_publisher()` exists but is not wired into the application shutdown lifecycles; TEN gateway shutdown may print robust connection warning logs.
 * **Grading Analysis UI (dev preview only):** `GET /api/v1/sessions/{session_id}/grading` is exposed via the control center Session Analysis card. Returns `GradingRead` (4 scores + summary + corrections + graded_at). Session ownership enforced via `sessions.user_id` JOIN. UI fetch is one-shot with 2s delay after `session_ended` or manual disconnect. Card is labeled "DEV PREVIEW" (Patch 6 cleaned badge text and disclaimer — see Section 13). Manual browser end-to-end dev-preview test passed for session `26af0fc2-9965-48c6-b509-54e89cc56c8b`: TEN real STT/LLM/TTS ran, `raw_backup_json` persisted 12 events, `session.completed` published, grading result displayed in the Session Analysis card. Real LLM grader tested in Patches 3–5.
-* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate is next.
+* **Grading Worker:** `GRADING_PROVIDER` dispatch is wired (commit `06acf97`). `GroqClient` exists (commit `1cae30b`). Default/unset remains `"fake"`. Patch 3 controlled one-shot live Groq test passed — see Section 9. Patch 4 normal RabbitMQ consume-loop live Groq test passed — see Section 10. Patch 5 browser UI verification of a real `llm_grader.v1` row passed — see Section 11. UI badge and disclaimer cleaned in Patch 6 (see Section 13). CUDA reproducibility documented in Patch 7B (`requirements-torch-cu126.txt`). Patch 7C multi-session stability test completed — see Section 15; pipeline reliability confirmed. Patch 7D-A/B calibration and transcript review completed — see Section 16; root cause of repeated 2.95 confirmed as STT/transcript quality, not prompt or model floor. Patch 7E word-count quality gate implemented (commit `8b16c50`) — see Section 17; sessions below `GRADING_MIN_STUDENT_WORDS=25` are now skipped without a Groq call or DB upsert. Patch 7F-1 grading status endpoint and UI implemented (commit `ddb46ec`) — see Section 18; `GET /grading/status` exposes `graded`/`pending`/`insufficient_evidence` dynamically; UI shows actionable message for skipped sessions; live API/browser smoke test is Patch 7F-2. Patch 7G production hardening audit complete — see Section 19; 13-area review identified critical gaps: word-count helper event-alias drift, scanner threshold bypass, fake fallback production blocker, CORS lockdown needed. Patch 7G-2 word-count parity fix implemented (commit `24fef0b`) — event-alias drift resolved; see Section 19 Patch 7G-2 subsection. Patch 7G-3 status Literal schema and UI fail-closed handling implemented (commit `55a4d02`) — see Section 19 Patch 7G-3 subsection. Patch 7G-4 audit/design complete (2026-05-25) — see Section 19 Patch 7G-4 subsection. Patch 7G-4A session eligibility helper committed; Patch 7G-4C scanner execute-path gate committed (`7dcc9e8`); Patch 7G-4D backfill execute-path gate committed (`80d4db7`) — see Section 19 Patch 7G-4C/7G-4D subsections. Patch 7G-4 series complete; verification cleanup completed after approved-env rerun: 154/154 passed via project-venv python. Patch 7G-5 fake fallback env gate implemented (commit `dcdf9ba`): `GRADING_FAKE_FALLBACK` defaults to false; LLM failures log `grading.llm_failed_no_fallback` and re-raise instead of silently writing fake results. Patch 7G-6 (`StaticFiles`/CORS lockdown) is next.
 * **VAD & Whisper Warm Policy:** Changing VAD thresholds or disabling Whisper unload is high risk; these changes are not current next tasks.
 * **Not Production-Ready:** Code is tuned for local single-session correctness and local stress verification; do not claim production scale.
