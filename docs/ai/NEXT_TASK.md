@@ -374,6 +374,21 @@ This file is a scoped task memo, not the global repo state source of truth.
 * Updated `NEXT_TASK.md`: added Task 41; replaced Current Task with Patch 7G-8C-3 spec.
 * No implementation files modified. No DB commands run. No Groq/RabbitMQ/TEN.
 
+### Task 42: Control Center Auth UX Diagnosis and Fix (commits `c5e68fd`, `5195315`, `d61db52` — 2026-05-27).
+* **Diagnosis:** Full structural audit of `services/core-api/src/static/index.html` after auth UI redesign. Confirmed: no HTML overlay, no CSS `pointer-events: none`, no `disabled` attribute on `#login-btn`/`#register-btn`. Root cause: `getCredentials()` (line 839) throws for empty email or short password BEFORE `setApiStatus`/`updateAuthState` is called; catch block only calls `logEvent` — zero visible feedback shown to user.
+* **Fix A (commit `c5e68fd`):** Added `open` attribute to `<details>` — Bearer Token fallback now visible by default. Also updated `getDefaultCoreApiUrl()` from `url.port === "8080"` to `Number(url.port) >= 8080 && Number(url.port) <= 8099` — covers gateway ports 8081–8086.
+* **Fix B (commit `5195315`):** Added `updateAuthState(String(error))` to `loginBtn` click catch, `registerBtn` click catch, and `authPasswordInput` Enter-key catch. Validation errors now update `#auth-state` paragraph visibly near buttons. JS syntax verified via `node --check` (61121 chars, 1 script block, syntax OK).
+* **Docs (commit `d61db52`):** Pre-existing dirty file `docs/tooling/local-dev-commands.example.md` committed separately (Vietnamese-language port-kill and uvicorn/gateway startup commands).
+* **Smoke:** Static `curl http://127.0.0.1:8000/control-center` HTTP 200 + Fix A (`open`) + Fix B (port range) confirmed in served HTML. Live browser smoke at `:8081/control-center` deferred (gateway not running).
+* No backend, DB, Groq, RabbitMQ, or TEN changes. CORS pre-existing gap: core-api allows ports 3000/5173/8000/8080 only; gateway 8081–8086 excluded.
+
+### Task 43: Grading Pipeline Readiness Diagnosis (2026-05-27 — read-only).
+* Full read-only audit of grading pipeline. Verdict: **PARTIAL**.
+* **What is ready:** RabbitMQ docker running (:5672); PostgreSQL docker running (:5432); Core API running at :8000; `services/grading-worker/src/worker.py` — complete, correct eligibility gate, idempotent DB writes via `evaluate_grading_eligibility` + `log_grading_skip` + `upsert_grading_result`; Control Center grading UI fully wired (fetchAndShowGrading → GET /grading/status → GET /grading).
+* **Blockers:** (1) grading-worker not running — queue accumulates silently; (2) `services/grading-worker/.env` does not exist — `DATABASE_URL`, `RABBITMQ_HOST`, `GROQCLOUD_API_KEY` all absent; (3) `/grading/status` does not query `grading_skip_log` — skip reasons invisible to API (known gap, non-blocking for fake smoke).
+* **Known gap:** `session.completed` publishes from gateway, but is received by grading-worker only when worker is running. Worker must be started manually via `python -m src.worker` from `services/grading-worker/` with required env vars.
+* No files modified. No DB/Groq/RabbitMQ commands run. No services started.
+
 ### Task 40: Patch 7G-8C-1 Implementation — Repository `log_grading_skip()` (commit `cb79155`, 2026-05-26).
 * Added `GradingRepository.log_grading_skip(session_id, reason, source="worker", student_word_count=None, min_words_threshold=None) -> None` to `services/grading-worker/src/grading_repository.py`.
 * Follows existing asyncpg connection pattern: open own connection, `try/finally` close — same as `fetch_session_row` and `upsert_grading_result`.
@@ -386,57 +401,59 @@ This file is a scoped task memo, not the global repo state source of truth.
 ---
 
 ## Current Task
-**Patch 7G-8C-3 Implementation — Scanner/backfill execute-mode skip-log writes**
+**Grading Pipeline Smoke and Status Integration**
 
-**Status: Allowed now because Patch 7G-8C-2 (Task 40 impl + Task 41 docs) is complete. Execute-mode skip-log writes only. Dry-run paths must remain unchanged. Do not touch worker.py. Do not touch core-api. Do not mirror 01-init.sql yet.**
+**Status: PARTIAL readiness. Diagnosis complete (Task 43). No code changes pending before smoke. Codex must NOT start by coding.**
 
-**Recommended model:**
-* **Sonnet high** for scanner/backfill execute-mode extension + mocked tests.
-* Opus not needed.
+**Context:**
+* Grading worker code (`worker.py`, `grading_repository.py`, `session_eligibility.py`) is complete and committed. No code changes needed before smoke.
+* RabbitMQ, PostgreSQL docker services are running.
+* Core API is running at `:8000`.
+* Control Center grading UI is wired end-to-end.
+* `services/grading-worker/.env` does **not exist** — worker cannot start without it.
 
-**Goal:** Add best-effort `log_grading_skip` calls in execute-mode paths of `reconciliation_scanner.py` and `backfill_completed_sessions.py` after `evaluate_grading_eligibility` returns ineligible. Dry-run paths stay read-only (no `log_grading_skip` calls). New mocked tests only — no live DB, no `--execute`.
+**Recommended steps (in order):**
 
-**Files:**
-* `services/grading-worker/scripts/reconciliation_scanner.py` — execute-mode ineligibility branch only
-* `services/grading-worker/scripts/backfill_completed_sessions.py` — execute-mode ineligibility branch only
-* New test files for execute-mode skip-log coverage
+1. **Do not start by coding.** Read `git status --short` and `git log --oneline -5` first.
+2. **Verify `.env` does not exist:** `ls services/grading-worker/.env 2>/dev/null || echo "absent"`.
+3. **Create `services/grading-worker/.env`** (user must explicitly approve this step — file is local-only, do not commit secrets). Required keys:
+   ```
+   DATABASE_URL=postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>
+   RABBITMQ_HOST=localhost
+   RABBITMQ_PORT=5672
+   RABBITMQ_USER=guest
+   RABBITMQ_PASS=guest
+   GRADING_PROVIDER=fake
+   GRADING_MIN_STUDENT_WORDS=5
+   ```
+   Read `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` from `docker exec luve_postgres printenv ...` — do not print values in output. Use `GRADING_PROVIDER=fake` for first smoke (no Groq needed). Lower `GRADING_MIN_STUDENT_WORDS=5` to allow short stress-test sessions through the word-count gate.
+4. **Start grading-worker:** `cd services/grading-worker && timeout 120 python -m src.worker` (requires venv with `aio-pika`, `asyncpg`, `httpx`).
+5. **Publish a test event:** Run one stress or real session that publishes `session.completed` — OR use the reconciliation scanner in execute mode on an existing completed session that has no grading result.
+6. **Verify worker log** for `grading.completed` or `grading.session_ineligible`.
+7. **Verify API:** `curl -H "Authorization: Bearer <token>" http://localhost:8000/api/v1/sessions/<session_id>/grading/status` — expect `{"status": "graded"}` or `{"status": "insufficient_evidence"}`.
+8. **Verify Control Center grading card** renders after session ends.
+9. **After fake smoke passes**, decide with user whether to run LLM/Groq smoke (`GRADING_PROVIDER=llm`).
+10. **Later patch (7G-8C-3):** Scanner/backfill execute-mode `log_grading_skip` calls (spec in previous Current Task above; this was deferred).
+11. **Later patch (7G-8C-4):** `/grading/status` LEFT JOIN `grading_skip_log` — deploy last (table missing = 500 on all `/grading/status` requests).
 
-**Refactor spec:**
+**Known failure modes and how to diagnose:**
 
-Both scripts already call `evaluate_grading_eligibility` in their candidate loops (Patches 7G-4C/7G-4D). The change is additive only:
+| Failure | Signal |
+|---|---|
+| Worker not running | Queue accumulates; no `grading.completed` in logs |
+| RabbitMQ connection error | Worker startup crashes with `aio_pika.exceptions.AMQPConnectionError` |
+| No `GROQCLOUD_API_KEY` with `GRADING_PROVIDER=llm` | Worker logs `grading.llm_failed_no_fallback`; raises; message dropped |
+| Word count too low | Worker logs `grading.session_ineligible reason=insufficient_words`; `grading_skip_log` written |
+| DB migration missing (`grading_skip_log` table) | Worker `log_grading_skip()` raises `asyncpg.UndefinedTableError`; logged as warning (non-fatal) |
+| `/grading/status` not reading skip log | Status always `pending` for ineligible sessions — known gap, not a crash |
 
-1. In execute-mode ineligibility branch (`if args.execute` and `not eligibility.eligible`):
-   - After incrementing the skip counter and before `continue`, add a best-effort `log_grading_skip` call.
-   - Guard: `if repository is not None:` (execute mode provides a real `GradingRepository`; dry-run uses `None`).
-   - Call: `await repository.log_grading_skip(session_id=session_id, reason=eligibility.reason, source="scanner", student_word_count=eligibility.student_word_count, min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None)`.
-   - Use `source="backfill"` for `backfill_completed_sessions.py`.
-   - Wrap in `try/except Exception`: on failure, log a warning (`grading.skip_log_failed`) and `continue` — do not crash the loop.
-2. Dry-run branch: no change. The dry-run path must not call `log_grading_skip`.
-
-**Source values:**
-* `reconciliation_scanner.py` → `source="scanner"`
-* `backfill_completed_sessions.py` → `source="backfill"`
-
-**Mocked test coverage:**
-* Scanner execute: all four ineligible reasons → `log_grading_skip` called once with correct `source="scanner"`
-* Scanner execute: `log_grading_skip` raises → exception swallowed; loop continues; no crash
-* Scanner dry-run: ineligible session → `log_grading_skip` NOT called (dry-run is read-only)
-* Backfill execute: same coverage as scanner (all four reasons + failure non-fatal)
-* Backfill dry-run: ineligible session → `log_grading_skip` NOT called
-* `min_words_threshold` populated only for `insufficient_words`; `None` for all other reasons
-
-**Implementation rules:**
-* No live DB — mocked repository only
-* No `--execute` runs
-* No `worker.py` changes
-* No core-api changes
-* No `infrastructure/db-init/01-init.sql` changes
-* No `grading_repository.py` changes
-
-**Commit message (when user approves commit):**
-```
-fix(grading-worker): write skip log from scanner/backfill execute gate (Patch 7G-8C-3)
-```
+**Standing rules:**
+* Do not commit `services/grading-worker/.env` — it contains credentials.
+* Do not use `git add .` or `git add -A`.
+* Do not run `DROP`, `DELETE`, `TRUNCATE`, or `UPDATE` without `WHERE`.
+* Do not print `DATABASE_URL`, `POSTGRES_PASSWORD`, `GROQCLOUD_API_KEY`, or any token value.
+* Do not touch `.understand-anything/` or `docs/system-map.md`.
+* Verify `git status --short` and `git diff` before any commit.
 
 ## Out of Scope (requires separate approved prompt)
 * Scanner/backfill execute-mode `log_grading_skip` calls — Patch 7G-8C-3.
@@ -444,11 +461,12 @@ fix(grading-worker): write skip log from scanner/backfill execute gate (Patch 7G
 * Updating `infrastructure/db-init/01-init.sql` — Patch 7G-8D (separate approved patch after all 7G-8C sub-patches complete).
 * Patch 7G-9 (DLQ, Prometheus counters, regrade tooling).
 * Transactional outbox implementation.
-* Reconciliation scanner execution or modification.
+* Reconciliation scanner execution or modification without explicit approval.
 * Removing `SQLSessionStore.persist_event_log` dead code.
 * Removing DEV PREVIEW badge from UI.
 * Wiring `close_publisher()` into shutdown.
-* Browser E2E smoke of `/control-center` HTTP route (deferred from Patch 7G-6).
+* Browser E2E smoke of `/control-center` at `:8081` (deferred — requires gateway running).
+* Thesis final report assembly (`docs/thesis/final_report_draft.md`) — cancelled by user; do not resume without explicit re-request.
 
 ## Protected Runtime Files
 Protected runtime files and canonical guardrails are maintained in `CLAUDE.md` and `docs/ai/CLAUDE_CODE_HANDOFF.md`. Do not modify runtime files, DB schema/migrations, env files, secret/local payload files, or TEN/VAD/STT/TTS/WebRTC files unless a future prompt explicitly authorizes it.
