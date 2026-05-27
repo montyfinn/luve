@@ -8,27 +8,30 @@ This file is a scoped task memo, not the global repo state source of truth.
 
 ## Current Task
 
-**Control Center grading card browser smoke, then decide LLM/Groq grading smoke.**
-
-### Recent completed work
-
-* **Fake grading DB/RabbitMQ smoke: PASS.**
-  Session `a62d11fc-4793-439b-a835-384f41c23eda`; worker consumed `session.completed`; worker log key `grading.completed`; `grading_results=1`; `grading_skip_log=0`; grader `fake_grader.v1`; Groq not called; scanner/backfill `--execute` not run; worker stopped cleanly; API check skipped because `user_id=NULL`.
-* **User-owned fake grading API smoke: PASS.**
-  Smoke email `grading-smoke-1779863297-e28f5e@example.com`; session `905819ff-db81-4243-9347-45abcef6c437`; worker log key `grading.completed`; `grading_results=1`; `grading_skip_log=0`; `/grading/status` returned HTTP 200 with `status=graded`; `/grading` returned HTTP 200 with `overall_score=5.97`; correction types were `fake_grader_notice` and `input_quality`; worker stopped cleanly; Groq not called; no code changes were required for this smoke.
-* **Control Center grading UI status.**
-  API grading path works. The older fake DB smoke session with `user_id=NULL` cannot be read through the authenticated API. Commit `696262e` added manual `Load Grading` support: `id="load-grading-btn"`, reads `currentSessionId` or the session input, calls `keepCompletedSessionVisible(sessionId)`, then calls existing `fetchAndShowGrading(sessionId)` without bypassing auth. Browser render of the grading card still needs a final manual/browser smoke. Playwright was unavailable locally because the package/cache was missing and `npm` fetch failed.
-* **Local env caveat.**
-  `services/grading-worker/.env` exists, is ignored, and local-only. Passing smokes used safe in-process DB/RabbitMQ overrides from root/container env without printing secrets because the local file may contain stale or wrong values. Do not commit `.env`. Do not print `DATABASE_URL`, passwords, Groq key, or tokens.
+**Final integrated smoke after restart**
 
 ### Recommended next steps for Claude
 
-1. Do not code first.
-2. Verify `git status` / `git log`, then read `docs/ai/PROJECT_STATE.md` and `docs/ai/NEXT_TASK.md`.
-3. Since the manual loader commit exists, test the actual Control Center path on Core API `:8000`: login/register a user, create or reuse a user-owned graded session, paste the session ID, click `Load Grading`, and expect the graded card plus score.
-4. If no usable token/session remains, rerun the user-owned fake grading API smoke and keep the token/session in the same browser/manual flow.
-5. Only after the fake UI smoke passes, decide whether to run an LLM/Groq grading smoke.
-6. Later code patch: `/grading/status` should read `grading_skip_log` directly; scanner/backfill execute-mode skip-log writes remain deferred.
+1. **Final integrated smoke after restart:**
+   - Restart core/gateway as needed.
+   - Open the Control Center UI.
+   - Login or register a user.
+   - Create a session.
+   - Wait for "Ready - speak now".
+   - Perform the following tests:
+     1. "I go school yesterday" (Expected: Passes, speech finalized)
+     2. "She don't like coffee" (Expected: Passes, speech finalized)
+     3. "I am go to market" (Expected: Passes, speech finalized)
+     4. "Thank you very much" (Expected: Passes only under genuine speech parameters; rejected under filler metrics)
+     5. "Hôm nay trời đẹp quá" (Expected: Reverted/suppressed as forced-English hallucination)
+     6. "Tôi đi học hôm qua" (Expected: Reverted/suppressed as forced-English hallucination)
+   - Disconnect the session.
+   - Click `Load Session Analysis` / expect graded card rendering.
+   - Confirm English learner turns are graded and Vietnamese turns are suppressed or logged as ineligible/hallucination.
+
+2. **STT Tuning Guideline:**
+   - Do **NOT** keep tuning STT unless a new, concrete false-positive transcript is observed.
+   - If a new false positive occurs, record the exact spoken phrase, transcript, and Event Log reason in the handoff files **before** modifying any code.
 
 ## Completed Tasks
 

@@ -9,24 +9,43 @@ This file is the current source of truth for mutable repo state in `docs/ai`.
 ## 1. Current Expected Git State
 
 * **Worktree:** No tracked modifications; only untracked user-owned artifacts (`.understand-anything/`, `docs/system-map.md`).
-* **HEAD:** `696262e` fix(control-center): add manual grading loader (2026-05-27).
+* **HEAD:** `588ce38` fix(stt): preserve learner English and filter forced-decode hallucinations (2026-05-28).
+* **Previous Commits:** `fabed19` feat(control-center): redesign demo console and improve speech readiness (2026-05-28).
 * **Latest runtime/tooling baseline:** `7d522d9` — fix(core-api): serve control center and lock down CORS (Patch 7G-6 — CORS wildcard replaced with 8-origin local allowlist via `get_cors_allow_origins()`; `StaticFiles` mount at `/static`; `/control-center` FileResponse route; `src/core/cors.py` CORS helper; 15/15 mocked tests; py_compile OK; no DB/RabbitMQ/Groq). Latest infrastructure commit: `d2bb908` db: add grading skip log migration (Patch 7G-8A — `infrastructure/db-migrations/0001_grading_skip_log.sql` created). **Patch 7G-8B Execute complete (2026-05-26): `grading_skip_log` migration applied and verified on local DB; table exists, row_count=0, all columns/indexes/constraints/FK verified; backup at `/home/minhthuy/db-backups/backup_pre_0001_grading_skip_log_20260526_145532.dump` (111K, non-zero).** Patch 7G-8C app integration audit/design complete (audit/design only; no DB commands run; no files modified except docs; no app integration implemented; implementation unblocked by 7G-8B Execute; pending separate approved prompts for 7G-8C-3 through 7G-8C-4). **Patch 7G-8C-1 complete (2026-05-26): `GradingRepository.log_grading_skip()` added to `services/grading-worker/src/grading_repository.py`; 5/5 mocked asyncpg tests in `test_grading_repository_patch7g8c.py`; commit `cb79155`.** **Patch 7G-8C-2 complete (2026-05-26): `worker.py` refactored to use `evaluate_grading_eligibility`; all four ineligible reasons write skip rows best-effort; 6/6 mocked tests pass; commit `85ce409`.** **Control Center UX fixes (2026-05-27): auth validation feedback fix `5195315`; URL defaults fix + Bearer Token visibility `c5e68fd`; tooling docs `d61db52`.**
 * **Thesis chapters:** All five chapter drafts committed (`chapter1_draft.md` through `chapter5_draft.md`, `outline.md`) in commits `04d4f43`, `be396c0`, `12f02b1`, `1a9c1a4`, `5c0fc1a`. Test evidence, smoke runners, and multi-gateway scale results committed in `fafa538`, `808d7bc`, `36b870b`, `e3f0012`, `e654b91`.
 * **Source of Truth:** All python services runtime files in `services/core-api/` and `services/grading-worker/` are committed and match the local baseline.
 
-## 1A. Recent Completed Work (2026-05-27)
+## 1A. Recent Completed Work (2026-05-28)
 
-* **Fake grading DB/RabbitMQ smoke: PASS.**
-  Session `a62d11fc-4793-439b-a835-384f41c23eda`; worker consumed `session.completed`; worker log key `grading.completed`; `grading_results=1`; `grading_skip_log=0`; grader `fake_grader.v1`; Groq not called; scanner/backfill `--execute` not run; worker stopped cleanly; API check was skipped because `sessions.user_id` was `NULL`.
-* **User-owned fake grading API smoke: PASS.**
-  Smoke email `grading-smoke-1779863297-e28f5e@example.com`; session `905819ff-db81-4243-9347-45abcef6c437`; worker log key `grading.completed`; `grading_results=1`; `grading_skip_log=0`; `GET /grading/status` returned HTTP 200 with `status=graded`; `GET /grading` returned HTTP 200 with `overall_score=5.97`; correction types were `fake_grader_notice` and `input_quality`; worker stopped cleanly; Groq not called; no code changes were required for the smoke itself.
-* **Control Center grading UI status.**
-  The API grading path works. The earlier fake DB smoke session with `user_id=NULL` is not readable through the authenticated API. Commit `696262e` added a manual `Load Grading` button in the Control Center (`id="load-grading-btn"`); it reads `currentSessionId` or the session input, calls `keepCompletedSessionVisible(sessionId)`, then calls the existing `fetchAndShowGrading(sessionId)` path without bypassing auth. Browser render of the grading card still needs a final manual/browser smoke. Local Playwright/browser automation was unavailable because the CLI package/cache was missing and `npm` fetch failed.
-* **Local env caveat.**
-  `services/grading-worker/.env` exists, is ignored, and is local-only. The passing smokes found that this file may contain stale or wrong DB/RabbitMQ values on this machine. Successful smokes used safe in-process overrides from root/container env without printing secrets. Do not commit `.env`. Do not print `DATABASE_URL`, DB password, Groq key, or tokens.
+### Control Center & Speech Readiness
+* **Control Center Frontend & demo console UI redesign:** Redesigned the demo console UI into an Industrial AI Lab Console with scoped layout styling (`.cc-shell`) under `fabed19` to protect the global stylesheet, responsive dashboard grids, telemetry/status indicator cards, and steps badges.
+* **Speech Readiness / Warmup Gating:** Added speech readiness and client-side mic warmup behavior in `index.html` ensuring speech inputs are gated appropriately.
+* **Load Session Analysis:** Integrated manually triggered load grading UX which cleanly retrieves session analysis cards with accurate scores upon manual prompt or disconnect.
+* **UI manual grading flow tested:** Cleanly tested dynamic rendering and manual grading triggers.
+
+### STT / Speech Finalization
+* **STT Finalization Hardening:** Integrated learner English finalization (Commit `588ce38`) ensuring broken/grammatically incorrect learner English is preserved and finalized rather than dropped. Short strong yes/no/ok/okay answers with robust acoustic parameters can now finalize successfully.
+* **Vietnamese Phonetic Negative Guard:** Added a phonetic token rejection list to suppress forced-English hallucinations arising from Vietnamese audio.
+* **Repeated Ngram Loop Guard:** Implemented a consecutive repeated ngram check ($k \ge 3$) to identify and reject repetitive acoustic feedback loops.
+* **Canned Forced-English Hallucination Guard:** Configured suspicious canned-phrase suppressions (e.g. `"go home now everyone"`, `"today is a club night"`, and `"thank you very much"` under weak speech/audio metrics or short duration).
+* **Residual Caveat:** Since Whisper is forced to decode to English, there remains a low residual risk of forced-English hallucinations from unrecognized speech, though strongly mitigated. Additionally, Whisper language-model bias can still correct learner grammar (e.g., inserting "to" or "am"); grading is strictly based on the decoded STT transcript, not phonetic ground truth.
+
+### Session Grading & Errors
+* **Grading & Load Session Analysis:** Handled successfully under manual testing.
+* **Ownership Check:** Restructured `session_service.py` to assert active user_id ownership of sessions, throwing `403 Forbidden` on session owner mismatches.
+* **Error Clarity:** Updated UI auth and token handler routines to gracefully handle `401 Unauthorized` and `403 Forbidden` responses, prompting users to sign in again rather than failing silently. Do not bypass auth.
+
+### Verification & Tests
+* **Compiler check:** `py_compile services/core-api/src/ten_ext/luve_extension.py` PASS.
+* **Compiler check:** `py_compile services/core-api/src/services/session_service.py` PASS.
+* **JS syntax check:** `node --check` on inline Control Center JS PASS.
+* **Pytest:** `pytest services/core-api/tests/test_stt_eligibility.py` PASS (6/6 tests passed).
 
 ## 2. Latest Important Commits
 
+* `588ce38` - fix(stt): preserve learner English and filter forced-decode hallucinations (2026-05-28 — added Vietnamese phonetic tokens guard, repeated loop checks, and canned hallucination suppression; added comprehensive pytest suite).
+* `fabed19` - feat(control-center): redesign demo console and improve speech readiness (2026-05-28 — scoped Industrial Console layout styles, integrated mic warmup state gating, and robust Session Analysis UX cards).
+* `fdf8fd4` - docs(ai): record grading smoke and UI handoff (2026-05-27 — initial status reporting).
 * `696262e` - fix(control-center): add manual grading loader (2026-05-27 — adds visible `Load Grading` button next to `Current Session ID`; button reuses existing Bearer-token path, keeps the completed session visible, and calls existing `fetchAndShowGrading(sessionId)`; inline JS syntax checked with `node --check`; no backend changes).
 * `5195315` - fix(control-center): show auth validation errors (2026-05-27 — added `updateAuthState(String(error))` to `loginBtn` click catch, `registerBtn` click catch, and `authPasswordInput` Enter-key catch; `getCredentials()` throws for empty email or short password — error now updates `#auth-state` paragraph visibly instead of only calling `logEvent`; JS syntax OK via `node --check`; no DOM/CSS/handler/backend changes).
 * `d61db52` - docs(tooling): add local dev startup commands (2026-05-27 — pre-existing dirty file; Vietnamese-language ss/fuser port-kill commands + uvicorn/gateway startup commands; committed separately from UX fix).
