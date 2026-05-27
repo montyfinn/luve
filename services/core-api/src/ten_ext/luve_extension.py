@@ -41,6 +41,38 @@ logger = logging.getLogger(__name__)
 PCM16_MONO_16KHZ_BYTES_PER_SECOND = 32000
 
 
+# Adaptive STT Rejection thresholds for learner English attempts
+LEARNER_PHRASE_MIN_SPEECH_MS = 500.0
+LEARNER_SHORT_ANSWER_MIN_SPEECH_MS = 350.0
+RELAXED_STT_MIN_AVG_LOGPROB = -1.15
+RELAXED_STT_MAX_LOW_CONFIDENCE_WORD_RATIO = 0.75
+RELAXED_STT_MAX_NO_SPEECH_PROB = 0.80
+
+# A set of core pronouns, verbs, prepositions, and high-frequency classroom/speech terms
+COMMON_ENGLISH_WORDS = {
+    # Pronouns
+    "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "our", "their", "me", "him", "us", "them", "this", "that", "these", "those",
+    # Verbs
+    "be", "am", "is", "are", "was", "were", "been", "have", "has", "had", "do", "does", "did", "go", "went", "gone", "going", "like", "likes", "liked", "want", "wants", "wanted", "can", "could", "will", "would", "should", "say", "said", "make", "made", "get", "got", "know", "think", "thought", "take", "took", "see", "saw", "come", "came", "find", "found", "use", "used", "tell", "told", "work", "call", "try", "ask", "need", "feel", "become", "leave", "put", "mean", "keep", "let", "begin", "run", "show", "hear", "play", "write", "speak", "spoke", "spoken", "saying", "speaking", "learning", "learn", "learned", "study", "studied", "improve", "improving", "improved",
+    # Articles / Prepositions / Conjunctions
+    "the", "a", "an", "to", "in", "on", "at", "for", "with", "of", "and", "but", "or", "so", "because", "about", "up", "out", "into", "over", "after", "before", "between", "under", "through", "during", "without",
+    # Adjectives / Adverbs / Nouns / Common Helpers
+    "not", "no", "yes", "ok", "okay", "good", "bad", "new", "old", "first", "last", "right", "wrong", "well", "very", "just", "more", "most", "some", "any", "other", "all", "what", "where", "when", "why", "how", "who", "which", "there", "here", "then", "now", "always", "never", "sometimes", "often", "people", "time", "year", "day", "way", "thing", "world", "life", "school", "english", "teacher", "student", "class", "lesson", "coffee", "rice", "market", "yesterday", "today", "tomorrow", "please", "thank", "thanks"
+}
+
+VIETNAMESE_PHONETIC_TOKENS = {
+    # Unaccented Vietnamese words/phonemes
+    "toi", "toy", "di", "dee", "hoc", "xin", "chao", "ban", "hom", "nay", "troi", "dep", "qua",
+    "tuan", "thuy", "minh", "anh", "co", "viet", "nam", "tieng", "nha", "giao", "vien", "sinh",
+    "la", "gi", "sao", "the", "cung", "duoc", "khong", "biet", "chua", "roi", "va", "nhieu", "it",
+    "mot", "hai", "ba", "bon", "nam", "sau", "bay", "tam", "chin", "muoi", "cam", "on",
+    # Accented Vietnamese words
+    "tôi", "đi", "học", "xin", "chào", "bạn", "hôm", "nay", "trời", "đẹp", "quá", "tuấn", "thuỷ", "thủy", "minh", "anh", "cô", "việt", "nam", "tiếng", "nhà", "giáo", "viên", "sinh", "là", "gì", "sao", "thế", "cũng", "được", "không", "biết", "chưa", "rồi", "và", "nhiều", "ít", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín", "mười", "cảm", "ơn"
+}
+
+
+
+
 @dataclass(frozen=True)
 class InferenceJob:
     is_final: bool
@@ -1762,6 +1794,89 @@ class LUVEExtension(ten.Extension):
             "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in text).split()
         )
 
+    def _english_token_count(self, text: str) -> int:
+        normalized = self._normalize_stt_text(text)
+        if not normalized:
+            return 0
+        return len(normalized.split())
+
+    def _has_learner_english_evidence(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized:
+            return False
+        words = normalized.split()
+        if len(words) < 2:
+            return False
+
+        # Negative guard: if the transcript contains any known Vietnamese phonetic token, reject
+        if any(w in VIETNAMESE_PHONETIC_TOKENS for w in words):
+            return False
+
+        english_tokens = [w for w in words if w in COMMON_ENGLISH_WORDS]
+        count_english = len(english_tokens)
+
+        # Require at least 2 English evidence tokens
+        if count_english >= 2:
+            return True
+
+        # Ratio of English evidence tokens >= 0.45 for short phrases
+        ratio_english = count_english / len(words)
+        if len(words) <= 5 and ratio_english >= 0.45:
+            # Enforce: Do NOT classify "English-like" from only one common token in a forced-English decode
+            return count_english >= 2
+
+        return False
+
+    def _is_strong_short_english_response(
+        self,
+        analysis: STTAnalysis,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+    ) -> bool:
+        normalized = self._normalize_stt_text(analysis.raw_text)
+        if not normalized:
+            return False
+        words = normalized.split()
+        if len(words) != 1:
+            return False
+        word = words[0]
+        if word not in {"yes", "no", "ok", "okay"}:
+            return False
+
+        # Strong acoustic evidence checks
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+
+        # Check speech duration
+        if speech_ms is not None and speech_ms < LEARNER_SHORT_ANSWER_MIN_SPEECH_MS:
+            return False
+
+        # Check no speech prob
+        if (
+            analysis.no_speech_prob is not None
+            and analysis.no_speech_prob > 0.25
+        ):
+            return False
+
+        # Check avg logprob
+        if (
+            analysis.avg_logprob is not None
+            and analysis.avg_logprob < -0.55
+        ):
+            return False
+
+        # Check low confidence word ratio
+        if (
+            confidence.get("word_count", 0) > 0
+            and confidence.get("low_confidence_word_ratio", 0.0) > 0.25
+        ):
+            return False
+
+        return True
+
     def _is_probable_stt_hallucination(
         self,
         text: str,
@@ -1774,13 +1889,6 @@ class LUVEExtension(ten.Extension):
         if not normalized:
             return False
 
-        short_fillers = {
-            "thank you",
-            "thanks",
-            "thank you thank you",
-            "please subscribe",
-            "thanks for watching",
-        }
         audio_ms = pcm_bytes / PCM16_MONO_16KHZ_BYTES_PER_SECOND * 1000
         audio_seconds = audio_ms / 1000.0
         speech_ms = None
@@ -1789,6 +1897,42 @@ class LUVEExtension(ten.Extension):
             if isinstance(value, (int, float)):
                 speech_ms = float(value)
 
+        # 1. Repeated phrase/ngram guard (consecutive repeated 3+ word sequences)
+        words = normalized.split()
+        n = len(words)
+        for k in range(3, n // 2 + 1):
+            for i in range(n - 2 * k + 1):
+                if words[i : i + k] == words[i + k : i + 2 * k]:
+                    return True
+
+        # 2. Suspicious canned Whisper hallucination phrases guard
+        CANNED_HALLUCINATIONS = {
+            "go home now everyone",
+            "today is a club night",
+            "thank you very much",
+        }
+        if any(canned in normalized for canned in CANNED_HALLUCINATIONS):
+            # Suppress canned phrases when speech/audio duration is not exceptionally long,
+            # indicating it's a forced-English hallucination from shorter audio/Vietnamese speech.
+            if "thank you very much" in normalized:
+                min_speech = 1500
+                min_audio = 2.0
+            else:
+                min_speech = 3000
+                min_audio = 3.5
+
+            if speech_ms is not None and speech_ms < min_speech:
+                return True
+            if audio_seconds < min_audio:
+                return True
+
+        short_fillers = {
+            "thank you",
+            "thanks",
+            "thank you thank you",
+            "please subscribe",
+            "thanks for watching",
+        }
         if normalized in short_fillers:
             if not is_final:
                 return audio_ms < 3500
@@ -1800,7 +1944,7 @@ class LUVEExtension(ten.Extension):
         # Whisper hallucinations on noise often produce far more words than the
         # captured audio could plausibly contain. Keep this conservative so a
         # fast real speaker is not filtered.
-        word_count = len(normalized.split())
+        word_count = len(words)
         max_plausible_words = max(7, int(audio_seconds * 4.8) + 4)
         if word_count > max_plausible_words:
             return True
@@ -1822,7 +1966,29 @@ class LUVEExtension(ten.Extension):
 
         normalized = self._normalize_stt_text(analysis.raw_text)
         if not normalized:
-            return None
+            return "empty_transcript"
+
+        confidence = self._stt_confidence_metrics(analysis)
+
+        # 3. Check suspicious canned/filler forced-English hallucinations
+        CANNED_HALLUCINATIONS = {
+            "go home now everyone",
+            "today is a club night",
+            "thank you very much",
+        }
+        if any(canned in normalized for canned in CANNED_HALLUCINATIONS):
+            # Require strong acoustic confidence to keep genuine learner attempts
+            if (
+                analysis.avg_logprob is not None
+                and analysis.avg_logprob < -0.45
+            ) or (
+                confidence.get("word_count", 0) > 0
+                and confidence.get("low_confidence_word_ratio", 0.0) > 0.15
+            ):
+                return "probable_hallucination"
+
+        is_strong_short = self._is_strong_short_english_response(analysis, audio_stats, confidence)
+        has_phrase_evidence = self._has_learner_english_evidence(analysis.raw_text)
 
         speech_ms = None
         if audio_stats is not None:
@@ -1830,34 +1996,95 @@ class LUVEExtension(ten.Extension):
             if isinstance(value, (int, float)):
                 speech_ms = float(value)
 
-        word_count = len(normalized.split())
-        if speech_ms is not None and speech_ms < settings.stt_min_speech_ms_for_final:
-            return "low_speech_duration"
-        if word_count < settings.stt_min_words_for_llm:
-            return "too_few_words"
-        if (
-            analysis.no_speech_prob is not None
-            and analysis.no_speech_prob > settings.stt_max_no_speech_prob
-        ):
-            return "high_no_speech_probability"
-        if (
+        is_exceptionally_high_confidence = (
             analysis.avg_logprob is not None
-            and analysis.avg_logprob < settings.stt_min_avg_logprob
-        ):
-            return "low_average_logprob"
+            and analysis.avg_logprob >= -0.40
+            and confidence.get("low_confidence_word_ratio", 0.0) <= 0.15
+            and (speech_ms is None or speech_ms >= LEARNER_PHRASE_MIN_SPEECH_MS)
+        )
+
+        # Check for strong acoustic confidence AND transcript has ASCII/English-like structure
+        is_strong_acoustic_ascii = False
+        has_vietnamese = False
+        if normalized:
+            words = normalized.split()
+            has_vietnamese = any(w in VIETNAMESE_PHONETIC_TOKENS for w in words)
+            if not has_vietnamese and analysis.raw_text.isascii():
+                if (
+                    analysis.avg_logprob is not None
+                    and analysis.avg_logprob >= -0.50
+                    and confidence.get("low_confidence_word_ratio", 0.0) <= 0.20
+                ):
+                    is_strong_acoustic_ascii = True
+
+        is_eligible_learner_english = (
+            (
+                is_strong_short
+                or has_phrase_evidence
+                or is_exceptionally_high_confidence
+                or is_strong_acoustic_ascii
+            )
+            and not has_vietnamese
+        )
+
+        word_count = len(normalized.split())
+
+        # 1. Check speech duration.
+        # For strong short answers, minimum duration is LEARNER_SHORT_ANSWER_MIN_SPEECH_MS (350ms)
+        # For learner phrase attempts, minimum is max(self._stt_final_min_speech_ms, LEARNER_PHRASE_MIN_SPEECH_MS) (500ms)
+        # Otherwise, enforce strict configured minimum (typically 1000ms).
+        if is_strong_short:
+            min_speech_ms = LEARNER_SHORT_ANSWER_MIN_SPEECH_MS
+        elif is_eligible_learner_english:
+            min_speech_ms = max(self._stt_final_min_speech_ms, LEARNER_PHRASE_MIN_SPEECH_MS)
+        else:
+            min_speech_ms = settings.stt_min_speech_ms_for_final
+
+        if speech_ms is not None and speech_ms < min_speech_ms:
+            return "low_speech_duration"
+
+        # 2. Check word count.
+        # Strong short responses bypass settings.stt_min_words_for_llm (which might be >= 2)
+        # Otherwise, we enforce settings.stt_min_words_for_llm
+        expected_min_words = 1 if is_strong_short else settings.stt_min_words_for_llm
+        if word_count < expected_min_words:
+            return "too_few_words"
+
+        # 3. Check compression ratio (filters repetitive Whisper hallucinations).
         if (
             analysis.compression_ratio is not None
             and analysis.compression_ratio > settings.stt_max_compression_ratio
         ):
             return "high_compression_ratio"
 
-        confidence = self._stt_confidence_metrics(analysis)
+        # 4. Check confidence thresholds.
+        # If it is eligible learner English, we apply relaxed thresholds.
+        # Otherwise, keep strict thresholds to block environmental hums/Vietnamese speech.
+        max_no_speech = RELAXED_STT_MAX_NO_SPEECH_PROB if is_eligible_learner_english else settings.stt_max_no_speech_prob
+        min_avg_logprob = RELAXED_STT_MIN_AVG_LOGPROB if is_eligible_learner_english else settings.stt_min_avg_logprob
+        max_low_conf_ratio = RELAXED_STT_MAX_LOW_CONFIDENCE_WORD_RATIO if is_eligible_learner_english else settings.stt_max_low_confidence_word_ratio
+
+        if (
+            analysis.no_speech_prob is not None
+            and analysis.no_speech_prob > max_no_speech
+        ):
+            return "high_no_speech_probability"
+
+        if (
+            analysis.avg_logprob is not None
+            and analysis.avg_logprob < min_avg_logprob
+        ):
+            return "low_average_logprob"
+
         if (
             confidence["word_count"] > 0
-            and confidence["low_confidence_word_ratio"]
-            > settings.stt_max_low_confidence_word_ratio
+            and confidence["low_confidence_word_ratio"] > max_low_conf_ratio
         ):
             return "too_many_low_confidence_words"
+
+        # 5. Semantic Gate: If it contains absolutely zero English evidence, reject it.
+        if not is_eligible_learner_english:
+            return "no_english_evidence"
 
         return None
 

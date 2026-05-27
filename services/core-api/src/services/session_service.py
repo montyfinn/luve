@@ -130,6 +130,32 @@ async def get_session_grading(
     session_id: UUID,
     user_id: UUID,
 ) -> GradingRead:
+    # Check if the session exists and check its owner
+    session_row = await db.execute(
+        text(
+            """
+            SELECT user_id
+            FROM sessions
+            WHERE id = :session_id
+              AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"session_id": str(session_id)},
+    )
+    s_row = session_row.mappings().first()
+    if s_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    if s_row["user_id"] != str(user_id) and s_row["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This session is not owned by the current account.",
+        )
+
     row = await db.execute(
         text(
             """
@@ -143,17 +169,11 @@ async def get_session_grading(
                 gr.ai_summary_feedback,
                 gr.graded_at
             FROM grading_results gr
-            JOIN sessions s ON s.id = gr.session_id
             WHERE gr.session_id = :session_id
-              AND s.user_id = :user_id
-              AND s.deleted_at IS NULL
             LIMIT 1
             """
         ),
-        {
-            "session_id": str(session_id),
-            "user_id": str(user_id),
-        },
+        {"session_id": str(session_id)},
     )
     grading_row = row.mappings().first()
     if grading_row is None:
@@ -216,23 +236,29 @@ async def get_session_grading_status(
         text(
             """
             SELECT
+                s.user_id,
                 s.raw_backup_json,
                 (gr.session_id IS NOT NULL) AS has_grading
             FROM sessions s
             LEFT JOIN grading_results gr ON gr.session_id = s.id
             WHERE s.id = :session_id
-              AND s.user_id = :user_id
               AND s.deleted_at IS NULL
             LIMIT 1
             """
         ),
-        {"session_id": str(session_id), "user_id": str(user_id)},
+        {"session_id": str(session_id)},
     )
     status_row = row.mappings().first()
     if status_row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found",
+        )
+
+    if status_row["user_id"] != str(user_id) and status_row["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This session is not owned by the current account.",
         )
 
     if status_row["has_grading"]:
