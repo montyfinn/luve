@@ -47,16 +47,59 @@
               class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
               value="http://localhost:8080" />
           </label>
-          <label class="flex flex-col gap-1 text-sm md:col-span-2">
-            Bearer Token
-            <input id="auth-token" type="password" autocomplete="off"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              placeholder="Paste access_token here to create a session automatically" />
-          </label>
-          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
-            <input id="remember-token" type="checkbox" />
-            <span>Remember token on this browser</span>
-          </label>
+          <div class="md:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-200">Account</h3>
+                <p id="auth-state" class="text-xs text-slate-400">Sign in to create sessions automatically.</p>
+              </div>
+              <button id="clear-token-btn"
+                class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-700">
+                Sign Out
+              </button>
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <label class="flex flex-col gap-1 text-sm">
+                Email
+                <input id="auth-email" type="email" autocomplete="username"
+                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
+              </label>
+              <label class="flex flex-col gap-1 text-sm">
+                Password
+                <input id="auth-password" type="password" autocomplete="current-password"
+                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
+              </label>
+              <label class="flex flex-col gap-1 text-sm md:col-span-2">
+                Username
+                <input id="auth-username" type="text" autocomplete="nickname"
+                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+                  placeholder="Required for register" />
+              </label>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button id="login-btn"
+                class="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
+                Sign In
+              </button>
+              <button id="register-btn"
+                class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600">
+                Register
+              </button>
+              <label class="inline-flex items-center gap-2 text-sm text-slate-300">
+                <input id="remember-token" type="checkbox" />
+                <span>Remember token</span>
+              </label>
+            </div>
+          </div>
+          <details open class="md:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+            <summary class="cursor-pointer text-sm font-medium text-slate-300">Advanced token fallback</summary>
+            <label class="mt-3 flex flex-col gap-1 text-sm">
+              Bearer Token
+              <input id="auth-token" type="password" autocomplete="off"
+                class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+                placeholder="Auto-filled after sign in, or paste access_token here" />
+            </label>
+          </details>
           <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
             <input id="stt-only" type="checkbox" />
             <span>STT-only test mode (disable LLM and TTS)</span>
@@ -197,6 +240,10 @@
       apiStatusText: document.getElementById("api-status-text"),
       coreApiUrl: document.getElementById("core-api-url"),
       gatewayUrl: document.getElementById("gateway-url"),
+      authState: document.getElementById("auth-state"),
+      authEmailInput: document.getElementById("auth-email"),
+      authPasswordInput: document.getElementById("auth-password"),
+      authUsernameInput: document.getElementById("auth-username"),
       authTokenInput: document.getElementById("auth-token"),
       rememberTokenInput: document.getElementById("remember-token"),
       sttOnlyInput: document.getElementById("stt-only"),
@@ -206,6 +253,9 @@
       offerEndpoint: document.getElementById("offer-endpoint"),
       iceEndpoint: document.getElementById("ice-endpoint"),
       cmdEndpoint: document.getElementById("cmd-endpoint"),
+      loginBtn: document.getElementById("login-btn"),
+      registerBtn: document.getElementById("register-btn"),
+      clearTokenBtn: document.getElementById("clear-token-btn"),
       createSessionBtn: document.getElementById("create-session-btn"),
       connectBtn: document.getElementById("connect-btn"),
       disconnectBtn: document.getElementById("disconnect-btn"),
@@ -261,6 +311,8 @@
       lastSessionId: "luve.control.lastSessionId",
       rememberToken: "luve.control.rememberToken",
       authToken: "luve.control.authToken",
+      authEmail: "luve.control.authEmail",
+      authUsername: "luve.control.authUsername",
     };
 
     const eventLogLimits = {
@@ -691,7 +743,8 @@
 
     function getDefaultCoreApiUrl() {
       const url = new URL(window.location.href);
-      if (url.port === "8080") {
+      const port = Number(url.port);
+      if (port >= 8080 && port <= 8099) {
         return `${url.protocol}//${url.hostname}:8000`;
       }
       return `${url.protocol}//${url.host}`;
@@ -710,6 +763,8 @@
       localStorage.setItem(storageKeys.gatewayUrl, ui.gatewayUrl.value.trim());
       localStorage.setItem(storageKeys.sessionId, ui.sessionIdInput.value.trim());
       localStorage.setItem(storageKeys.lastSessionId, ui.lastSessionIdInput.value.trim());
+      localStorage.setItem(storageKeys.authEmail, ui.authEmailInput.value.trim());
+      localStorage.setItem(storageKeys.authUsername, ui.authUsernameInput.value.trim());
       localStorage.setItem(storageKeys.rememberToken, ui.rememberTokenInput.checked ? "1" : "0");
       if (ui.rememberTokenInput.checked) {
         localStorage.setItem(storageKeys.authToken, ui.authTokenInput.value);
@@ -723,16 +778,133 @@
       ui.gatewayUrl.value = localStorage.getItem(storageKeys.gatewayUrl) || getDefaultGatewayUrl();
       ui.sessionIdInput.value = localStorage.getItem(storageKeys.sessionId) || "";
       ui.lastSessionIdInput.value = localStorage.getItem(storageKeys.lastSessionId) || "";
+      ui.authEmailInput.value = localStorage.getItem(storageKeys.authEmail) || "";
+      ui.authUsernameInput.value = localStorage.getItem(storageKeys.authUsername) || "";
       ui.rememberTokenInput.checked = localStorage.getItem(storageKeys.rememberToken) === "1";
       ui.sttOnlyInput.checked = false;
       ui.muteTtsInput.checked = false;
       ui.authTokenInput.value = ui.rememberTokenInput.checked
         ? localStorage.getItem(storageKeys.authToken) || ""
         : "";
+      updateAuthState();
     }
 
     function getAuthToken() {
       return ui.authTokenInput.value.trim();
+    }
+
+    function updateAuthState(message = null) {
+      const hasToken = Boolean(getAuthToken());
+      ui.authState.textContent = message || (hasToken ? "Signed in. Sessions can be created automatically." : "Sign in to create sessions automatically.");
+      ui.clearTokenBtn.disabled = !hasToken;
+      ui.clearTokenBtn.classList.toggle("opacity-50", !hasToken);
+      ui.clearTokenBtn.classList.toggle("cursor-not-allowed", !hasToken);
+    }
+
+    function setAuthToken(token, message = "Signed in. Sessions can be created automatically.") {
+      ui.authTokenInput.value = token || "";
+      persistControlSettings();
+      updateAuthState(message);
+      setApiStatus(token ? "ready" : "idle", token ? "API: Token ready" : "API: Waiting for token");
+    }
+
+    function clearAuthToken() {
+      setAuthToken("", "Signed out. Sign in before creating a new session.");
+      logEvent("Signed out");
+    }
+
+    function formatApiDetail(detail, fallback) {
+      if (Array.isArray(detail)) {
+        return detail
+          .map((item) => {
+            const location = Array.isArray(item.loc) ? item.loc.join(".") : "";
+            const message = item.msg || JSON.stringify(item);
+            return location ? `${location}: ${message}` : message;
+          })
+          .join("; ");
+      }
+      if (typeof detail === "string") return detail;
+      if (detail && typeof detail === "object") return JSON.stringify(detail);
+      return fallback;
+    }
+
+    async function readJsonResponse(response) {
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    }
+
+    function getCredentials() {
+      const email = ui.authEmailInput.value.trim();
+      const password = ui.authPasswordInput.value;
+      if (!email) {
+        throw new Error("Email is required.");
+      }
+      if (!password || password.length < 8) {
+        throw new Error("Password must be at least 8 characters.");
+      }
+      return { email, password };
+    }
+
+    async function loginWithForm({ statusText = "API: Signing in..." } = {}) {
+      const credentials = getCredentials();
+      persistControlSettings();
+      setApiStatus("busy", statusText);
+      const response = await fetch(buildCoreApiUrl("/api/v1/auth/login"), {
+        method: "POST",
+        headers: getJsonHeaders(),
+        body: JSON.stringify(credentials),
+      });
+      const payload = await readJsonResponse(response);
+      if (!response.ok) {
+        const detail = formatApiDetail(payload?.detail, `HTTP ${response.status}`);
+        setApiStatus("error", "API: Sign in failed");
+        updateAuthState("Sign in failed.");
+        throw new Error(`Sign in failed: ${detail}`);
+      }
+
+      const token = String(payload?.access_token || "").trim();
+      if (!token) {
+        setApiStatus("error", "API: Invalid login response");
+        throw new Error("Sign in failed: missing access token in response.");
+      }
+
+      setAuthToken(token);
+      ui.authPasswordInput.value = "";
+      logEvent("Signed in", { email: credentials.email });
+      return token;
+    }
+
+    async function registerWithForm() {
+      const credentials = getCredentials();
+      const username = ui.authUsernameInput.value.trim();
+      if (username.length < 3) {
+        throw new Error("Username must be at least 3 characters.");
+      }
+
+      persistControlSettings();
+      setApiStatus("busy", "API: Registering...");
+      const response = await fetch(buildCoreApiUrl("/api/v1/auth/register"), {
+        method: "POST",
+        headers: getJsonHeaders(),
+        body: JSON.stringify({
+          username,
+          email: credentials.email,
+          password: credentials.password,
+        }),
+      });
+      const payload = await readJsonResponse(response);
+      if (!response.ok) {
+        const detail = formatApiDetail(payload?.detail, `HTTP ${response.status}`);
+        setApiStatus("error", "API: Register failed");
+        updateAuthState("Register failed.");
+        throw new Error(`Register failed: ${detail}`);
+      }
+
+      logEvent("Registered account", { email: credentials.email });
+      return await loginWithForm({ statusText: "API: Signing in after register..." });
     }
 
     function setCurrentSessionId(sessionId) {
@@ -767,7 +939,7 @@
       if (includeAuth) {
         const token = getAuthToken();
         if (!token) {
-          throw new Error("Bearer token is required to create a session.");
+          throw new Error("Sign in is required before creating a session.");
         }
         headers.Authorization = `Bearer ${token}`;
       }
@@ -776,9 +948,10 @@
 
     async function createSession() {
       if (!getAuthToken()) {
-        setApiStatus("error", "API: Token required");
-        logEvent("Token required before creating session");
-        throw new Error("Bearer token is required to create a session.");
+        setApiStatus("error", "API: Sign in required");
+        updateAuthState("Sign in before creating a session.");
+        logEvent("Sign in required before creating session");
+        throw new Error("Sign in is required before creating a session.");
       }
 
       setApiStatus("busy", "API: Creating session...");
@@ -805,6 +978,9 @@
       if (!response.ok) {
         const detail = payload?.detail || `HTTP ${response.status}`;
         setApiStatus("error", "API: Session create failed");
+        if (response.status === 401) {
+          updateAuthState("Session expired or unauthorized. Sign in again.");
+        }
         throw new Error(`Session create failed: ${detail}`);
       }
 
@@ -1650,6 +1826,26 @@
       }
     });
 
+    ui.loginBtn.addEventListener("click", async () => {
+      try {
+        await loginWithForm();
+      } catch (error) {
+        logEvent("Sign in failed", { error: String(error) });
+      }
+    });
+
+    ui.registerBtn.addEventListener("click", async () => {
+      try {
+        await registerWithForm();
+      } catch (error) {
+        logEvent("Register failed", { error: String(error) });
+      }
+    });
+
+    ui.clearTokenBtn.addEventListener("click", () => {
+      clearAuthToken();
+    });
+
     ui.createSessionBtn.addEventListener("click", async () => {
       try {
         await createSession();
@@ -1696,7 +1892,22 @@
     ui.gatewayUrl.addEventListener("change", persistControlSettings);
     ui.sessionIdInput.addEventListener("change", persistControlSettings);
     ui.rememberTokenInput.addEventListener("change", persistControlSettings);
-    ui.authTokenInput.addEventListener("change", persistControlSettings);
+    ui.authEmailInput.addEventListener("change", persistControlSettings);
+    ui.authUsernameInput.addEventListener("change", persistControlSettings);
+    ui.authPasswordInput.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      try {
+        await loginWithForm();
+      } catch (error) {
+        logEvent("Sign in failed", { error: String(error) });
+      }
+    });
+    ui.authTokenInput.addEventListener("change", () => {
+      persistControlSettings();
+      updateAuthState();
+      setApiStatus(getAuthToken() ? "ready" : "idle", getAuthToken() ? "API: Token ready" : "API: Waiting for token");
+    });
 
     setStatus("disconnected");
     setApiStatus("idle", getAuthToken() ? "API: Token ready" : "API: Waiting for token");
