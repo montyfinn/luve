@@ -66,3 +66,27 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
 ```
 
 http://127.0.0.1:8080/control-center
+
+Chạy:
+
+ss -ltnp | grep -E ':(8000|8080|8081|8082|8083|8084|8085|8086)'
+Nếu muốn dọn sạch toàn bộ app LUVE đang chiếm các port đó:
+
+fuser -k 8000/tcp 8080/tcp 8081/tcp 8082/tcp 8083/tcp 8084/tcp 8085/tcp 8086/tcp
+Sau đó kiểm tra lại:
+
+ss -ltnp | grep -E ':(8000|8080|8081|8082|8083|8084|8085|8086)'
+Nếu không còn dòng nào thì chạy lại từ đầu:
+
+cd services/core-api
+source venv/bin/activate
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+Terminal khác:
+
+cd services/core-api
+source venv/bin/activate
+python run_ten.py
+Nếu máy không có fuser, dùng cách thủ công:
+
+ss -ltnp
+kill <PID>
