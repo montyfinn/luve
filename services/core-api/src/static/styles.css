@@ -153,3 +153,1091 @@ audio {
   .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lg\:col-span-2 { grid-column: span 2 / span 2; }
 }
+
+/* ── Control Center: Industrial AI Lab Console ─────────────────────────────────
+   Scoped under .cc-shell so nothing bleeds into the base stylesheet.
+   Design language: Industrial AI Lab Console (Tech-Dark Navy & Telemetry Accents)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.cc-shell {
+  --cc-bg:          #030712;
+  --cc-surface:     #0b1329;
+  --cc-surface-2:   #111c3a;
+  --cc-surface-3:   #17254c;
+  --cc-border:      rgba(71, 85, 105, 0.4);
+  --cc-border-hi:   rgba(56, 189, 248, 0.3);
+  --cc-border-focus: #38bdf8;
+  --cc-text:        #f3f4f6;
+  --cc-text-muted:  #9ca3af;
+  --cc-text-dim:    #6b7280;
+  --cc-cyan:        #38bdf8;
+  --cc-emerald:     #34d399;
+  --cc-amber:       #fbbf24;
+  --cc-rose:        #fb7185;
+  --cc-radius:      8px;
+  --cc-radius-sm:   4px;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* 1. Scoped Reset: Neutralize the global outline/border-style bug */
+.cc-shell *,
+.cc-shell div,
+.cc-shell section,
+.cc-shell header,
+.cc-shell input,
+.cc-shell button,
+.cc-shell pre,
+.cc-shell label,
+.cc-shell kbd,
+.cc-shell span,
+.cc-shell p,
+.cc-shell h1,
+.cc-shell h2,
+.cc-shell h3,
+.cc-shell a {
+  border-style: none;
+  border-width: 0px;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+/* Specific Override for JS-injected and VAD dynamic borders */
+.cc-shell .border,
+.cc-shell [id="pedagogical-zone"].border {
+  border-style: solid !important;
+  border-width: 1px !important;
+}
+
+/* 2. Topbar Structure */
+.cc-topbar {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: var(--cc-surface) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius) !important;
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.cc-brand {
+  display: flex;
+  flex-direction: column;
+}
+.cc-logo-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cc-logo-text {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: var(--cc-cyan);
+}
+.cc-logo-divider {
+  font-size: 1rem;
+  color: var(--cc-border);
+  font-weight: 300;
+}
+.cc-title-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--cc-text);
+  letter-spacing: -0.01em;
+}
+.cc-subtitle {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--cc-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0.15rem 0 0 0;
+}
+.cc-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+/* 3. Base Card Styling */
+.cc-shell .cc-card {
+  background: var(--cc-surface) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius) !important;
+  padding: 1.25rem !important;
+  box-shadow: 0 4px 20px -2px rgba(2, 6, 23, 0.5) !important;
+  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease !important;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.cc-shell .cc-card:hover {
+  border-color: var(--cc-border-hi) !important;
+  box-shadow: 0 4px 24px -1px rgba(56, 189, 248, 0.03), 0 8px 30px -4px rgba(2, 6, 23, 0.7) !important;
+}
+
+/* Section Header styling */
+.cc-shell .cc-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--cc-border) !important;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.cc-section-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.cc-section-title {
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--cc-text-muted) !important;
+  margin: 0 !important;
+}
+.cc-section-subtitle {
+  font-size: 0.75rem !important;
+  color: var(--cc-text-dim) !important;
+  margin-top: 0.15rem !important;
+  line-height: 1.4 !important;
+}
+.cc-step-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 1.35rem !important;
+  height: 1.35rem !important;
+  border-radius: 50% !important;
+  border: 1px solid var(--cc-border-hi) !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  color: var(--cc-cyan) !important;
+  background: rgba(56, 189, 248, 0.05) !important;
+  flex-shrink: 0 !important;
+  border-style: solid !important;
+}
+.cc-step-badge-amber {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  color: var(--cc-amber) !important;
+  background: rgba(251, 191, 36, 0.05) !important;
+}
+
+/* 4. Grid System & 2-Column Deck */
+.cc-workflow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+@media (min-width: 1024px) {
+  .cc-workflow {
+    grid-template-columns: 1.35fr 1fr;
+  }
+}
+.cc-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.cc-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Layout for forms */
+.cc-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+}
+@media (min-width: 640px) {
+  .cc-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.cc-form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+}
+@media (min-width: 640px) {
+  .cc-form-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 5. Inputs & Labels */
+.cc-shell .cc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cc-shell .cc-label {
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: var(--cc-text-muted) !important;
+}
+.cc-label-note {
+  font-size: 0.6rem;
+  color: var(--cc-text-dim);
+  text-transform: none;
+  font-weight: 400;
+}
+.cc-shell .cc-input {
+  width: 100% !important;
+  background: var(--cc-bg) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-sm) !important;
+  color: var(--cc-text) !important;
+  font-size: 0.82rem !important;
+  padding: 0.5rem 0.75rem !important;
+  outline: none !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  font-family: inherit !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-input:focus {
+  border-color: var(--cc-border-focus) !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15) !important;
+}
+.cc-shell .cc-input[readonly] {
+  color: var(--cc-text-dim) !important;
+  background: rgba(15, 23, 42, 0.3) !important;
+  cursor: not-allowed !important;
+}
+.cc-shell .cc-mono-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.75rem !important;
+}
+.cc-shell .cc-muted-val {
+  opacity: 0.7;
+}
+
+/* 6. Buttons System */
+.cc-shell .cc-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.4rem !important;
+  border-radius: var(--cc-radius-sm) !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  padding: 0.5rem 1rem !important;
+  cursor: pointer !important;
+  border: 1px solid transparent !important;
+  text-transform: uppercase !important;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.cc-shell .cc-btn:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* Button Schemas */
+.cc-shell .cc-btn-ghost {
+  background: var(--cc-surface-2) !important;
+  border-color: var(--cc-border) !important;
+  color: var(--cc-text-muted) !important;
+}
+.cc-shell .cc-btn-ghost:hover:not(:disabled) {
+  background: var(--cc-surface-3) !important;
+  border-color: var(--cc-border-hi) !important;
+  color: var(--cc-text) !important;
+}
+.cc-shell .cc-btn-cyan {
+  background: rgba(56, 189, 248, 0.08) !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+  color: var(--cc-cyan) !important;
+}
+.cc-shell .cc-btn-cyan:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.16) !important;
+  border-color: var(--cc-cyan) !important;
+}
+.cc-shell .cc-btn-emerald {
+  background: rgba(52, 211, 153, 0.08) !important;
+  border-color: rgba(52, 211, 153, 0.35) !important;
+  color: var(--cc-emerald) !important;
+}
+.cc-shell .cc-btn-emerald:hover:not(:disabled) {
+  background: rgba(52, 211, 153, 0.16) !important;
+  border-color: var(--cc-emerald) !important;
+}
+.cc-shell .cc-btn-amber {
+  background: rgba(251, 191, 36, 0.08) !important;
+  border-color: rgba(251, 191, 36, 0.35) !important;
+  color: var(--cc-amber) !important;
+}
+.cc-shell .cc-btn-amber:hover:not(:disabled) {
+  background: rgba(251, 191, 36, 0.16) !important;
+  border-color: var(--cc-amber) !important;
+}
+.cc-shell .cc-btn-rose {
+  background: rgba(251, 113, 133, 0.08) !important;
+  border-color: rgba(251, 113, 133, 0.35) !important;
+  color: var(--cc-rose) !important;
+}
+.cc-shell .cc-btn-rose:hover:not(:disabled) {
+  background: rgba(251, 113, 133, 0.16) !important;
+  border-color: var(--cc-rose) !important;
+}
+
+/* Call-to-action full width analytical button */
+.cc-shell .cc-btn-cta {
+  width: 100% !important;
+  padding: 0.65rem 1.25rem !important;
+  font-size: 0.8rem !important;
+  letter-spacing: 0.08em !important;
+  background: rgba(251, 191, 36, 0.08) !important;
+  border: 1px solid rgba(251, 191, 36, 0.35) !important;
+  color: var(--cc-amber) !important;
+  border-radius: var(--cc-radius-sm) !important;
+  text-transform: uppercase !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-btn-cta:hover:not(:disabled) {
+  background: rgba(251, 191, 36, 0.16) !important;
+  border-color: var(--cc-amber) !important;
+}
+.cc-shell .cc-cta-icon {
+  font-size: 0.9rem;
+  margin-right: 0.25rem;
+}
+
+/* Action alignment containers */
+.cc-auth-actions {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+.cc-session-id-area {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+@media (min-width: 640px) {
+  .cc-session-id-area {
+    grid-template-columns: 1.4fr 1fr;
+  }
+}
+.cc-session-actions {
+  display: flex;
+}
+.cc-last-session-area {
+  border-top: 1px dashed var(--cc-border) !important;
+  padding-top: 0.75rem;
+}
+.cc-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+/* 7. Controls Deck */
+.cc-control-deck {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.cc-control-deck button {
+  flex-grow: 1;
+}
+.cc-deck-footer {
+  border-top: 1px solid var(--cc-border) !important;
+  padding-top: 0.625rem;
+  margin-top: 0.25rem;
+}
+.cc-muted-text {
+  font-size: 0.68rem;
+  color: var(--cc-text-dim);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* 8. Shell Elements (Checkbox, Tag, Badge, Pills) */
+.cc-shell .cc-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--cc-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.cc-shell .cc-check-label input[type="checkbox"] {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  accent-color: var(--cc-cyan);
+  cursor: pointer;
+}
+
+/* Glowing Telemetry Indicator Pills */
+.cc-shell .cc-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
+  border-radius: 9999px !important;
+  border: 1px solid var(--cc-border) !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  padding: 0.25rem 0.75rem !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  background: rgba(11, 19, 41, 0.8) !important;
+  transition: all 0.2s ease !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-dot {
+  display: inline-block !important;
+  width: 0.45rem !important;
+  height: 0.45rem !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 0 6px currentColor !important;
+}
+
+/* Custom interactive Tags */
+.cc-shell .cc-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  border-radius: 4px !important;
+  font-size: 0.65rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  padding: 0.15rem 0.45rem !important;
+  text-transform: uppercase !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-tag-cyan {
+  background: rgba(56, 189, 248, 0.08) !important;
+  border: 1px solid rgba(56, 189, 248, 0.3) !important;
+  color: var(--cc-cyan) !important;
+}
+.cc-shell .cc-tag-amber {
+  background: rgba(251, 191, 36, 0.08) !important;
+  border: 1px solid rgba(251, 191, 36, 0.3) !important;
+  color: var(--cc-amber) !important;
+}
+
+/* Lab Instruments (Pedagogical display insights) */
+.cc-pedagogical-panel {
+  border-color: rgba(56, 189, 248, 0.25) !important;
+  background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.03), transparent 70%) !important;
+}
+.cc-pedagogical-widget-container {
+  min-height: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  padding: 0.5rem;
+  border-style: solid !important;
+}
+.cc-pedagogical-widget-container #pedagogical-zone {
+  width: 100%;
+}
+.cc-pedagogical-text {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--cc-text-muted);
+  line-height: 1.4;
+  margin: 0;
+  text-align: center;
+}
+
+/* Checklist Panel */
+.cc-guide-panel {
+  background: linear-gradient(135deg, var(--cc-surface), rgba(11, 19, 41, 0.5)) !important;
+}
+.cc-guide-list {
+  list-style: none;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.cc-guide-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.cc-guide-num {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--cc-cyan);
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 3px;
+  padding: 0.05rem 0.25rem;
+  line-height: 1.2;
+  flex-shrink: 0;
+  border-style: solid !important;
+}
+.cc-guide-text {
+  font-size: 0.75rem;
+  color: var(--cc-text-muted);
+  line-height: 1.4;
+}
+
+/* Telemetry Summary Panel */
+.cc-telemetry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cc-telemetry-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--cc-border) !important;
+}
+.cc-telemetry-stat:last-child {
+  border-bottom: none !important;
+  padding-bottom: 0;
+}
+.cc-telemetry-label {
+  color: var(--cc-text-dim);
+  font-weight: 500;
+}
+.cc-telemetry-val {
+  color: var(--cc-cyan);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 700;
+}
+
+/* 9. Dynamic Display & Visual Telemetry widgets */
+.cc-display-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+}
+@media (min-width: 1024px) {
+  .cc-display-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.cc-subtitle-container,
+.cc-assistant-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cc-subtitle-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.cc-subtitle-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cc-text-dim);
+  margin: 0;
+}
+.cc-shell .cc-display {
+  background: var(--cc-bg) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-sm) !important;
+  padding: 0.6rem 0.75rem !important;
+  font-family: inherit !important;
+  border-style: solid !important;
+}
+.cc-shell .cc-display-lg {
+  min-height: 6rem;
+  max-height: 8rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--cc-text);
+  line-height: 1.5;
+}
+.cc-shell .cc-display-sm {
+  min-height: 4rem;
+  font-size: 0.82rem;
+  color: var(--cc-text-muted);
+  line-height: 1.4;
+}
+
+/* 10. Advanced Details Collapsed and System Log */
+.cc-shell details.cc-advanced {
+  background: var(--cc-surface) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius) !important;
+  padding: 0 !important;
+  border-style: solid !important;
+}
+.cc-advanced-summary {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  padding: 0.875rem 1.25rem !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  font-size: 0.7rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--cc-text-dim) !important;
+  transition: color 0.2s ease !important;
+}
+.cc-advanced-summary:hover {
+  color: var(--cc-text-muted) !important;
+}
+.cc-advanced-summary::-webkit-details-marker {
+  display: none !important;
+}
+.cc-advanced-summary::after {
+  content: "▸";
+  font-size: 0.65rem;
+  margin-left: auto;
+  opacity: 0.5;
+  transition: transform 0.2s ease;
+}
+details.cc-advanced[open] .cc-advanced-summary::after {
+  content: "▾";
+}
+.cc-advanced-body {
+  border-top: 1px solid var(--cc-border) !important;
+  padding: 1.25rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.25rem !important;
+}
+.cc-advanced-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.cc-advanced-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cc-text-muted);
+  margin: 0;
+}
+.cc-section-split-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.cc-endpoint-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 768px) {
+  .cc-endpoint-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 11. Technical Telemetry Console (System logs, diagnostics) */
+.cc-shell .cc-mono {
+  background: var(--cc-bg) !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-sm) !important;
+  color: var(--cc-text-muted) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.7rem !important;
+  line-height: 1.5 !important;
+  padding: 0.65rem 0.85rem !important;
+  overflow: auto !important;
+  white-space: pre-wrap !important;
+  border-style: solid !important;
+}
+pre#stt-diagnostics {
+  max-height: 10rem !important;
+}
+pre#event-log {
+  max-height: 14rem !important;
+}
+
+/* Dynamic State Classes */
+.cc-shell .cc-auth-card {
+  transition: border-color 0.25s ease, background-color 0.25s ease !important;
+}
+.cc-shell .cc-auth-card.is-signed-in {
+  border-color: rgba(52, 211, 153, 0.3) !important;
+  background-color: rgba(52, 211, 153, 0.02) !important;
+}
+.cc-shell .cc-auth-card.is-signed-in .cc-step-badge {
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  color: var(--cc-emerald) !important;
+  background: rgba(52, 211, 153, 0.05) !important;
+}
+.cc-shell .cc-auth-card.is-error {
+  border-color: rgba(251, 113, 133, 0.3) !important;
+  background-color: rgba(251, 113, 133, 0.02) !important;
+}
+
+.cc-shell .cc-grading-card {
+  border-color: rgba(251, 191, 36, 0.35) !important;
+  background: radial-gradient(circle at top right, rgba(251, 191, 36, 0.02), transparent 70%) !important;
+}
+.cc-grading-body {
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.cc-grading-footer {
+  border-top: 1px dashed var(--cc-border) !important;
+  padding-top: 0.625rem;
+  margin-top: 0.5rem;
+}
+
+/* Interactive elements styled */
+kbd.cc-kbd {
+  background: var(--cc-surface-2) !important;
+  border: 1px solid var(--cc-border-hi) !important;
+  border-radius: 3px !important;
+  font-family: ui-monospace, SFMono-Regular, monospace !important;
+  font-size: 0.65rem !important;
+  padding: 0.1rem 0.35rem !important;
+  color: var(--cc-cyan) !important;
+  border-style: solid !important;
+}
+
+/* Reduced motion considerations */
+@media (prefers-reduced-motion: reduce) {
+  .cc-shell *,
+  .cc-shell .cc-auth-card,
+  .cc-reveal {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   12. Multi-Page Navigation Engine & View Routing
+   ────────────────────────────────────────────────────────────────────────── */
+.cc-view {
+  display: none !important;
+}
+body.view-landing #cc-view-landing {
+  display: flex !important;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+body.view-auth #cc-view-auth {
+  display: block !important;
+}
+body.view-app #cc-view-app {
+  display: block !important;
+}
+
+/* 13. Landing / Welcome Page Structure */
+.cc-landing-view {
+  max-width: 800px;
+  margin: 1.5rem auto 3rem;
+  animation: cc-fade-up 0.35s ease both;
+}
+.cc-landing-hero {
+  text-align: center;
+  padding: 3.5rem 2rem !important;
+  background: radial-gradient(circle at center, rgba(56, 189, 248, 0.05), transparent 70%), var(--cc-surface) !important;
+  border-color: rgba(56, 189, 248, 0.25) !important;
+  align-items: center;
+  gap: 1.5rem !important;
+  box-shadow: 0 10px 40px -10px rgba(2, 6, 23, 0.9) !important;
+}
+.cc-landing-badge {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--cc-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  padding: 0.3rem 0.95rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.05);
+}
+.cc-landing-title {
+  font-size: 2.2rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  color: #ffffff !important;
+  line-height: 1.15 !important;
+  margin: 0 !important;
+  text-shadow: 0 0 40px rgba(56, 189, 248, 0.12);
+}
+.cc-landing-desc {
+  font-size: 0.95rem !important;
+  color: #94a3b8 !important; /* High contrast text-slate-400 */
+  line-height: 1.65 !important;
+  max-width: 620px;
+  margin: 0 auto !important;
+}
+.cc-landing-actions {
+  display: flex;
+  gap: 1.25rem;
+  justify-content: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.cc-btn-lg {
+  padding: 0.75rem 2rem !important;
+  font-size: 0.82rem !important;
+}
+.cc-landing-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+@media (min-width: 768px) {
+  .cc-landing-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.cc-landing-feat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px dashed var(--cc-border) !important;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+.cc-feat-num {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--cc-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.2) !important;
+  border-style: solid !important;
+}
+.cc-landing-feat-title {
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+}
+.cc-landing-feat-desc {
+  font-size: 0.76rem !important;
+  color: #94a3b8 !important;
+  line-height: 1.55 !important;
+  margin: 0 !important;
+}
+
+/* 14. Auth Page view, tabs and toggles */
+.cc-auth-view {
+  max-width: 580px;
+  margin: 2rem auto 4rem;
+  animation: cc-fade-up 0.35s ease both;
+}
+.cc-auth-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.4);
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+.cc-auth-tab {
+  background: none !important;
+  border: none !important;
+  padding: 0.75rem 1.25rem !important;
+  color: #64748b !important; /* Brighter slate muted */
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  cursor: pointer !important;
+  position: relative;
+  transition: color 0.2s ease, background-color 0.2s ease !important;
+  border-radius: var(--cc-radius-sm) var(--cc-radius-sm) 0 0 !important;
+}
+.cc-auth-tab:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+.cc-auth-tab.active {
+  color: var(--cc-cyan) !important;
+  background: rgba(56, 189, 248, 0.02) !important;
+}
+.cc-auth-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--cc-cyan);
+  border-radius: 2px;
+}
+.cc-field-helper {
+  font-size: 0.65rem;
+  color: var(--cc-text-dim);
+  margin-top: 0.25rem;
+  line-height: 1.4;
+}
+
+/* 15. Collapsible Sections system */
+.cc-collapsible-section {
+  transition: padding 0.2s ease, border-color 0.25s ease !important;
+}
+.cc-collapsible-trigger {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease !important;
+  border-radius: var(--cc-radius-sm) !important;
+}
+.cc-collapsible-trigger:hover {
+  background: rgba(255, 255, 255, 0.01);
+}
+.cc-collapsible-status {
+  font-size: 0.65rem !important;
+  margin-top: 0.15rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Collapse actions */
+.cc-collapsible-section.collapsed .cc-collapsible-body {
+  display: none !important;
+}
+.cc-collapsible-section.collapsed {
+  padding-bottom: 0.85rem !important;
+}
+.cc-collapsible-section.collapsed .cc-section-head {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* 16. Spacing, Visual Spacing, & Contrast Hierarchy Upgrade */
+.cc-shell {
+  --cc-bg:          #02040a; /* Darker, absolute black background */
+  --cc-surface:     #080e1a; /* Elevated deep technical background */
+}
+.cc-shell .cc-card {
+  background: var(--cc-surface) !important;
+  border: 1px solid rgba(71, 85, 105, 0.5) !important; /* Explicit section border weight */
+}
+.cc-shell .cc-label {
+  color: #cbd5e1 !important; /* Brighter inputs labels text-slate-300 */
+}
+.cc-shell .cc-input {
+  background: #030712 !important;
+  border: 1px solid rgba(71, 85, 105, 0.6) !important;
+  color: #f8fafc !important;
+}
+.cc-shell .cc-input::placeholder {
+  color: #475569 !important; /* Prominent placeholder */
+}
+.cc-shell .cc-step-badge {
+  width: 1.55rem !important;
+  height: 1.55rem !important;
+  border-width: 2px !important;
+  font-size: 0.78rem !important;
+  border-color: var(--cc-cyan) !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+}
+
+/* Upgrade Buttons with precise Visual Weight */
+/* Primary Buttons (High Weight, Solid Fill) */
+.cc-shell .cc-btn-cyan {
+  background: var(--cc-cyan) !important;
+  color: #02040a !important;
+  border-color: var(--cc-cyan) !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 14px 0 rgba(56, 189, 248, 0.35) !important;
+}
+.cc-shell .cc-btn-cyan:hover:not(:disabled) {
+  background: #5ed2ff !important;
+  border-color: #5ed2ff !important;
+  box-shadow: 0 6px 20px 0 rgba(56, 189, 248, 0.5) !important;
+}
+.cc-shell .cc-btn-emerald {
+  background: var(--cc-emerald) !important;
+  color: #02040a !important;
+  border-color: var(--cc-emerald) !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 14px 0 rgba(52, 211, 153, 0.35) !important;
+}
+.cc-shell .cc-btn-emerald:hover:not(:disabled) {
+  background: #4ef5b7 !important;
+  border-color: #4ef5b7 !important;
+  box-shadow: 0 6px 20px 0 rgba(52, 211, 153, 0.5) !important;
+}
+
+/* Secondary Buttons (Outlined/Text muted weight) */
+.cc-shell .cc-btn-ghost {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+  color: #cbd5e1 !important;
+  font-weight: 700 !important;
+  box-shadow: none !important;
+}
+.cc-shell .cc-btn-ghost:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.6) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  color: #ffffff !important;
+}
+.cc-shell .cc-btn-cta {
+  background: rgba(251, 191, 36, 0.05) !important;
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  color: var(--cc-amber) !important;
+  font-weight: 700 !important;
+}
+.cc-shell .cc-btn-cta:hover:not(:disabled) {
+  background: rgba(251, 191, 36, 0.15) !important;
+  border-color: var(--cc-amber) !important;
+}
+
+/* Destructive / Interruptive Actions (PTT / Interruption) */
+.cc-shell .cc-btn-rose {
+  background: rgba(251, 113, 133, 0.06) !important;
+  border-color: rgba(251, 113, 133, 0.4) !important;
+  color: var(--cc-rose) !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 12px 0 rgba(251, 113, 133, 0.05) !important;
+  text-shadow: 0 0 6px rgba(251, 113, 133, 0.25) !important;
+}
+.cc-shell .cc-btn-rose:hover:not(:disabled) {
+  background: var(--cc-rose) !important;
+  color: #02040a !important;
+  border-color: var(--cc-rose) !important;
+  box-shadow: 0 6px 22px 0 rgba(251, 113, 133, 0.45) !important;
+  text-shadow: none !important;
+}
+

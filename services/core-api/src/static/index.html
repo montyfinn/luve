@@ -6,235 +6,445 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>L.U.V.E Control Center</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M18 16h8v24h20v8H18z' fill='%2338bdf8'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.1" />
+  <style>
+    /* Grid classes for JS-injected grading content (not in styles.css) */
+    .grid-cols-2  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .max-h-40     { max-height: 10rem; }
+    @media (min-width: 640px)  { .sm\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @media (min-width: 768px)  { .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+    /* Grading card reveal animation */
+    @keyframes cc-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .cc-reveal { animation: cc-fade-up 0.25s ease both; }
+
+    @media (prefers-reduced-motion: reduce) { .cc-reveal { animation: none !important; } }
+  </style>
 </head>
 
-<body class="min-h-screen bg-slate-950 text-slate-100">
-  <main class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6">
-     <header class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-       <div class="flex flex-wrap items-center justify-between gap-3">
-         <div>
-           <h1 class="text-xl font-semibold">L.U.V.E - Control Center</h1>
-           <p class="text-sm text-slate-400">TEN Gateway E2E Validation Lab</p>
-         </div>
-         <div class="flex items-center gap-4">
-           <div id="status-monitor"
-             class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors">
-             <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
-             <span id="status-text">Disconnected</span>
-           </div>
-           <div id="api-status"
-             class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors">
-             <span id="api-status-dot" class="h-2.5 w-2.5 rounded-full bg-gray-500"></span>
-             <span id="api-status-text">API: Ready</span>
-           </div>
-         </div>
-       </div>
-     </header>
+<body class="min-h-screen bg-slate-950 text-slate-100 view-landing">
+  <main class="cc-shell mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6">
 
-    <section class="grid gap-4 lg:grid-cols-3">
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4 lg:col-span-2">
-        <h2 class="mb-3 text-base font-semibold">Signaling</h2>
-        <div class="grid gap-3 md:grid-cols-2">
-          <label class="flex flex-col gap-1 text-sm">
-            Core API Base URL
-            <input id="core-api-url" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
+    <!-- Header / Topbar -->
+    <header class="cc-topbar cc-card">
+      <div class="cc-brand">
+        <div class="cc-logo-group">
+          <span class="cc-logo-text">L.U.V.E</span>
+          <span class="cc-logo-divider">|</span>
+          <span class="cc-title-text">Control Center</span>
+        </div>
+        <p class="cc-subtitle">AI Speaking Practice Lab Console</p>
+      </div>
+      <div class="cc-status-row">
+        <!-- Sign Out button (ID clear-token-btn must exist exactly once, beautifully positioned next to status pills) -->
+        <button id="clear-token-btn" class="cc-btn cc-btn-ghost hidden" disabled>
+          Sign Out
+        </button>
+        
+        <div id="api-status" class="cc-pill border-slate-700 bg-slate-900/80 text-slate-400">
+          <span id="api-status-dot" class="cc-dot bg-gray-500"></span>
+          <span id="api-status-text">API</span>
+        </div>
+        <div id="status-monitor" class="cc-pill border-rose-500/40 bg-rose-500/10 text-slate-300">
+          <span id="status-dot" class="cc-dot bg-rose-500"></span>
+          <span id="status-text">Disconnected</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- VIEW 1: LANDING / WELCOME PAGE -->
+    <div id="cc-view-landing" class="cc-view cc-landing-view">
+      <div class="cc-landing-hero cc-card">
+        <div class="cc-landing-badge">⬡ LUVE SPEAKING PRACTICE LAB</div>
+        <h1 class="cc-landing-title">Empowering Intelligent AI Speech Analytics</h1>
+        <p class="cc-landing-desc">
+          Welcome to the L.U.V.E. Speaking Lab Control Center. An industrial-grade interactive console built to stream, transcribe, evaluate, and provide telemetry analytics for real-time human-AI vocal training.
+        </p>
+        <div class="cc-landing-actions">
+          <button id="goto-login-btn" class="cc-btn cc-btn-cyan cc-btn-lg">
+            Sign In to Console
+          </button>
+          <button id="goto-register-btn" class="cc-btn cc-btn-ghost cc-btn-lg">
+            Register New Operator
+          </button>
+        </div>
+      </div>
+
+      <div class="cc-landing-grid">
+        <div class="cc-card">
+          <div class="cc-landing-feat-head">
+            <span class="cc-feat-num">01</span>
+            <h3 class="cc-landing-feat-title">Microphone Pipeline</h3>
+          </div>
+          <p class="cc-landing-feat-desc">Streams PCM audio signals with WebRTC (Opus), using local VAD algorithms and speech segmentation with minimal transport latency.</p>
+        </div>
+        <div class="cc-card">
+          <div class="cc-landing-feat-head">
+            <span class="cc-feat-num">02</span>
+            <h3 class="cc-landing-feat-title">Gemini Speaking loop</h3>
+          </div>
+          <p class="cc-landing-feat-desc">Coordinates incoming Whisper STT transcript hypotheses, routing text completion requests to Google Gemini with real-time TTS audio generation.</p>
+        </div>
+        <div class="cc-card">
+          <div class="cc-landing-feat-head">
+            <span class="cc-feat-num">03</span>
+            <h3 class="cc-landing-feat-title">Telemetry Analytics</h3>
+          </div>
+          <p class="cc-landing-feat-desc">Automatically tracks conversational response delays, user interruptions, and compiles detailed speech metrics upon connection closing.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 2: AUTH PAGE -->
+    <div id="cc-view-auth" class="cc-view cc-auth-view hidden">
+      <section id="auth-card" class="cc-card cc-auth-card">
+        <div class="cc-section-head">
+          <div class="cc-section-title-group">
+            <h2 class="cc-section-title">Lab Console Authentication</h2>
+            <div id="auth-state" class="cc-section-subtitle text-slate-400">Sign in to initialize session authorization.</div>
+          </div>
+          <button id="back-to-welcome-btn" class="cc-btn cc-btn-ghost" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+            ← Back
+          </button>
+        </div>
+
+        <!-- Tab Selection -->
+        <div class="cc-auth-tabs">
+          <button id="auth-tab-login" class="cc-auth-tab active">Sign In</button>
+          <button id="auth-tab-register" class="cc-auth-tab">Register Account</button>
+        </div>
+        
+        <div class="cc-form-grid" style="margin-top: 1.25rem;">
+          <div class="cc-field">
+            <label class="cc-label" for="auth-email">Operator Email Address</label>
+            <input id="auth-email" type="email" autocomplete="username" placeholder="e.g. operator@luve.ai" class="cc-input" />
+            <span class="cc-field-helper">Enter your registered email address.</span>
+          </div>
+          <div class="cc-field">
+            <label class="cc-label" for="auth-password">Security Password</label>
+            <input id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••" class="cc-input" />
+            <span class="cc-field-helper">At least 8 characters.</span>
+          </div>
+          <div class="cc-field id-username-field hidden">
+            <label class="cc-label" for="auth-username">Operator Handle / Username</label>
+            <input id="auth-username" type="text" autocomplete="nickname" placeholder="e.g. operator_01" class="cc-input" />
+            <span class="cc-field-helper">Required only for registration.</span>
+          </div>
+        </div>
+        
+        <div class="cc-auth-actions" style="margin-top: 1.5rem;">
+          <button id="login-btn" class="cc-btn cc-btn-cyan cc-btn-lg">Sign In to Lab Console</button>
+          <button id="register-btn" class="cc-btn cc-btn-emerald cc-btn-lg hidden">Register Lab Account</button>
+          <label class="cc-check-label">
+            <input id="remember-token" type="checkbox" />
+            <span>Remember session token for subsequent visits</span>
           </label>
-          <label class="flex flex-col gap-1 text-sm">
-            Gateway Base URL
-            <input id="gateway-url" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              value="http://localhost:8080" />
-          </label>
-          <div class="md:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 class="text-sm font-semibold text-slate-200">Account</h3>
-                <p id="auth-state" class="text-xs text-slate-400">Sign in to create sessions automatically.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- VIEW 3: MAIN APP -->
+    <div id="cc-view-app" class="cc-view cc-app-view hidden">
+      <!-- Main Workflow (2-Column Grid) -->
+      <div class="cc-workflow">
+        
+        <!-- Left Column: Controls & Configuration -->
+        <div class="cc-main-col">
+          
+          <!-- Step 1: Session Configuration -->
+          <section id="cc-sec-session" class="cc-card cc-session-panel cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <span class="cc-step-badge">1</span>
+                <div>
+                  <h2 class="cc-section-title">Session Configuration</h2>
+                  <p class="cc-collapsible-status text-slate-400">Endpoint Configured</p>
+                </div>
               </div>
-              <button id="clear-token-btn"
-                class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-700">
-                Sign Out
-              </button>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
             </div>
-            <div class="grid gap-3 md:grid-cols-2">
-              <label class="flex flex-col gap-1 text-sm">
-                Email
-                <input id="auth-email" type="email" autocomplete="username"
-                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
-              </label>
-              <label class="flex flex-col gap-1 text-sm">
-                Password
-                <input id="auth-password" type="password" autocomplete="current-password"
-                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500" />
-              </label>
-              <label class="flex flex-col gap-1 text-sm md:col-span-2">
-                Username
-                <input id="auth-username" type="text" autocomplete="nickname"
-                  class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-                  placeholder="Required for register" />
-              </label>
+            
+            <div class="cc-collapsible-body">
+              <div class="cc-form-grid-2">
+                <div class="cc-field">
+                  <label class="cc-label" for="core-api-url">Core API Endpoint</label>
+                  <input id="core-api-url" type="text" class="cc-input" />
+                </div>
+                <div class="cc-field">
+                  <label class="cc-label" for="gateway-url">Gateway Server Endpoint</label>
+                  <input id="gateway-url" type="text" value="http://localhost:8080" class="cc-input" />
+                </div>
+              </div>
+              
+              <div class="cc-session-id-area">
+                <div class="cc-field">
+                  <label class="cc-label" for="session-id">Active Session ID</label>
+                  <input id="session-id" type="text" placeholder="Auto-created on connect, or paste here" class="cc-input cc-mono-val" />
+                </div>
+                
+                <div class="cc-session-actions">
+                  <button id="load-grading-btn" class="cc-btn cc-btn-cta" style="width:100%;">
+                    <span class="cc-cta-icon">⬡</span> Load Session Analysis
+                  </button>
+                </div>
+              </div>
+
+              <div class="cc-last-session-area">
+                <div class="cc-field">
+                  <label class="cc-label" for="last-session-id">Last Completed Session</label>
+                  <input id="last-session-id" type="text" readonly placeholder="No disconnected session recorded" class="cc-input cc-mono-val cc-muted-val" />
+                </div>
+              </div>
+              
+              <div class="cc-checkbox-group">
+                <label class="cc-check-label">
+                  <input id="stt-only" type="checkbox" />
+                  <span>Speech-to-Text Only</span>
+                </label>
+                <label class="cc-check-label">
+                  <input id="mute-tts" type="checkbox" />
+                  <span>Mute Text-to-Speech</span>
+                </label>
+              </div>
             </div>
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <button id="login-btn"
-                class="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
-                Sign In
-              </button>
-              <button id="register-btn"
-                class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600">
-                Register
-              </button>
-              <label class="inline-flex items-center gap-2 text-sm text-slate-300">
-                <input id="remember-token" type="checkbox" />
-                <span>Remember token</span>
-              </label>
+          </section>
+
+          <!-- Step 2: Realtime Controls -->
+          <section id="cc-sec-controls" class="cc-card cc-realtime-panel cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <span class="cc-step-badge">2</span>
+                <div>
+                  <h2 class="cc-section-title">Realtime Control Deck</h2>
+                  <p class="cc-collapsible-status text-slate-400">Stream Disconnected</p>
+                </div>
+              </div>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
+            </div>
+            
+            <div class="cc-collapsible-body">
+              <div class="cc-control-deck">
+                <button id="create-session-btn" class="cc-btn cc-btn-emerald">Create Session</button>
+                <button id="connect-btn" class="cc-btn cc-btn-cyan">Connect</button>
+                <button id="disconnect-btn" class="cc-btn cc-btn-ghost">Disconnect</button>
+                <button id="mute-mic-btn" class="cc-btn cc-btn-ghost" disabled>Mute Mic</button>
+              </div>
+              
+              <div style="margin-top: 1rem;">
+                <button id="barge-btn" class="cc-btn cc-btn-rose" style="width:100%;">Push-to-Talk / Barge-in (Space)</button>
+              </div>
+              
+              <div class="cc-deck-footer">
+                <p class="cc-muted-text">
+                  Press and hold <kbd class="cc-kbd">Space</kbd> anywhere on this console to trigger immediate barge-in.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 3: Session Analysis (revealed on grading load) -->
+          <section id="session-grading-card" class="hidden cc-card cc-grading-card cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <span class="cc-step-badge cc-step-badge-amber">3</span>
+                <div>
+                  <h2 class="cc-section-title cc-text-amber">Session Analysis</h2>
+                  <p class="cc-collapsible-status text-amber-500/80">Report Idle</p>
+                </div>
+              </div>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
+            </div>
+            
+            <div class="cc-collapsible-body">
+              <div id="grading-content" class="cc-grading-body">
+                <!-- Dynamically populated -->
+              </div>
+              
+              <div class="cc-grading-footer">
+                <p class="cc-muted-text">
+                  Scores represent initial grading heuristics from the telemetry backend and are not pedagogical grades.
+                </p>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <!-- Right Column: Monitoring & Insights -->
+        <div class="cc-side-col">
+          
+          <!-- Pedagogical Insights -->
+          <section id="cc-sec-insights" class="cc-card cc-pedagogical-panel cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <h2 class="cc-section-title">Instructor Insights</h2>
+                <p class="cc-collapsible-status text-slate-400">Idle</p>
+              </div>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
+            </div>
+            
+            <div class="cc-collapsible-body">
+              <div class="cc-pedagogical-widget-container">
+                <!-- pedagogical-zone VAD box must keep its original styling attributes for JS manipulation -->
+                <div id="pedagogical-zone" class="pointer-events-none rounded-lg border border-transparent bg-transparent p-3 opacity-0 transition-all duration-300">
+                  <p id="pedagogical-text" class="text-sm"></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Lab Operations Checklist -->
+          <section id="cc-sec-checklist" class="cc-card cc-guide-panel cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <h2 class="cc-section-title">Lab Operating Checklist</h2>
+                <p class="cc-collapsible-status text-slate-400">Step 1 of 5</p>
+              </div>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
+            </div>
+            
+            <div class="cc-collapsible-body">
+              <div class="cc-guide-content">
+                <ul class="cc-guide-list">
+                  <li>
+                    <span class="cc-guide-num">01</span>
+                    <span class="cc-guide-text">Configure Core & Gateway Server Endpoints.</span>
+                  </li>
+                  <li>
+                    <span class="cc-guide-num">02</span>
+                    <span class="cc-guide-text">Initialize connection via <strong>Create Session</strong>.</span>
+                  </li>
+                  <li>
+                    <span class="cc-guide-num">03</span>
+                    <span class="cc-guide-text">Click <strong>Connect</strong> to open your microphone.</span>
+                  </li>
+                  <li>
+                    <span class="cc-guide-num">04</span>
+                    <span class="cc-guide-text">Speak! Hold Spacebar to immediately interrupt.</span>
+                  </li>
+                  <li>
+                    <span class="cc-guide-num">05</span>
+                    <span class="cc-guide-text">Click <strong>Disconnect</strong>, then click <strong>Load Session Analysis</strong>.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          
+          <!-- Telemetry Summary -->
+          <section id="cc-sec-diagnostics" class="cc-card cc-telemetry-summary cc-collapsible-section">
+            <div class="cc-section-head cc-collapsible-trigger">
+              <div class="cc-section-title-group">
+                <h2 class="cc-section-title">Active Stream Diagnostics</h2>
+                <p class="cc-collapsible-status text-emerald-400/80">Active</p>
+              </div>
+              <button class="cc-btn cc-btn-ghost cc-collapse-btn">Hide</button>
+            </div>
+            
+            <div class="cc-collapsible-body">
+              <div class="cc-telemetry-body">
+                <div class="cc-telemetry-stat">
+                  <span class="cc-telemetry-label">Microphone Status</span>
+                  <span class="cc-telemetry-val" style="color:var(--cc-emerald)">Ready &amp; Calibrated</span>
+                </div>
+                <div class="cc-telemetry-stat">
+                  <span class="cc-telemetry-label">Signal Transport</span>
+                  <span class="cc-telemetry-val">WebRTC (opus)</span>
+                </div>
+                <div class="cc-telemetry-stat">
+                  <span class="cc-telemetry-label">VAD Processing</span>
+                  <span class="cc-telemetry-val">Local (WebRTC VAD)</span>
+                </div>
+                <div class="cc-telemetry-stat">
+                  <span class="cc-telemetry-label">VAD Tail Guard</span>
+                  <span class="cc-telemetry-val">400ms tail</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- Lower: Subtitles and Assistant display panels -->
+      <section class="cc-display-grid">
+        <div class="cc-card cc-subtitle-panel">
+          <h2 class="cc-section-title" style="margin-bottom:0.75rem;">Live Subtitles</h2>
+          <div class="cc-subtitle-container">
+            <div class="cc-subtitle-block">
+              <p class="cc-subtitle-label">Final Transcription</p>
+              <div id="subtitle-final" class="cc-display cc-display-lg overflow-y-auto whitespace-pre-wrap"></div>
+            </div>
+            <div class="cc-subtitle-block">
+              <p class="cc-subtitle-label">Partial Hypothesis</p>
+              <div id="subtitle-partial" class="cc-display cc-display-sm"></div>
             </div>
           </div>
-          <details open class="md:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-            <summary class="cursor-pointer text-sm font-medium text-slate-300">Advanced token fallback</summary>
-            <label class="mt-3 flex flex-col gap-1 text-sm">
-              Bearer Token
-              <input id="auth-token" type="password" autocomplete="off"
-                class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+        </div>
+        
+        <div class="cc-card cc-assistant-panel">
+          <h2 class="cc-section-title" style="margin-bottom:0.75rem;">AI Response Stream</h2>
+          <div class="cc-assistant-container">
+            <div class="cc-subtitle-block">
+              <p class="cc-subtitle-label" id="assistant-meta">LLM source: not received yet</p>
+              <div id="assistant-stream" class="cc-display cc-display-sm"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Advanced & Debug (collapsed) -->
+      <details class="cc-card cc-advanced">
+        <summary class="cc-advanced-summary">Advanced Telemetry &amp; System Settings</summary>
+        <div class="cc-advanced-body">
+
+          <div class="cc-advanced-section">
+            <h3 class="cc-advanced-title">Bearer Token Fallback</h3>
+            <div class="cc-field">
+              <label class="cc-label" for="auth-token">Access Token Override</label>
+              <input id="auth-token" type="password" autocomplete="off" class="cc-input"
                 placeholder="Auto-filled after sign in, or paste access_token here" />
-            </label>
-          </details>
-          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
-            <input id="stt-only" type="checkbox" />
-            <span>STT-only test mode (disable LLM and TTS)</span>
-          </label>
-          <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
-            <input id="mute-tts" type="checkbox" />
-            <span>Mute TTS output (keep LLM text on screen)</span>
-          </label>
-          <label class="flex flex-col gap-1 text-sm">
-            Current Session ID
-            <div class="flex gap-2">
-              <input id="session-id" type="text"
-                class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-                placeholder="Auto-created if token is present" />
-              <button id="load-grading-btn"
-                class="rounded-md bg-slate-700 px-3 py-2 text-xs font-medium transition hover:bg-slate-600">
-                Load Grading
-              </button>
             </div>
-          </label>
-          <label class="flex flex-col gap-1 text-sm">
-            Last Session ID
-            <input id="last-session-id" type="text" readonly
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
-              placeholder="Most recent disconnected session" />
-          </label>
-          <label class="flex flex-col gap-1 text-sm">
-            Offer Endpoint
-            <input id="offer-endpoint" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              value="/rtc/offer" />
-          </label>
-          <label class="flex flex-col gap-1 text-sm">
-            ICE Endpoint
-            <input id="ice-endpoint" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              value="/rtc/ice" />
-          </label>
-          <label class="flex flex-col gap-1 text-sm">
-            Command Endpoint (fallback)
-            <input id="cmd-endpoint" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              value="/rtc/cmd" />
-          </label>
-        </div>
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button id="create-session-btn"
-            class="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
-            Create Session
-          </button>
-          <button id="connect-btn"
-            class="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium transition hover:bg-sky-500">
-            Connect
-          </button>
-          <button id="disconnect-btn"
-            class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600">
-            Disconnect
-          </button>
-          <button id="mute-mic-btn" disabled
-            class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50">
-            Mute Mic
-          </button>
-          <button id="barge-btn"
-            class="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold transition hover:bg-rose-500">
-            Push-to-Talk / Barge-in (Space)
-          </button>
-        </div>
-        <p class="mt-2 text-xs text-slate-400">
-          Tip: Press and release <span class="font-semibold text-slate-200">Space</span> to send instant
-          <code>{ "cmd": "BARGE_IN" }</code> + local audio stop.
-        </p>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-        <h2 class="mb-2 text-base font-semibold">Pedagogical Zone</h2>
-        <div id="pedagogical-zone"
-          class="pointer-events-none rounded-lg border border-transparent bg-transparent p-3 opacity-0 transition-all duration-300">
-          <p id="pedagogical-text" class="text-sm"></p>
-        </div>
-        <p class="mt-3 text-xs text-slate-400">
-          Perfect -> green micro-tick (3s). Error -> yellow coaching card (8s).
-        </p>
-      </div>
-    </section>
-
-    <section id="session-grading-card" class="hidden">
-      <div class="rounded-xl border border-amber-800/40 bg-slate-900/80 p-4">
-        <div class="mb-3 flex items-center gap-3">
-          <h2 class="text-base font-semibold">Session Analysis</h2>
-          <span class="rounded-full bg-amber-900/60 px-2 py-0.5 text-xs font-medium text-amber-300">
-            DEV PREVIEW
-          </span>
-        </div>
-        <div id="grading-content" class="text-sm"></div>
-        <p class="mt-3 text-xs text-slate-500">
-          Dev preview: scores are automatically generated and are not final pedagogical grading.
-        </p>
-      </div>
-    </section>
-
-    <section class="grid gap-4 lg:grid-cols-2">
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-        <h2 class="mb-2 text-base font-semibold">Subtitle Area</h2>
-        <div class="space-y-2">
-          <div>
-            <p class="text-xs uppercase tracking-wide text-slate-500">Final</p>
-            <div id="subtitle-final" class="max-h-32 min-h-24 overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 text-base font-semibold"></div>
           </div>
-          <div>
-            <p class="text-xs uppercase tracking-wide text-slate-500">Partial</p>
-            <div id="subtitle-partial" class="min-h-16 rounded-md bg-slate-950 p-3 text-sm text-slate-400"></div>
+
+          <div class="cc-advanced-section">
+            <h3 class="cc-advanced-title">WebRTC Endpoint Overrides</h3>
+            <div class="cc-endpoint-grid">
+              <div class="cc-field">
+                <label class="cc-label" for="offer-endpoint">SDP Offer Path</label>
+                <input id="offer-endpoint" type="text" value="/rtc/offer" class="cc-input" />
+              </div>
+              <div class="cc-field">
+                <label class="cc-label" for="ice-endpoint">ICE Candidate Path</label>
+                <input id="ice-endpoint" type="text" value="/rtc/ice" class="cc-input" />
+              </div>
+              <div class="cc-field">
+                <label class="cc-label" for="cmd-endpoint">Command Channel Path</label>
+                <input id="cmd-endpoint" type="text" value="/rtc/cmd" class="cc-input" />
+              </div>
+            </div>
           </div>
+
+          <div class="cc-advanced-section">
+            <div class="cc-section-split-head">
+              <h3 class="cc-advanced-title">STT Telemetry Diagnostics</h3>
+              <button id="copy-stt-summary-btn" class="cc-btn cc-btn-ghost">Copy Summary</button>
+            </div>
+            <pre id="stt-diagnostics" class="cc-mono">No final STT received in active stream.</pre>
+          </div>
+
+          <div class="cc-advanced-section">
+            <h3 class="cc-advanced-title">Console System Event Log</h3>
+            <pre id="event-log" class="cc-mono"></pre>
+          </div>
+
         </div>
-      </div>
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-        <h2 class="mb-2 text-base font-semibold">Assistant Stream</h2>
-        <div id="assistant-meta" class="mb-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
-          LLM source: not received yet
-        </div>
-        <div id="assistant-stream" class="min-h-24 rounded-md bg-slate-950 p-3 text-sm text-slate-200"></div>
-        <div class="mt-4 flex items-center justify-between gap-3">
-          <h3 class="text-sm font-semibold text-slate-300">STT Diagnostics</h3>
-          <button id="copy-stt-summary-btn"
-            class="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-600">
-            Copy Summary
-          </button>
-        </div>
-        <pre id="stt-diagnostics" class="mt-2 max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-400">No final STT yet.</pre>
-        <h3 class="mb-2 mt-4 text-sm font-semibold text-slate-300">Event Log</h3>
-        <pre id="event-log" class="max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-400"></pre>
-      </div>
-    </section>
+      </details>
+    </div>
 
     <audio id="remote-audio" autoplay playsinline class="hidden"></audio>
   </main>
+
 
   <script>
     const ui = {
@@ -292,6 +502,7 @@
       acceptIceCandidates: false,
       micStream: null,
       micMuted: false,
+      connectionTimeout: null,
       audioContext: null,
       pendingIceCandidates: [],
       activeSources: new Set(),
@@ -802,10 +1013,39 @@
 
     function updateAuthState(message = null) {
       const hasToken = Boolean(getAuthToken());
-      ui.authState.textContent = message || (hasToken ? "Signed in. Sessions can be created automatically." : "Sign in to create sessions automatically.");
+      const isError = Boolean(message && !hasToken);
+      ui.authState.textContent = message || (hasToken ? "Signed in — token ready." : "Sign in to create sessions automatically.");
+      ui.authState.classList.remove("text-slate-400", "text-emerald-400", "text-rose-400", "text-amber-400");
+      if (hasToken && !message) {
+        ui.authState.classList.add("text-emerald-400");
+      } else if (isError) {
+        ui.authState.classList.add("text-rose-400");
+      } else if (message && hasToken) {
+        ui.authState.classList.add("text-amber-400");
+      } else {
+        ui.authState.classList.add("text-slate-400");
+      }
+      const authCard = document.getElementById("auth-card");
+      if (authCard) {
+        authCard.classList.toggle("is-signed-in", hasToken);
+        authCard.classList.toggle("is-error", isError);
+      }
       ui.clearTokenBtn.disabled = !hasToken;
       ui.clearTokenBtn.classList.toggle("opacity-50", !hasToken);
       ui.clearTokenBtn.classList.toggle("cursor-not-allowed", !hasToken);
+
+      // Transition views depending on presence of auth token
+      if (hasToken) {
+        document.body.classList.remove("view-landing", "view-auth");
+        document.body.classList.add("view-app");
+        ui.clearTokenBtn.classList.remove("hidden");
+      } else {
+        ui.clearTokenBtn.classList.add("hidden");
+        if (!document.body.classList.contains("view-auth")) {
+          document.body.classList.remove("view-app", "view-auth");
+          document.body.classList.add("view-landing");
+        }
+      }
     }
 
     function setAuthToken(token, message = "Signed in. Sessions can be created automatically.") {
@@ -1019,13 +1259,16 @@
     async function fetchAndShowGrading(sessionId) {
       if (!sessionId) return;
       ui.gradingCard.classList.remove("hidden");
+      ui.gradingCard.classList.remove("cc-reveal");
+      void ui.gradingCard.offsetWidth;
+      ui.gradingCard.classList.add("cc-reveal");
       ui.gradingContent.innerHTML = '<p class="text-slate-400">Loading grading result…</p>';
 
       await new Promise(r => setTimeout(r, 2000));
 
       const token = getAuthToken();
       if (!token) {
-        ui.gradingContent.innerHTML = '<p class="text-amber-400">Auth token required to load grading result.</p>';
+        ui.gradingContent.innerHTML = '<p class="text-amber-400">Please sign in again.</p>';
         return;
       }
 
@@ -1041,8 +1284,15 @@
           return;
         }
 
-        if (statusRes.status === 401 || statusRes.status === 403) {
+        if (statusRes.status === 401) {
           ui.gradingContent.innerHTML = '<p class="text-rose-400">Session expired or unauthorized. Please refresh your token and try again.</p>';
+          return;
+        }
+
+        if (statusRes.status === 403) {
+          const body = await statusRes.json().catch(() => ({}));
+          const detail = body?.detail || "This session is not owned by the current account.";
+          ui.gradingContent.innerHTML = `<p class="text-rose-400">${escapeHtml(detail)}</p>`;
           return;
         }
 
@@ -1324,6 +1574,11 @@
         state.pageUnloadCleanupDone = false;
         updateMicMuteButton();
 
+        // Mute mic tracks initially to block transmission during connection warmup (DTLS/ICE negotiation)
+        micStream.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+
         micStream.getAudioTracks().forEach((track) => pc.addTrack(track, micStream));
 
         pc.ontrack = async (event) => {
@@ -1351,7 +1606,7 @@
               setStatus("thinking", "Connected - preparing speech...");
               break;
             case "connecting":
-              setStatus("thinking", "Connecting...");
+              setStatus("thinking", "Connecting audio path - please wait...");
               break;
             case "disconnected":
             case "failed":
@@ -1453,9 +1708,18 @@
           }
         }
 
-        setStatus("thinking", "Mic warming up...");
+        setStatus("thinking", "Preparing microphone / connecting STT...");
         setApiStatus("ready", "API: Session ready");
         logEvent("SDP handshake complete", { sessionId: state.sessionId });
+
+        // Set safe 10-second timeout to handle case where ten_started does not arrive
+        if (state.connectionTimeout) clearTimeout(state.connectionTimeout);
+        state.connectionTimeout = setTimeout(() => {
+          if (state.peerConnection && ui.statusText.textContent !== "Ready - speak now") {
+            setStatus("thinking", "Speech engine not ready yet");
+            logEvent("Warmup timeout: ten_started not received within 10s");
+          }
+        }, 10000);
       } catch (error) {
         await disconnect();
         throw error;
@@ -1463,6 +1727,10 @@
     }
 
     async function disconnect() {
+      if (state.connectionTimeout) {
+        clearTimeout(state.connectionTimeout);
+        state.connectionTimeout = null;
+      }
       if (state.ttsActive) {
         logEvent("Disconnect while TTS active; current assistant audio will be cut");
       }
@@ -1789,8 +2057,19 @@
             logEvent(`Session ID received: ${state.sessionId}`);
           }
           if (eventName === "ten_started") {
+            if (state.connectionTimeout) {
+              clearTimeout(state.connectionTimeout);
+              state.connectionTimeout = null;
+            }
             ui.gradingCard.classList.add("hidden");
             setStatus("ready", "Ready - speak now");
+            // Warmup completed: unmute local microphone tracks
+            if (state.micStream) {
+              state.micStream.getAudioTracks().forEach((track) => {
+                track.enabled = !state.micMuted;
+              });
+              logEvent("Microphone active - connection warmup completed");
+            }
           } else if (eventName === "session_ended") {
             state.acceptIceCandidates = false;
             state.connectionAttemptId += 1;
@@ -1905,6 +2184,81 @@
       await sendCommand({ cmd: "BARGE_IN", source: "spacebar" });
       setStatus("thinking", "Barge-in sent");
     });
+    // ── Multi-Page Navigation Listeners ──
+    const gotoLoginBtn = document.getElementById("goto-login-btn");
+    const gotoRegisterBtn = document.getElementById("goto-register-btn");
+    const backToWelcomeBtn = document.getElementById("back-to-welcome-btn");
+    const authTabLogin = document.getElementById("auth-tab-login");
+    const authTabRegister = document.getElementById("auth-tab-register");
+    const usernameField = document.querySelector(".id-username-field");
+
+    function switchAuthTab(mode) {
+      if (mode === "login") {
+        authTabLogin.classList.add("active");
+        authTabRegister.classList.remove("active");
+        ui.loginBtn.classList.remove("hidden");
+        ui.registerBtn.classList.add("hidden");
+        if (usernameField) usernameField.classList.add("hidden");
+      } else {
+        authTabRegister.classList.add("active");
+        authTabLogin.classList.remove("active");
+        ui.registerBtn.classList.remove("hidden");
+        ui.loginBtn.classList.add("hidden");
+        if (usernameField) usernameField.classList.remove("hidden");
+      }
+    }
+
+    if (gotoLoginBtn) {
+      gotoLoginBtn.addEventListener("click", () => {
+        document.body.classList.remove("view-landing", "view-app");
+        document.body.classList.add("view-auth");
+        switchAuthTab("login");
+      });
+    }
+
+    if (gotoRegisterBtn) {
+      gotoRegisterBtn.addEventListener("click", () => {
+        document.body.classList.remove("view-landing", "view-app");
+        document.body.classList.add("view-auth");
+        switchAuthTab("register");
+      });
+    }
+
+    if (backToWelcomeBtn) {
+      backToWelcomeBtn.addEventListener("click", () => {
+        document.body.classList.remove("view-auth", "view-app");
+        document.body.classList.add("view-landing");
+      });
+    }
+
+    if (authTabLogin) {
+      authTabLogin.addEventListener("click", () => switchAuthTab("login"));
+    }
+    if (authTabRegister) {
+      authTabRegister.addEventListener("click", () => switchAuthTab("register"));
+    }
+
+    // ── Collapsible Panel Trigger Bindings ──
+    document.querySelectorAll(".cc-collapsible-section").forEach((section) => {
+      const trigger = section.querySelector(".cc-collapsible-trigger");
+      const btn = section.querySelector(".cc-collapse-btn");
+
+      const toggleCollapse = (e) => {
+        // Prevent collapse when clicking a button or input inside section head that isn't the collapse button itself
+        if (e.target.closest("button") && e.target !== btn) return;
+        if (e.target.closest("input")) return;
+
+        section.classList.toggle("collapsed");
+        const isCollapsed = section.classList.contains("collapsed");
+        if (btn) {
+          btn.textContent = isCollapsed ? "Show" : "Hide";
+        }
+      };
+
+      if (trigger) trigger.addEventListener("click", toggleCollapse);
+      if (btn && btn !== trigger) btn.addEventListener("click", toggleCollapse);
+    });
+
     window.addEventListener("pagehide", cleanupRealtimeForPageUnload);
     window.addEventListener("beforeunload", cleanupRealtimeForPageUnload);
 
