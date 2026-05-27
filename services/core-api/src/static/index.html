@@ -110,9 +110,15 @@
           </label>
           <label class="flex flex-col gap-1 text-sm">
             Current Session ID
-            <input id="session-id" type="text"
-              class="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
-              placeholder="Auto-created if token is present" />
+            <div class="flex gap-2">
+              <input id="session-id" type="text"
+                class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-sky-500"
+                placeholder="Auto-created if token is present" />
+              <button id="load-grading-btn"
+                class="rounded-md bg-slate-700 px-3 py-2 text-xs font-medium transition hover:bg-slate-600">
+                Load Grading
+              </button>
+            </div>
           </label>
           <label class="flex flex-col gap-1 text-sm">
             Last Session ID
@@ -257,6 +263,7 @@
       registerBtn: document.getElementById("register-btn"),
       clearTokenBtn: document.getElementById("clear-token-btn"),
       createSessionBtn: document.getElementById("create-session-btn"),
+      loadGradingBtn: document.getElementById("load-grading-btn"),
       connectBtn: document.getElementById("connect-btn"),
       disconnectBtn: document.getElementById("disconnect-btn"),
       muteMicBtn: document.getElementById("mute-mic-btn"),
@@ -1854,6 +1861,18 @@
       } catch (error) {
         logEvent("Create session failed", { error: String(error) });
       }
+    });
+    ui.loadGradingBtn.addEventListener("click", async () => {
+      const sessionId = state.sessionId || ui.sessionIdInput.value.trim();
+      if (!sessionId) {
+        ui.gradingCard.classList.remove("hidden");
+        ui.gradingContent.innerHTML = '<p class="text-amber-400">Enter a session ID before loading grading.</p>';
+        setApiStatus("error", "API: Session ID required");
+        logEvent("Load grading failed", { reason: "missing_session_id" });
+        return;
+      }
+      keepCompletedSessionVisible(sessionId);
+      await fetchAndShowGrading(sessionId);
     });
 
     ui.disconnectBtn.addEventListener("click", async () => {
