@@ -1831,6 +1831,7 @@
         await loginWithForm();
       } catch (error) {
         logEvent("Sign in failed", { error: String(error) });
+        updateAuthState(String(error));
       }
     });
 
@@ -1839,6 +1840,7 @@
         await registerWithForm();
       } catch (error) {
         logEvent("Register failed", { error: String(error) });
+        updateAuthState(String(error));
       }
     });
 
@@ -1901,6 +1903,7 @@
         await loginWithForm();
       } catch (error) {
         logEvent("Sign in failed", { error: String(error) });
+        updateAuthState(String(error));
       }
     });
     ui.authTokenInput.addEventListener("change", () => {
