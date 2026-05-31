@@ -1,0 +1,32 @@
+# ============================================================
+# LUVE — production-like compose OVERRIDE (T3: port hardening)
+#
+# Purpose: stop publishing infrastructure ports to the host so that
+# Postgres / Redis / RabbitMQ are reachable only over the internal
+# `luve_network`, not from the host or LAN. Application ports
+# (core_api 8000, ten_gateway 8080) stay published.
+#
+# Usage (layer ON TOP of the base file):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
+#
+# The base docker-compose.yml stays local-dev friendly (all ports
+# published). This file is opt-in; it changes nothing unless passed.
+#
+# Why `!reset []` and not `[]`:
+#   Compose MERGES (concatenates) the `ports` list across files, so a
+#   plain `ports: []` would keep the base ports. The `!reset` YAML tag
+#   (Compose >= 2.24) clears the value instead of appending. Verified on
+#   Compose 2.40: `!reset []` removes published ports; `[]` does not.
+#
+# Scope: ports only. No secrets, no app logic, no healthcheck/env changes.
+# ============================================================
+
+services:
+  postgres_db:
+    ports: !reset []        # 5432 internal-only
+
+  redis_cache:
+    ports: !reset []        # 6379 internal-only
+
+  rabbitmq_queue:
+    ports: !reset []        # 5672 (AMQP) + 15672 (management UI) internal-only

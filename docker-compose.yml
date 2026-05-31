@@ -6,7 +6,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dat_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-luve_database}
       TZ: Asia/Ho_Chi_Minh
     ports:
@@ -51,7 +51,7 @@ services:
     restart: always
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       TZ: Asia/Ho_Chi_Minh
     ports:
       - "5672:5672"
@@ -80,11 +80,11 @@ services:
       rabbitmq_queue:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${GRADING_DATABASE_URL:-}
+      DATABASE_URL: ${GRADING_DATABASE_URL:?set GRADING_DATABASE_URL in .env}
       RABBITMQ_HOST: rabbitmq_queue
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       GRADING_PROVIDER: ${GRADING_PROVIDER:-fake}
       GRADING_FAKE_FALLBACK: ${GRADING_FAKE_FALLBACK:-false}
       GRADING_MIN_STUDENT_WORDS: ${GRADING_MIN_STUDENT_WORDS:-25}
@@ -155,7 +155,7 @@ services:
       RABBITMQ_HOST: rabbitmq_queue
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GROQCLOUD_API_KEY: ${GROQCLOUD_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
