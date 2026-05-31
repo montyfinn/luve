@@ -46,16 +46,52 @@ CREATE TABLE SESSIONS (
 CREATE TABLE GRADING_RESULTS (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID UNIQUE REFERENCES SESSIONS(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'graded' CHECK (status IN ('processing', 'graded', 'failed')),
+    provider TEXT NOT NULL DEFAULT 'unknown',
+    grader_version TEXT NOT NULL DEFAULT 'legacy',
+    score_schema_version TEXT NOT NULL DEFAULT 'grading.v1',
     overall_score NUMERIC(4,2),
     fluency_score NUMERIC(4,2),
     grammar_score NUMERIC(4,2),
     vocab_score NUMERIC(4,2),
+    pronunciation_score NUMERIC(4,2),
     detailed_corrections JSONB, 
     ai_summary_feedback TEXT,
-    graded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    skill_feedback_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    input_quality_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_code TEXT,
+    error_message TEXT,
+    attempt_count INT NOT NULL DEFAULT 0,
+    graded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE GRADING_SKIP_LOG (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL UNIQUE REFERENCES SESSIONS(id) ON DELETE CASCADE,
+    skipped_reason TEXT NOT NULL CHECK (skipped_reason IN (
+        'no_raw_backup',
+        'invalid_raw_backup',
+        'no_user_turns',
+        'insufficient_words'
+    )),
+    student_word_count INT,
+    min_words_threshold INT,
+    source TEXT NOT NULL DEFAULT 'worker' CHECK (source IN (
+        'worker',
+        'scanner',
+        'backfill',
+        'manual'
+    )),
+    skipped_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- INDEXING: Tối ưu hóa triệt để
 CREATE INDEX idx_sessions_user_id ON SESSIONS(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_grading_session_id ON GRADING_RESULTS(session_id);
+CREATE INDEX idx_grading_status ON GRADING_RESULTS(status);
+CREATE INDEX idx_grading_updated_at ON GRADING_RESULTS(updated_at DESC);
+CREATE INDEX idx_grading_skip_reason ON GRADING_SKIP_LOG(skipped_reason);
+CREATE INDEX idx_grading_skip_updated_at ON GRADING_SKIP_LOG(updated_at DESC);
 CREATE INDEX idx_users_email ON USERS(email) WHERE deleted_at IS NULL;
