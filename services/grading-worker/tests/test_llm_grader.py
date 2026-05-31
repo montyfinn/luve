@@ -62,6 +62,10 @@ class MockClient:
         return self._response
 
 
+def _skill_feedback(result: GradingResult, skill: str):
+    return next(item for item in result.skill_feedback if item.skill == skill)
+
+
 # ---------------------------------------------------------------------------
 # build_grading_prompt tests
 # ---------------------------------------------------------------------------
@@ -98,6 +102,81 @@ def test_prompt_contains_rubric_fields():
     assert "vocab_score" in prompt
 
 
+def test_prompt_includes_uncertain_stt_note_but_preserves_transcript_text():
+    ei = EvaluationInput(
+        session_id=SESSION_ID,
+        raw_event_count=1,
+        turns=[
+            EvaluationTurn(
+                seq=0,
+                speaker="student",
+                text="I very like this lesson",
+                source="USER_TURN",
+                stt_quality="uncertain",
+                stt_uncertainty_reasons=[
+                    "low_average_logprob",
+                    "possible_stt_autocorrection",
+                ],
+                possible_stt_autocorrection=True,
+            )
+        ],
+        quality_signals={
+            "student_word_count": 5,
+            "uncertain_student_turn_count": 1,
+        },
+    )
+    prompt = build_grading_prompt(ei)
+    assert "[0] Student: I very like this lesson" in prompt
+    assert "STT note: uncertain (low_average_logprob, possible_stt_autocorrection)" in prompt
+    assert "Uncertain student turns: 1" in prompt
+
+
+def test_prompt_omits_stt_note_for_confident_turn():
+    ei = EvaluationInput(
+        session_id=SESSION_ID,
+        raw_event_count=1,
+        turns=[
+            EvaluationTurn(
+                seq=0,
+                speaker="student",
+                text="Hello guys",
+                source="USER_TURN",
+                stt_quality="confident",
+            )
+        ],
+        quality_signals={"student_word_count": 2},
+    )
+    prompt = build_grading_prompt(ei)
+    assert "[0] Student: Hello guys" in prompt
+    assert "STT note:" not in prompt
+
+
+def test_prompt_includes_soft_hallucination_caution_reason():
+    ei = EvaluationInput(
+        session_id=SESSION_ID,
+        raw_event_count=1,
+        turns=[
+            EvaluationTurn(
+                seq=0,
+                speaker="student",
+                text="I want improve speaking because my English not good",
+                source="USER_TURN",
+                stt_quality="uncertain",
+                stt_uncertainty_reasons=[
+                    "low_average_logprob",
+                    "possible_hallucination_soft",
+                ],
+            )
+        ],
+        quality_signals={
+            "student_word_count": 9,
+            "uncertain_student_turn_count": 1,
+        },
+    )
+    prompt = build_grading_prompt(ei)
+    assert "possible_hallucination_soft" in prompt
+
+
 # ---------------------------------------------------------------------------
 # parse_grading_response tests
 # ---------------------------------------------------------------------------
@@ -106,6 +185,7 @@ def test_parse_valid_response_returns_grading_result():
     result = parse_grading_response(_valid_response(), session_id=SESSION_ID)
     assert isinstance(result, GradingResult)
     assert result.grader_version == "llm_grader.v1"
+    assert result.score_schema_version == "grading.v1"
     assert result.fluency_score == 7.5
     assert result.grammar_score == 8.0
     assert result.vocab_score == 6.5
@@ -121,6 +201,98 @@ def test_parse_valid_corrections_preserved():
     result = parse_grading_response(_valid_response(), session_id=SESSION_ID)
     assert len(result.detailed_corrections) == 1
     assert result.detailed_corrections[0]["error_type"] == "grammar"
+
+
+def test_parse_production_skill_feedback_and_pronunciation_score():
+    response = _valid_response(
+        pronunciation_clarity_score=6.0,
+        skill_feedback=[
+            {
+                "skill": "fluency",
+                "score": 7.5,
+                "status": "scored",
+                "summary": "You answered without long pauses.",
+                "suggestion": "Practice linking short answers into two-sentence responses.",
+            },
+            {
+                "skill": "grammar",
+                "score": 8.0,
+                "status": "scored",
+                "summary": "Your basic sentence structure is clear.",
+                "suggestion": "Review present continuous forms.",
+            },
+            {
+                "skill": "vocabulary",
+                "score": 6.5,
+                "status": "scored",
+                "summary": "Vocabulary was understandable but repetitive.",
+                "suggestion": "Prepare three stronger adjectives before the next session.",
+            },
+            {
+                "skill": "pronunciation_clarity",
+                "score": 6.0,
+                "status": "scored",
+                "summary": "The transcript showed some clarity uncertainty.",
+                "suggestion": "Repeat key phrases slowly, then again at natural speed.",
+            },
+        ],
+    )
+    result = parse_grading_response(response, session_id=SESSION_ID)
+
+    assert result.provider == "llm"
+    assert result.score_schema_version == "grading.v2"
+    assert result.pronunciation_score == 6.0
+    assert len(result.skill_feedback) == 4
+    assert result.skill_feedback[3].skill == "pronunciation_clarity"
+    assert result.skill_feedback[3].score == 6.0
+    assert result.skill_feedback[3].status == "scored"
+    assert result.overall_score == round(7.5 * 0.25 + 8.0 * 0.30 + 6.5 * 0.25 + 6.0 * 0.20, 2)
+
+
+def test_parse_normalizes_nested_pronunciation_score_from_top_level_null():
+    response = _valid_response(
+        pronunciation_clarity_score=None,
+        skill_feedback=[
+            {
+                "skill": "pronunciation_clarity",
+                "score": 7.0,
+                "status": "scored",
+                "summary": "Nested pronunciation summary is preserved.",
+                "suggestion": "Nested pronunciation suggestion is preserved.",
+            }
+        ],
+    )
+    result = parse_grading_response(response, session_id=SESSION_ID)
+    pronunciation = _skill_feedback(result, "pronunciation_clarity")
+
+    assert result.pronunciation_score is None
+    assert pronunciation.score is None
+    assert pronunciation.status == "insufficient_evidence"
+    assert pronunciation.summary == "Nested pronunciation summary is preserved."
+    assert pronunciation.suggestion == "Nested pronunciation suggestion is preserved."
+
+
+def test_parse_normalizes_nested_skill_score_and_ignores_raw_status():
+    response = _valid_response(
+        fluency_score=6.0,
+        skill_feedback=[
+            {
+                "skill": "fluency",
+                "score": 9.0,
+                "status": "insufficient_evidence",
+                "summary": "Fluency summary is preserved.",
+                "suggestion": "Fluency suggestion is preserved.",
+            }
+        ],
+    )
+    result = parse_grading_response(response, session_id=SESSION_ID)
+    fluency = _skill_feedback(result, "fluency")
+
+    assert result.fluency_score == 6.0
+    assert fluency.score == 6.0
+    assert fluency.status == "scored"
+    assert fluency.summary == "Fluency summary is preserved."
+    assert fluency.suggestion == "Fluency suggestion is preserved."
 
 
 def test_parse_invalid_json_raises():
@@ -248,4 +420,5 @@ def test_fake_grader_still_produces_fake_grader_v1():
     )
     result = fake_grade(ei)
     assert result.grader_version == "fake_grader.v1"
+    assert result.score_schema_version == "grading.v1"
     assert isinstance(result.overall_score, float)

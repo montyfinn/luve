@@ -175,6 +175,62 @@ async def test_skip_insufficient_words(monkeypatch: pytest.MonkeyPatch) -> None:
     assert call["min_words_threshold"] == 25
 
 
+@pytest.mark.asyncio
+async def test_skip_explicitly_excluded_stt_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "fake")
+    monkeypatch.setenv("GRADING_MIN_STUDENT_WORDS", "25")
+    row = _make_row(
+        raw_backup_json=[
+            {
+                "type": "USER_TURN",
+                "payload": {
+                    "text": " ".join(f"word{i}" for i in range(30)),
+                    "stt_quality": "uncertain",
+                    "uncertainty_reasons": ["weak_mixed_language_english"],
+                    "grading_eligible": False,
+                    "excluded_from_grading_reason": "weak_mixed_language_english",
+                },
+            }
+        ]
+    )
+    repo = _FakeRepo(row=row)
+    await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+
+    assert repo.upsert_call_count == 0
+    assert len(repo.skip_log_calls) == 1
+    call = repo.skip_log_calls[0]
+    assert call["reason"] == "insufficient_words"
+    assert call["source"] == "worker"
+    assert call["student_word_count"] == 0
+    assert call["min_words_threshold"] == 25
+
+
+@pytest.mark.asyncio
+async def test_uncertain_autocorrection_words_remain_eligible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "fake")
+    monkeypatch.setenv("GRADING_MIN_STUDENT_WORDS", "25")
+    row = _make_row(
+        raw_backup_json=[
+            {
+                "type": "USER_TURN",
+                "payload": {
+                    "text": " ".join(f"word{i}" for i in range(30)),
+                    "stt_quality": "uncertain",
+                    "uncertainty_reasons": ["possible_stt_autocorrection"],
+                    "possible_stt_autocorrection": True,
+                },
+            }
+        ]
+    )
+    repo = _FakeRepo(row=row)
+    await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+
+    assert len(repo.skip_log_calls) == 0
+    assert repo.upsert_call_count == 1
+
+
 # ---------------------------------------------------------------------------
 # eligible — skip-log not called, upsert called
 # ---------------------------------------------------------------------------
@@ -194,18 +250,18 @@ async def test_eligible_skips_skip_log_and_upserts(
 
 
 # ---------------------------------------------------------------------------
-# skip-log failure is non-fatal — no re-raise, no upsert
+# skip-log failure is retryable — no ACK without durable skip/failure state
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_skip_log_failure_is_nonfatal(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_skip_log_failure_is_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GRADING_PROVIDER", "fake")
     repo = _FakeRepo(
         row=_make_row(raw_backup_json=None),  # no_raw_backup → ineligible
         skip_log_raise=RuntimeError("db error"),
     )
-    # must not raise even though log_grading_skip raises
-    await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
+    with pytest.raises(RuntimeError, match="db error"):
+        await process_session_completed_job(_BASE_PAYLOAD, repository=repo)
 
     assert repo.upsert_call_count == 0

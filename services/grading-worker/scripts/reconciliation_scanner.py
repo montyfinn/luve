@@ -130,17 +130,17 @@ def _build_candidate_sql(
     limit: int,
 ) -> tuple[str, list[Any]]:
     """Build the parameterised candidate SELECT and its parameter list."""
+    params: list[Any] = [grace_threshold]
+    grace_param = len(params)
     wheres = [
         "s.status = 'completed'",
         "s.deleted_at IS NULL",
-        "gr.session_id IS NULL",
+        f"(gr.session_id IS NULL OR (gr.status = 'failed' AND gr.updated_at < ${grace_param}))",
         "s.raw_backup_json IS NOT NULL",
     ]
-    params: list[Any] = []
 
     # Grace window: only consider sessions that ended before the threshold.
-    params.append(grace_threshold)
-    wheres.append(f"s.ended_at < ${len(params)}")
+    wheres.append(f"s.ended_at < ${grace_param}")
 
     if since is not None:
         params.append(since)

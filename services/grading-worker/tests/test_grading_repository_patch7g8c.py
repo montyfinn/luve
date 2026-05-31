@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from src.grading_repository import GradingRepository
+from src.grading_repository import GradingRepository, _REQUIRED_GRADING_RESULTS_COLUMNS
 
 DATABASE_URL = "postgresql://user:pass@localhost/testdb"
 _SKIP_REASON = "insufficient_words"
@@ -28,6 +28,25 @@ def _mock_connection() -> tuple[MagicMock, MagicMock]:
     """Return (mock_connect, mock_conn) with execute and close as AsyncMocks."""
     mock_conn = MagicMock()
     mock_conn.execute = AsyncMock(return_value=None)
+    mock_conn.fetchrow = AsyncMock(return_value={"session_id": _SESSION_ID})
+    mock_conn.close = AsyncMock(return_value=None)
+    mock_connect = AsyncMock(return_value=mock_conn)
+    return mock_connect, mock_conn
+
+
+def _mock_schema_connection(
+    *,
+    skip_log_exists: bool,
+    present_columns: set[str] | None = None,
+) -> tuple[MagicMock, MagicMock]:
+    mock_conn = MagicMock()
+    mock_conn.fetchval = AsyncMock(return_value=skip_log_exists)
+    mock_conn.fetch = AsyncMock(
+        return_value=[
+            {"column_name": column}
+            for column in (present_columns or _REQUIRED_GRADING_RESULTS_COLUMNS)
+        ]
+    )
     mock_conn.close = AsyncMock(return_value=None)
     mock_connect = AsyncMock(return_value=mock_conn)
     return mock_connect, mock_conn
@@ -123,3 +142,88 @@ def test_log_grading_skip_does_not_accept_raw_payload_arguments() -> None:
 
     forbidden = {"raw_backup_json", "transcript", "audio", "metadata", "payload"}
     assert not forbidden.intersection(param_names)
+
+
+@pytest.mark.asyncio
+async def test_assert_schema_ready_passes_when_required_objects_exist() -> None:
+    mock_connect, mock_conn = _mock_schema_connection(skip_log_exists=True)
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        await repo.assert_schema_ready()
+
+    mock_conn.fetchval.assert_awaited_once()
+    mock_conn.fetch.assert_awaited_once()
+    mock_conn.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_assert_schema_ready_fails_when_skip_log_is_missing() -> None:
+    mock_connect, _mock_conn = _mock_schema_connection(skip_log_exists=False)
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        with pytest.raises(RuntimeError, match="grading_skip_log"):
+            await repo.assert_schema_ready()
+
+
+@pytest.mark.asyncio
+async def test_assert_schema_ready_fails_when_required_column_is_missing() -> None:
+    present_columns = set(_REQUIRED_GRADING_RESULTS_COLUMNS)
+    present_columns.remove("score_schema_version")
+    mock_connect, _mock_conn = _mock_schema_connection(
+        skip_log_exists=True,
+        present_columns=present_columns,
+    )
+
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        with pytest.raises(RuntimeError, match="score_schema_version"):
+            await repo.assert_schema_ready()
+
+
+@pytest.mark.asyncio
+async def test_mark_grading_processing_skips_existing_graded_rows() -> None:
+    mock_connect, mock_conn = _mock_connection()
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        result = await repo.mark_grading_processing(
+            session_id=_SESSION_ID,
+            provider="fake",
+        )
+
+    assert result is True
+    mock_conn.fetchrow.assert_awaited_once()
+    sql: str = mock_conn.fetchrow.call_args[0][0]
+    assert "WHERE grading_results.status <> 'graded'" in sql
+    assert "RETURNING session_id" in sql
+    assert mock_conn.fetchrow.call_args[0][1:] == (_SESSION_ID, "fake")
+
+
+@pytest.mark.asyncio
+async def test_mark_grading_processing_returns_false_when_existing_grade_is_preserved() -> None:
+    mock_connect, mock_conn = _mock_connection()
+    mock_conn.fetchrow = AsyncMock(return_value=None)
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        result = await repo.mark_grading_processing(
+            session_id=_SESSION_ID,
+            provider="fake",
+        )
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_mark_grading_failed_skips_existing_graded_rows() -> None:
+    mock_connect, mock_conn = _mock_connection()
+    with patch("src.grading_repository.asyncpg.connect", mock_connect):
+        repo = _make_repo()
+        await repo.mark_grading_failed(
+            session_id=_SESSION_ID,
+            provider="llm",
+            error_code="RuntimeError",
+            error_message="temporary failure",
+        )
+
+    mock_conn.execute.assert_awaited_once()
+    sql: str = mock_conn.execute.call_args[0][0]
+    assert "WHERE grading_results.status <> 'graded'" in sql

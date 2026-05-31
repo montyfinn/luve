@@ -4,7 +4,14 @@ import json
 from typing import Any, Protocol
 from uuid import UUID
 
-from src.contracts import EvaluationInput, EvaluationTurn, GradingResult
+from src.contracts import (
+    SCORE_SCHEMA_LEGACY,
+    SCORE_SCHEMA_WITH_PRONUNCIATION,
+    EvaluationInput,
+    EvaluationTurn,
+    GradingResult,
+    SkillFeedback,
+)
 
 
 class LLMGraderError(Exception):
@@ -25,8 +32,7 @@ def build_grading_prompt(input_data: EvaluationInput) -> str:
     else:
         lines: list[str] = []
         for t in input_data.turns:
-            label = "Student" if t.speaker == "student" else "Tutor"
-            lines.append(f"[{t.seq}] {label}: {t.text}")
+            lines.extend(_format_turn_for_prompt(t))
         transcript_section = "\n".join(lines)
 
     quality_notes: list[str] = []
@@ -35,6 +41,9 @@ def build_grading_prompt(input_data: EvaluationInput) -> str:
     word_count = input_data.quality_signals.get("student_word_count")
     if word_count is not None:
         quality_notes.append(f"Student word count: {word_count}")
+    uncertain_turns = input_data.quality_signals.get("uncertain_student_turn_count")
+    if uncertain_turns:
+        quality_notes.append(f"Uncertain student turns: {uncertain_turns}")
 
     return f"""\
 You are an experienced English language teacher evaluating a student's spoken English practice session.
@@ -50,14 +59,29 @@ Score each dimension from 0.0 to 10.0 (one decimal place is fine):
 - fluency_score: naturalness, rhythm, pace, minimal hesitation
 - grammar_score: correctness of tenses, agreement, sentence structure
 - vocab_score: variety, appropriateness, and precision of vocabulary
+- pronunciation_clarity_score: clarity evidence from STT confidence/timing notes only; use null if evidence is insufficient
 
 ## Instructions
+When a student turn has an STT note marked uncertain, treat the transcript as possibly imperfect.
+Avoid overconfident grammar or pronunciation judgments based only on uncertain STT turns.
+Write learner-facing summary, observations, and suggestions in concise Vietnamese.
+Keep original and corrected phrases in English.
 Return ONLY a JSON object with these exact keys — no markdown, no prose, no extra keys:
 {{
   "fluency_score": <number 0–10>,
   "grammar_score": <number 0–10>,
   "vocab_score": <number 0–10>,
-  "summary": "<2–4 sentence overall feedback in English>",
+  "pronunciation_clarity_score": <number 0–10 or null>,
+  "summary": "<2–4 sentence overall feedback in Vietnamese>",
+  "skill_feedback": [
+    {{
+      "skill": "<fluency|grammar|vocabulary|pronunciation_clarity>",
+      "score": <number 0–10 or null>,
+      "status": "<scored|insufficient_evidence>",
+      "summary": "<one concise learner-facing observation in Vietnamese>",
+      "suggestion": "<one concrete next practice action in Vietnamese>"
+    }}
+  ],
   "corrections": [
     {{
       "turn_seq": <integer>,
@@ -69,8 +93,20 @@ Return ONLY a JSON object with these exact keys — no markdown, no prose, no ex
   ]
 }}
 If there are no corrections, return an empty list for "corrections".
+Return exactly one skill_feedback item per skill. For pronunciation_clarity, use status "insufficient_evidence" and score null when the transcript does not provide reliable pronunciation evidence.
 Do not include any text before or after the JSON object.
 """
+
+
+def _format_turn_for_prompt(turn: EvaluationTurn) -> list[str]:
+    label = "Student" if turn.speaker == "student" else "Tutor"
+    lines = [f"[{turn.seq}] {label}: {turn.text}"]
+    if turn.speaker != "student" or turn.stt_quality != "uncertain":
+        return lines
+
+    reasons = ", ".join(turn.stt_uncertainty_reasons) or "uncertain_transcript"
+    lines.append(f"    STT note: uncertain ({reasons})")
+    return lines
 
 
 def parse_grading_response(raw_json: str, *, session_id: UUID) -> GradingResult:
@@ -100,6 +136,10 @@ def parse_grading_response(raw_json: str, *, session_id: UUID) -> GradingResult:
     fluency = _validate_score(data["fluency_score"], "fluency_score")
     grammar = _validate_score(data["grammar_score"], "grammar_score")
     vocab = _validate_score(data["vocab_score"], "vocab_score")
+    pronunciation = _validate_optional_score(
+        data.get("pronunciation_clarity_score", data.get("pronunciation_score")),
+        "pronunciation_clarity_score",
+    )
 
     summary = str(data["summary"]).strip()
     if not summary:
@@ -110,7 +150,19 @@ def parse_grading_response(raw_json: str, *, session_id: UUID) -> GradingResult:
         raise LLMGraderError("LLM response corrections must be a list")
 
     corrections = _filter_corrections(raw_corrections)
-    overall = round(fluency * 0.30 + grammar * 0.35 + vocab * 0.35, 2)
+    skill_feedback = _filter_skill_feedback(
+        data.get("skill_feedback"),
+        fluency=fluency,
+        grammar=grammar,
+        vocab=vocab,
+        pronunciation=pronunciation,
+    )
+    overall = _weighted_overall_score(
+        fluency=fluency,
+        grammar=grammar,
+        vocab=vocab,
+        pronunciation=pronunciation,
+    )
 
     return GradingResult(
         session_id=session_id,
@@ -118,9 +170,17 @@ def parse_grading_response(raw_json: str, *, session_id: UUID) -> GradingResult:
         fluency_score=fluency,
         grammar_score=grammar,
         vocab_score=vocab,
+        pronunciation_score=pronunciation,
         ai_summary_feedback=summary,
         detailed_corrections=corrections,
         grader_version="llm_grader.v1",
+        provider="llm",
+        score_schema_version=(
+            SCORE_SCHEMA_WITH_PRONUNCIATION
+            if pronunciation is not None
+            else SCORE_SCHEMA_LEGACY
+        ),
+        skill_feedback=skill_feedback,
     )
 
 
@@ -151,6 +211,30 @@ def _validate_score(value: Any, field: str) -> float:
     return score
 
 
+def _validate_optional_score(value: Any, field: str) -> float | None:
+    if value is None or value == "":
+        return None
+    return _validate_score(value, field)
+
+
+def _weighted_overall_score(
+    *,
+    fluency: float,
+    grammar: float,
+    vocab: float,
+    pronunciation: float | None,
+) -> float:
+    if pronunciation is None:
+        return round(fluency * 0.30 + grammar * 0.35 + vocab * 0.35, 2)
+    return round(
+        fluency * 0.25
+        + grammar * 0.30
+        + vocab * 0.25
+        + pronunciation * 0.20,
+        2,
+    )
+
+
 _CORRECTION_REQUIRED_KEYS = {"turn_seq", "original", "corrected", "error_type", "explanation"}
 
 
@@ -169,3 +253,72 @@ def _filter_corrections(raw: list[Any]) -> list[dict[str, Any]]:
             "explanation": item["explanation"],
         })
     return result
+
+
+_SKILL_LABELS: dict[str, str] = {
+    "fluency": "Keep answers flowing in complete thoughts.",
+    "grammar": "Focus on one recurring grammar pattern in the next session.",
+    "vocabulary": "Add more precise words instead of repeating safe words.",
+    "pronunciation_clarity": "Practice short phrases clearly and compare the transcript confidence.",
+}
+
+
+def _filter_skill_feedback(
+    raw: Any,
+    *,
+    fluency: float,
+    grammar: float,
+    vocab: float,
+    pronunciation: float | None,
+) -> list[SkillFeedback]:
+    scores = {
+        "fluency": fluency,
+        "grammar": grammar,
+        "vocabulary": vocab,
+        "pronunciation_clarity": pronunciation,
+    }
+    result_by_skill: dict[str, SkillFeedback] = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            skill = str(item.get("skill") or "").strip().lower()
+            if skill == "vocab":
+                skill = "vocabulary"
+            if skill not in scores:
+                continue
+            score = scores[skill]
+            status = "insufficient_evidence" if score is None else "scored"
+            summary = str(item.get("summary") or "").strip()
+            suggestion = str(item.get("suggestion") or "").strip()
+            result_by_skill[skill] = SkillFeedback(
+                skill=skill,  # type: ignore[arg-type]
+                score=score,
+                status=status,  # type: ignore[arg-type]
+                summary=summary or _default_summary(skill, score),
+                suggestion=suggestion or _SKILL_LABELS[skill],
+            )
+
+    for skill, score in scores.items():
+        if skill in result_by_skill:
+            continue
+        result_by_skill[skill] = SkillFeedback(
+            skill=skill,  # type: ignore[arg-type]
+            score=score,
+            status="insufficient_evidence" if score is None else "scored",
+            summary=_default_summary(skill, score),
+            suggestion=_SKILL_LABELS[skill],
+        )
+
+    return [
+        result_by_skill["fluency"],
+        result_by_skill["grammar"],
+        result_by_skill["vocabulary"],
+        result_by_skill["pronunciation_clarity"],
+    ]
+
+
+def _default_summary(skill: str, score: float | None) -> str:
+    if score is None:
+        return f"{skill.replace('_', ' ').title()} could not be scored reliably from this session."
+    return f"{skill.replace('_', ' ').title()} scored {score:.1f}/10."

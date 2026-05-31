@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import ValidationError
 
@@ -35,6 +36,36 @@ def _get_fake_fallback_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _get_min_student_words() -> int:
+    raw = os.getenv("GRADING_MIN_STUDENT_WORDS", "25")
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("grading.invalid_min_student_words value=%r using_default=25", raw)
+        return 25
+    return max(parsed, 0)
+
+
+def _get_max_attempts() -> int:
+    raw = os.getenv("GRADING_MAX_ATTEMPTS", "2")
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("grading.invalid_max_attempts value=%r using_default=2", raw)
+        return 2
+    return max(parsed, 1)
+
+
+def _get_retry_delay_seconds() -> float:
+    raw = os.getenv("GRADING_RETRY_DELAY_SECONDS", "1.0")
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("grading.invalid_retry_delay_seconds value=%r using_default=1.0", raw)
+        return 1.0
+    return max(parsed, 0.0)
+
+
 def _build_grader_client() -> Any:
     from src.grading_provider_client import GroqClient
     llm_provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
@@ -57,7 +88,7 @@ def _build_grader_client() -> Any:
 
 
 async def process_session_completed_job(
-    payload: dict[str, Any],
+    payload: Any,
     *,
     repository: GradingRepository,
 ) -> None:
@@ -67,7 +98,7 @@ async def process_session_completed_job(
         logger.warning("grading.session_missing session_id=%s", job.session_id)
         return
 
-    min_student_words = int(os.getenv("GRADING_MIN_STUDENT_WORDS", "25"))
+    min_student_words = _get_min_student_words()
     eligibility = evaluate_grading_eligibility(
         session_row["raw_backup_json"],
         min_student_words=min_student_words,
@@ -80,31 +111,34 @@ async def process_session_completed_job(
             eligibility.student_word_count,
             min_student_words if eligibility.reason == "insufficient_words" else None,
         )
-        try:
-            await repository.log_grading_skip(
-                session_id=job.session_id,
-                reason=eligibility.reason,
-                source="worker",
-                student_word_count=eligibility.student_word_count,
-                min_words_threshold=min_student_words if eligibility.reason == "insufficient_words" else None,
-            )
-        except Exception as exc:
-            logger.warning(
-                "grading.skip_log_failed session_id=%s error=%s: %s",
-                job.session_id,
-                type(exc).__name__,
-                exc,
-            )
+        await repository.log_grading_skip(
+            session_id=job.session_id,
+            reason=eligibility.reason,
+            source="worker",
+            student_word_count=eligibility.student_word_count,
+            min_words_threshold=_min_words_threshold_for_skip(
+                eligibility.reason,
+                min_student_words,
+            ),
+        )
         return
 
     evaluation_input = build_evaluation_input(session_row)
     provider = _get_grading_provider()
+    if not await _mark_grading_processing_if_supported(
+        repository,
+        session_id=job.session_id,
+        provider=provider,
+    ):
+        logger.info("grading.already_graded session_id=%s", job.session_id)
+        return
     result: GradingResult
 
     if provider == "llm":
         try:
             client = _build_grader_client()
             result = await llm_grade_with_client(evaluation_input, client)
+            result.input_quality = dict(evaluation_input.quality_signals)
             result.detailed_corrections = [
                 {"type": "grader_info", "grader_version": result.grader_version, "message": ""},
                 *result.detailed_corrections,
@@ -119,6 +153,12 @@ async def process_session_completed_job(
                 )
                 result = fake_grade(evaluation_input)
             else:
+                await _mark_grading_failed_if_supported(
+                    repository=repository,
+                    session_id=job.session_id,
+                    provider=provider,
+                    exc=exc,
+                )
                 logger.error(
                     "grading.llm_failed_no_fallback session_id=%s error=%s: %s",
                     job.session_id,
@@ -129,6 +169,8 @@ async def process_session_completed_job(
     else:
         result = fake_grade(evaluation_input)
 
+    if not result.input_quality:
+        result.input_quality = dict(evaluation_input.quality_signals)
     await repository.upsert_grading_result(result)
     logger.info(
         "grading.completed session_id=%s overall_score=%.2f provider_requested=%s grader_version=%s",
@@ -146,32 +188,160 @@ async def consume_forever() -> None:
 
     rabbitmq_url = _build_rabbitmq_url()
     repository = GradingRepository(database_url)
+    await repository.open(
+        max_size=int(os.getenv("GRADING_DB_POOL_SIZE", "4")),
+    )
 
     try:
-        import aio_pika
-    except ImportError as exc:
-        raise RuntimeError("aio-pika is required to consume RabbitMQ jobs") from exc
+        await repository.assert_schema_ready()
 
-    connection = await aio_pika.connect_robust(rabbitmq_url)
-    async with connection:
-        channel = await connection.channel()
-        await channel.set_qos(prefetch_count=1)
-        queue = await channel.declare_queue(QUEUE_NAME, durable=True)
+        try:
+            import aio_pika
+        except ImportError as exc:
+            raise RuntimeError("aio-pika is required to consume RabbitMQ jobs") from exc
 
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process(requeue=False):
-                    try:
-                        payload = json.loads(message.body.decode("utf-8"))
-                        await process_session_completed_job(
-                            payload,
-                            repository=repository,
-                        )
-                    except (json.JSONDecodeError, ValidationError):
-                        logger.exception("grading.invalid_message")
-                    except Exception:
-                        logger.exception("grading.job_failed")
-                        raise
+        connection = await aio_pika.connect_robust(rabbitmq_url)
+        async with connection:
+            channel = await connection.channel()
+            await channel.set_qos(prefetch_count=1)
+            queue = await channel.declare_queue(QUEUE_NAME, durable=True)
+
+            logger.info("worker.ready queue=%s prefetch_count=%s", QUEUE_NAME, 1)
+
+            async with queue.iterator() as queue_iter:
+                async for message in queue_iter:
+                    await _handle_queue_message(message, repository=repository)
+    finally:
+        await repository.close()
+
+
+async def _process_payload_with_retries(
+    payload: Any,
+    *,
+    repository: GradingRepository,
+) -> None:
+    max_attempts = _get_max_attempts()
+    retry_delay = _get_retry_delay_seconds()
+    session_id = _payload_session_id_for_logging(payload)
+    last_exc: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await process_session_completed_job(payload, repository=repository)
+            return
+        except ValidationError:
+            raise
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "grading.job_attempt_failed session_id=%s attempt=%s max_attempts=%s error=%s: %s",
+                session_id,
+                attempt,
+                max_attempts,
+                type(exc).__name__,
+                exc,
+            )
+            if attempt < max_attempts and retry_delay > 0:
+                await asyncio.sleep(retry_delay * attempt)
+
+    if last_exc is None:
+        return
+    if session_id is None:
+        raise last_exc
+
+    try:
+        await repository.mark_grading_failed(
+            session_id=session_id,
+            provider=_get_grading_provider(),
+            error_code=type(last_exc).__name__,
+            error_message=str(last_exc),
+        )
+    except Exception as mark_exc:
+        logger.exception(
+            "grading.mark_failed_after_retries_failed session_id=%s",
+            session_id,
+        )
+        raise mark_exc from last_exc
+
+
+async def _handle_queue_message(
+    message: Any,
+    *,
+    repository: GradingRepository,
+) -> None:
+    try:
+        payload = json.loads(message.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.exception("grading.invalid_message")
+        await message.reject(requeue=False)
+        return
+
+    try:
+        await _process_payload_with_retries(payload, repository=repository)
+    except ValidationError:
+        logger.exception("grading.invalid_message")
+        await message.reject(requeue=False)
+    except Exception:
+        logger.exception("grading.job_requeued")
+        await message.nack(requeue=True)
+    else:
+        await message.ack()
+
+
+async def _mark_grading_processing_if_supported(
+    repository: GradingRepository,
+    *,
+    session_id: Any,
+    provider: str,
+) -> bool:
+    method = getattr(repository, "mark_grading_processing", None)
+    if method is None:
+        return True
+
+    result = await method(
+        session_id=session_id,
+        provider=provider,
+    )
+    return True if result is None else bool(result)
+
+
+async def _mark_grading_failed_if_supported(
+    *,
+    repository: GradingRepository,
+    session_id: Any,
+    provider: str,
+    exc: Exception,
+) -> None:
+    method = getattr(repository, "mark_grading_failed", None)
+    if method is None:
+        return
+    try:
+        await method(
+            session_id=session_id,
+            provider=provider,
+            error_code=type(exc).__name__,
+            error_message=str(exc),
+        )
+    except Exception as mark_exc:
+        logger.warning(
+            "grading.mark_failed_failed session_id=%s error=%s: %s",
+            session_id,
+            type(mark_exc).__name__,
+            mark_exc,
+        )
+
+
+def _payload_session_id_for_logging(payload: Any) -> Any | None:
+    try:
+        return SessionCompletedJob.model_validate(payload).session_id
+    except ValidationError:
+        return None
+
+
+def _min_words_threshold_for_skip(reason: str, min_student_words: int) -> int | None:
+    if reason == "insufficient_words":
+        return min_student_words
+    return None
 
 
 def _build_rabbitmq_url() -> str:
@@ -179,7 +349,7 @@ def _build_rabbitmq_url() -> str:
     port = os.getenv("RABBITMQ_PORT", "5672")
     user = os.getenv("RABBITMQ_USER", "guest")
     password = os.getenv("RABBITMQ_PASS", "guest")
-    return f"amqp://{user}:{password}@{host}:{port}/"
+    return f"amqp://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/"
 
 
 def main() -> None:

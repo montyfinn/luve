@@ -14,7 +14,7 @@ import pytest
 _GRADING_WORKER_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_GRADING_WORKER_ROOT / "scripts"))
 
-from reconciliation_scanner import run  # noqa: E402
+from reconciliation_scanner import _build_candidate_sql, run  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +75,22 @@ def _run_scanner(args: argparse.Namespace, rows: list, mock_job: AsyncMock) -> i
          patch("reconciliation_scanner.process_session_completed_job", mock_job), \
          patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake/testdb"}):
         return asyncio.run(run(args))
+
+
+def test_candidate_sql_retries_failed_rows_after_grace_window() -> None:
+    grace_threshold = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    sql, params = _build_candidate_sql(
+        grace_threshold=grace_threshold,
+        since=None,
+        session_id=None,
+        limit=50,
+    )
+
+    assert "(gr.session_id IS NULL OR (gr.status = 'failed' AND gr.updated_at < $1))" in sql
+    assert "s.ended_at < $1" in sql
+    assert "gr.status = 'graded'" not in sql
+    assert "gr.status = 'processing'" not in sql
+    assert params == [grace_threshold, 50]
 
 
 # ---------------------------------------------------------------------------

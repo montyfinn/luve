@@ -6,11 +6,13 @@ from collections import UserDict
 from src.session_eligibility import (
     DEFAULT_MIN_STUDENT_WORDS,
     GradingEligibility,
+    count_reliable_student_words,
     count_student_words,
     count_user_turns,
     evaluate_grading_eligibility,
     get_event_kind,
     get_event_text,
+    is_reliable_student_event,
     parse_raw_backup_events,
 )
 
@@ -294,6 +296,103 @@ def test_evaluate_per_event_json_string():
     assert result.reason == "eligible"
     assert result.user_turn_count == 1
     assert result.student_word_count == 5
+
+
+def test_uncertain_caution_stt_turns_count_for_grading():
+    raw = [
+        {
+            "type": "USER_TURN",
+            "payload": {
+                "text": " ".join(f"word{i}" for i in range(30)),
+                "stt_quality": "uncertain",
+                "uncertainty_reasons": [
+                    "low_average_logprob",
+                    "many_low_confidence_words",
+                    "possible_stt_autocorrection",
+                    "possible_hallucination_soft",
+                ],
+                "possible_stt_autocorrection": True,
+                "possible_hallucination": True,
+            },
+        }
+    ]
+
+    assert is_reliable_student_event(raw[0]) is True
+    assert count_student_words(raw) == 30
+    assert count_reliable_student_words(raw) == 30
+
+    result = evaluate_grading_eligibility(raw, min_student_words=25)
+    assert result.eligible is True
+    assert result.reason == "eligible"
+    assert result.user_turn_count == 1
+    assert result.student_word_count == 30
+    assert result.reliable_student_word_count == 30
+
+
+def test_explicit_hard_exclusion_metadata_blocks_grading():
+    hard_payloads = [
+        {"text": "one two three", "grading_eligible": False},
+        {"text": "one two three", "excluded_from_grading_reason": "non_target_language"},
+        {"text": "one two three", "turn_language_type": "vietnamese"},
+        {"text": "one two three", "turn_language_type": "noise"},
+        {"text": "one two three", "uncertainty_reasons": ["verification_language_mismatch"]},
+        {"text": "one two three", "uncertainty_reasons": ["non_english_verification_failed"]},
+        {"text": "one two three", "uncertainty_reasons": ["hallucination_suspected"]},
+        {"text": "one two three", "uncertainty_reasons": ["empty_transcript"]},
+        {"text": "one two three", "uncertainty_reasons": ["background_noise"]},
+        {"text": "one two three", "uncertainty_reasons": ["weak_mixed_language_english"]},
+    ]
+
+    for payload in hard_payloads:
+        event = {"type": "USER_TURN", "payload": payload}
+        assert is_reliable_student_event(event) is False, payload
+
+
+def test_empty_exclusion_reason_and_missing_metadata_do_not_block_grading():
+    raw = [
+        {
+            "type": "USER_TURN",
+            "payload": {
+                "text": "one two three four five",
+                "excluded_from_grading_reason": "",
+                "stt_quality": "uncertain",
+                "uncertainty_reasons": ["verification_unavailable"],
+            },
+        }
+    ]
+
+    assert is_reliable_student_event(raw[0]) is True
+    assert count_reliable_student_words(raw) == 5
+
+
+def test_english_segment_counts_for_grading_when_present():
+    raw = [
+        {
+            "type": "USER_TURN",
+            "payload": {
+                "text": "I want to practice",
+                "english_segment": "I want to practice",
+                "original_stt_text": "I want to practice tiếng Anh",
+                "stt_quality": "uncertain",
+                "uncertainty_reasons": ["mixed_language_filtered"],
+                "grading_eligible": True,
+            },
+        }
+    ]
+
+    assert is_reliable_student_event(raw[0]) is True
+    assert count_reliable_student_words(raw) == 4
+
+
+def test_legacy_turn_without_stt_metadata_counts_as_reliable():
+    raw = [{"type": "USER_TURN", "payload": {"text": "one two three four five"}}]
+
+    assert is_reliable_student_event(raw[0]) is True
+    assert count_reliable_student_words(raw) == 5
+    result = evaluate_grading_eligibility(raw, min_student_words=5)
+    assert result.eligible is True
+    assert result.student_word_count == 5
+    assert result.reliable_student_word_count == 5
 
 
 def test_default_min_student_words_constant():

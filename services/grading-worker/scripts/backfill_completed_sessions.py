@@ -124,7 +124,7 @@ def _build_candidate_sql(
     wheres = [
         "s.status = 'completed'",
         "s.deleted_at IS NULL",
-        "gr.session_id IS NULL",
+        "(gr.session_id IS NULL OR gr.status = 'failed')",
     ]
     params: list[Any] = []
 

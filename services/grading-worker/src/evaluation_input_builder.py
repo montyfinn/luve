@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from src.contracts import EvaluationInput, EvaluationTurn
+from src.session_eligibility import get_event_grading_text, is_reliable_student_event
 
 
 def build_evaluation_input(
@@ -27,6 +28,7 @@ def build_evaluation_input(
     ignored_events_count = 0
     empty_text_events_count = 0
     missing_timestamp_count = 0
+    unreliable_student_turn_count = 0
     turns: list[EvaluationTurn] = []
 
     for event in raw_events:
@@ -42,15 +44,30 @@ def build_evaluation_input(
         payload = event.get("payload")
         if not isinstance(payload, Mapping):
             payload = {}
-        text = str(payload.get("text") or event.get("text") or "").strip()
+        if source == "USER_TURN":
+            text = get_event_grading_text(event)
+        else:
+            text = str(payload.get("text") or event.get("text") or "").strip()
         if not text:
             empty_text_events_count += 1
+            ignored_events_count += 1
+            continue
+        if source == "USER_TURN" and not is_reliable_student_event(event):
+            unreliable_student_turn_count += 1
             ignored_events_count += 1
             continue
 
         timing = _extract_timing_ms(payload)
         if all(timing.get(key) is None for key in ("start_ms", "end_ms", "duration_ms")):
             missing_timestamp_count += 1
+
+        uncertainty_reasons = _coerce_string_list(payload.get("uncertainty_reasons"))
+        if (
+            source == "USER_TURN"
+            and bool(payload.get("possible_hallucination", False))
+            and "possible_hallucination_soft" not in uncertainty_reasons
+        ):
+            uncertainty_reasons.append("possible_hallucination_soft")
 
         turns.append(
             EvaluationTurn(
@@ -61,11 +78,21 @@ def build_evaluation_input(
                 start_ms=timing["start_ms"],
                 end_ms=timing["end_ms"],
                 duration_ms=timing["duration_ms"],
+                stt_quality=_coerce_stt_quality(payload.get("stt_quality")),
+                stt_uncertainty_reasons=uncertainty_reasons,
+                possible_stt_autocorrection=bool(
+                    payload.get("possible_stt_autocorrection", False)
+                ),
             )
         )
 
     user_turn_count = sum(1 for turn in turns if turn.speaker == "student")
     assistant_turn_count = sum(1 for turn in turns if turn.speaker == "assistant")
+    uncertain_student_turn_count = sum(
+        1
+        for turn in turns
+        if turn.speaker == "student" and turn.stt_quality == "uncertain"
+    )
     total_student_words = sum(
         len(turn.text.split()) for turn in turns if turn.speaker == "student"
     )
@@ -79,9 +106,12 @@ def build_evaluation_input(
         quality_signals={
             "ignored_events_count": ignored_events_count,
             "empty_text_events_count": empty_text_events_count,
+            "unreliable_student_turn_count": unreliable_student_turn_count,
+            "excluded_student_turn_count": unreliable_student_turn_count,
             "missing_timestamp_count": missing_timestamp_count,
             "user_turn_count": user_turn_count,
             "assistant_turn_count": assistant_turn_count,
+            "uncertain_student_turn_count": uncertain_student_turn_count,
             "student_word_count": total_student_words,
             "has_student_turns": user_turn_count > 0,
             "has_assistant_turns": assistant_turn_count > 0,
@@ -170,3 +200,23 @@ def _coerce_optional_int(value: Any) -> int | None:
     if number < 60 and not float(number).is_integer():
         number *= 1000
     return int(round(number))
+
+
+def _coerce_stt_quality(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"confident", "uncertain"}:
+        return normalized
+    return None
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip()
+        if normalized:
+            result.append(normalized)
+    return result
