@@ -16,6 +16,12 @@ services:
       - ./infrastructure/db-init/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
     networks:
       - luve_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dat_admin} -d ${POSTGRES_DB:-luve_database}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # KHU VỰC 5B: REDIS (Dùng cho Rate Limiting & Real-time Transcript)
   redis_cache:
@@ -31,6 +37,12 @@ services:
       - redis_data:/data
     networks:
       - luve_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # KHU VỰC 4: RABBITMQ
   rabbitmq_queue:
@@ -44,12 +56,132 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - luve_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  grading_worker:
+    build:
+      context: ./services/grading-worker
+    container_name: luve_grading_worker
+    restart: unless-stopped
+    profiles:
+      - app
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq_queue:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${GRADING_DATABASE_URL:-}
+      RABBITMQ_HOST: rabbitmq_queue
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
+      GRADING_PROVIDER: ${GRADING_PROVIDER:-fake}
+      GRADING_FAKE_FALLBACK: ${GRADING_FAKE_FALLBACK:-false}
+      GRADING_MIN_STUDENT_WORDS: ${GRADING_MIN_STUDENT_WORDS:-25}
+      GRADING_MAX_ATTEMPTS: ${GRADING_MAX_ATTEMPTS:-2}
+      GRADING_RETRY_DELAY_SECONDS: ${GRADING_RETRY_DELAY_SECONDS:-1.0}
+      GRADING_DB_POOL_SIZE: ${GRADING_DB_POOL_SIZE:-4}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      GROQCLOUD_API_KEY: ${GROQCLOUD_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      GROQ_TIMEOUT_SECONDS: ${GROQ_TIMEOUT_SECONDS:-20.0}
+    networks:
+      - luve_network
+
+  # KHU VỰC 1: CORE API (FastAPI, port 8000)
+  core_api:
+    build:
+      context: ./services/core-api
+    image: luve-core-api:local
+    container_name: luve_core_api
+    restart: unless-stopped
+    profiles:
+      - app
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      REDIS_URL: ${REDIS_URL:-redis://redis_cache:6379}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "8000:8000"
+    networks:
+      - luve_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # KHU VỰC 2: TEN / WebRTC GATEWAY (port 8080) — reuses the core_api image.
+  # No `build:` here on purpose: core_api builds luve-core-api:local and this
+  # service reuses that tag (avoids building the same image twice). First run
+  # must therefore use `docker compose --profile app up --build` so core_api
+  # produces the image before ten_gateway starts.
+  ten_gateway:
+    image: luve-core-api:local
+    container_name: luve_ten_gateway
+    restart: unless-stopped
+    profiles:
+      - app
+    command: ["python", "run_ten.py"]
+    # depends_on here is app-readiness ordering only; it does NOT control image
+    # build order.
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq_queue:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      REDIS_URL: ${REDIS_URL:-redis://redis_cache:6379}
+      RABBITMQ_HOST: rabbitmq_queue
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      GROQCLOUD_API_KEY: ${GROQCLOUD_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      STT_LANGUAGE_MODE: ${STT_LANGUAGE_MODE:-forced_en}
+      STT_MODEL_SIZE: ${STT_MODEL_SIZE:-small.en}
+      STT_ENABLE_SECOND_PASS_VERIFICATION: ${STT_ENABLE_SECOND_PASS_VERIFICATION:-false}
+      HF_HOME: /cache/huggingface
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "8080:8080"
+    volumes:
+      - hf_cache:/cache/huggingface
+    networks:
+      - luve_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:
+  hf_cache:
 
 
 networks:
