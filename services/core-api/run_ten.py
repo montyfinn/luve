@@ -12,7 +12,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.core.config import settings
@@ -107,6 +107,22 @@ async def control_center() -> FileResponse:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe: 200 once lifespan has initialized the gateway manager.
+
+    Liveness stays on /healthz. This checks only in-process startup state — no
+    DB ping, no Groq/STT/model calls, no WebRTC hot-path interaction.
+    """
+    gateway = getattr(app.state, "gateway", None)
+    if gateway is not None:
+        return {"status": "ready", "checks": {"gateway": "initialized"}}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready", "checks": {"gateway": "uninitialized"}},
+    )
 
 
 @app.get("/rtc/health")

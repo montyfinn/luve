@@ -2,12 +2,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from src.api.v1 import auth, sessions, stream
 from src.api.v1.stream import WebSocketHandshakeTimingMiddleware
 from src.core.cors import get_cors_allow_origins
+from src.core.db import engine
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -46,3 +48,29 @@ async def root():
         "status": "Running",
         "docs": "/docs",
     }
+
+
+async def _database_reachable() -> bool:
+    """Cheap, read-only DB connectivity probe (SELECT 1). No mutation, no secrets."""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        # Swallow the exception (which may embed the DSN) — never leak it to the caller.
+        return False
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe for operators/orchestrators: 200 iff the database is reachable.
+
+    Distinct from `/` (liveness). Checks only the DB; never touches RabbitMQ,
+    Redis, Groq, STT, or external network.
+    """
+    if await _database_reachable():
+        return {"status": "ready", "checks": {"database": "ok"}}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready", "checks": {"database": "unreachable"}},
+    )
