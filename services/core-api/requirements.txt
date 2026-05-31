@@ -6,6 +6,7 @@ redis
 aio-pika
 numpy
 av
+aiortc
 faster-whisper
 edge-tts
 pydantic[email]

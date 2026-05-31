@@ -1,0 +1,22 @@
+# Local dev environment / build artifacts — never ship in the image
+venv/
+__pycache__/
+*.pyc
+*.pyo
+tests/
+scripts/
+output/
+
+# Secrets and local config
+.env
+.env*
+
+# Tooling indexes / scan output
+.codegraph/
+.understand-anything/
+
+# VCS / editor noise
+.git/
+.gitignore
+.mypy_cache/
+.pytest_cache/
