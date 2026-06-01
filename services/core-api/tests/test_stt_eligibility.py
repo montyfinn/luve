@@ -571,6 +571,33 @@ def test_vietnamese_suppression_and_learner_phrases(
     )
 
 
+def test_english_homographs_not_treated_as_vietnamese(
+    extension: MockLUVEExtension,
+) -> None:
+    # Regression: common English finals contain unaccented VN homographs
+    # (the/it/he). They must NOT be flagged as Vietnamese or split as mixed.
+    english_finals = [
+        "he is my friend",
+        "the lesson is good",
+        "it is good",
+        "I like the coffee",
+        "the light is on",
+        "the boat is in the bay",
+        "touch your chin",
+    ]
+    for text in english_finals:
+        assert extension._contains_vietnamese_text(text) is False, text
+        assert extension._split_mixed_language_transcript(text) == (text, []), text
+
+    # Real Vietnamese is still detected and suppressed (accents + multi-token).
+    assert extension._contains_vietnamese_text("Tôi đi học hôm nay") is True
+    assert extension._contains_vietnamese_text("thế nào rồi") is True
+    assert extension._split_mixed_language_transcript("hom nay troi dep qua") == (
+        "",
+        ["mixed_non_english"],
+    )
+
+
 def test_mixed_language_filtered_metadata_preserves_original_text(
     extension: MockLUVEExtension,
 ) -> None:

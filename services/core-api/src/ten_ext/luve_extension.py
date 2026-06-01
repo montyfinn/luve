@@ -129,6 +129,12 @@ LOW_INFORMATION_SHORT_TOKENS = {
     "you",
 }
 
+# Unaccented Vietnamese phonetic tokens that are ALSO extremely common standalone
+# English words. Real Vietnamese forms (thế, ít, hệ) carry accents and are still
+# caught by VIETNAMESE_ACCENTED_CHARS; only the bare homograph forms are excluded
+# from single-token phonetic matching so normal English finals are not corrupted.
+AMBIGUOUS_ENGLISH_HOMOGRAPHS = {"the", "it", "he", "on", "bay", "chin"}
+
 VIETNAMESE_PHONETIC_TOKENS = {
     # Unaccented Vietnamese words/phonemes
     "toi", "toy", "di", "dee", "hoc", "xin", "chao", "ban", "hom", "nay", "troi", "dep", "qua",
@@ -2197,7 +2203,11 @@ class LUVEExtension(ten.Extension):
         if any(char in raw_lower for char in VIETNAMESE_ACCENTED_CHARS):
             return True
 
-        return any(word in VIETNAMESE_PHONETIC_TOKENS for word in normalized.split())
+        return any(
+            word in VIETNAMESE_PHONETIC_TOKENS
+            and word not in AMBIGUOUS_ENGLISH_HOMOGRAPHS
+            for word in normalized.split()
+        )
 
     def _is_incomplete_short_english_fragment(self, text: str) -> bool:
         normalized = self._normalize_stt_text(text)
@@ -2212,7 +2222,11 @@ class LUVEExtension(ten.Extension):
         normalized = self._normalize_stt_text(token)
         if not normalized:
             return False
-        return any(word in VIETNAMESE_PHONETIC_TOKENS for word in normalized.split())
+        return any(
+            word in VIETNAMESE_PHONETIC_TOKENS
+            and word not in AMBIGUOUS_ENGLISH_HOMOGRAPHS
+            for word in normalized.split()
+        )
 
     def _is_plausible_short_english_text(self, text: str) -> bool:
         normalized = self._normalize_stt_text(text)
