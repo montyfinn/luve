@@ -246,6 +246,8 @@ Do not generalize this as production readiness. It proves the current local base
 - Grading worker currently uses fake grader, not final pedagogical grading.
 - Worker uses `requeue=False`; generic worker failures can drop jobs unless DLX/backfill/outbox is added.
 - Stress harness creates real DB sessions and can publish real `session.completed` events in dev.
+- Readiness vs liveness (T4a): `core_api GET /readyz` checks DB reachability via `SELECT 1` (200/503, no DSN leak); `ten_gateway GET /readyz` is **shallow startup readiness only** (gateway/extension initialized) and intentionally does NOT ping DB/Groq/STT/WebRTC hot path. Therefore gateway `/readyz` can return 200 while DB-dependent `/rtc/offer` and session-ownership checks through `SQLSessionStore` would fail if the DB is down. DB health is surfaced by `core_api /readyz`, not the gateway probe.
+- Compose healthchecks remain **liveness** checks (API `/`, gateway `/healthz`) and are intentionally separate from `/readyz`. Orchestrators may consume `/readyz` for readiness gating, but gating Compose healthchecks on `/readyz` is a future explicit task, not done here.
 
 ## J. Next Recommended Task
 
