@@ -92,6 +92,6 @@ CREATE INDEX idx_sessions_user_id ON SESSIONS(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_grading_session_id ON GRADING_RESULTS(session_id);
 CREATE INDEX idx_grading_status ON GRADING_RESULTS(status);
 CREATE INDEX idx_grading_updated_at ON GRADING_RESULTS(updated_at DESC);
-CREATE INDEX idx_grading_skip_reason ON GRADING_SKIP_LOG(skipped_reason);
-CREATE INDEX idx_grading_skip_updated_at ON GRADING_SKIP_LOG(updated_at DESC);
+CREATE INDEX grading_skip_log_skipped_reason_idx ON GRADING_SKIP_LOG(skipped_reason);
+CREATE INDEX grading_skip_log_skipped_at_idx ON GRADING_SKIP_LOG(skipped_at DESC);
 CREATE INDEX idx_users_email ON USERS(email) WHERE deleted_at IS NULL;
