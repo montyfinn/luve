@@ -330,6 +330,28 @@ docker exec luve_rabbitmq rabbitmqctl list_connections name state channels
 
 Do not print credentials or tokens when running diagnostics.
 
+## L2. Observability / Metrics Surfaces
+
+Useful telemetry already exists; T4b is documentation-only (no new code or dependencies).
+
+- **Gateway sessions** — `GET /rtc/health` (ten_gateway :8080) returns a runtime snapshot: `active_sessions`, `closed_sessions_total`, `max_session_age_seconds`, plus per-session connection/ICE state, `queued_frames`, data channels, and tasks.
+- **Readiness / liveness** — `core_api GET /readyz` = DB readiness (`SELECT 1`); `ten_gateway GET /readyz` = shallow startup readiness only. Compose healthchecks stay liveness-oriented (API `/`, gateway `/healthz`) and are intentionally separate from `/readyz`.
+- **RabbitMQ** — the management API on `:15672` exposes queue/DLQ depth, consumers, and message rates; the `rabbitmq_prometheus` plugin exposes Prometheus-format broker metrics on `:15692` inside the image (compose does NOT publish 15692 by default). The dead-letter queue is `luve.session.completed.dlq`.
+
+  ```bash
+  # queue + DLQ depth (no app code needed)
+  docker exec luve_rabbitmq rabbitmqctl list_queues name messages consumers | grep luve.session.completed
+  ```
+- **Grading worker outcomes** — the DB is the source of truth, not an app metric:
+
+  ```sql
+  SELECT status, count(*) FROM grading_results GROUP BY status;          -- graded / failed / processing
+  SELECT skipped_reason, count(*) FROM grading_skip_log GROUP BY skipped_reason;
+  ```
+  Worker logs use greppable event names: `grading.completed`, `grading.job_requeued`, `grading.session_ineligible`, `grading.job_attempt_failed`, `worker.ready`.
+- **Non-goals (current):** no `prometheus_client` dependency, no app `/metrics` endpoint, no worker HTTP metrics server. If metrics are added later, avoid high-cardinality labels such as `session_id`.
+- **Future:** a small JSON `/metrics` (DB-derived counts) or a Prometheus integration can be added later only if scrape/ops requirements justify it.
+
 ## M. Mermaid Graphs
 
 ### Folder / Module Graph
