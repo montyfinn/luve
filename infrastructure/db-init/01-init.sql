@@ -87,6 +87,23 @@ CREATE TABLE GRADING_SKIP_LOG (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 6. BẢNG SESSION_OUTBOX: Transactional outbox (T7) — session.completed event
+-- được ghi cùng transaction với trạng thái session; relay publish sang RabbitMQ sau.
+CREATE TABLE SESSION_OUTBOX (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES SESSIONS(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    schema_version TEXT NOT NULL DEFAULT 'v1',
+    payload JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'published', 'failed')),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    published_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE (session_id, event_type)
+);
+
 -- INDEXING: Tối ưu hóa triệt để
 CREATE INDEX idx_sessions_user_id ON SESSIONS(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_grading_session_id ON GRADING_RESULTS(session_id);
@@ -95,3 +112,4 @@ CREATE INDEX idx_grading_updated_at ON GRADING_RESULTS(updated_at DESC);
 CREATE INDEX grading_skip_log_skipped_reason_idx ON GRADING_SKIP_LOG(skipped_reason);
 CREATE INDEX grading_skip_log_skipped_at_idx ON GRADING_SKIP_LOG(skipped_at DESC);
 CREATE INDEX idx_users_email ON USERS(email) WHERE deleted_at IS NULL;
+CREATE INDEX session_outbox_pending_idx ON SESSION_OUTBOX(created_at) WHERE status = 'pending';
