@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock
@@ -139,6 +140,7 @@ async def test_queue_message_requeues_when_terminal_state_is_not_durable(
     monkeypatch.setenv("GRADING_PROVIDER", "fake")
     monkeypatch.setenv("GRADING_MAX_ATTEMPTS", "1")
     monkeypatch.setenv("GRADING_RETRY_DELAY_SECONDS", "0")
+    monkeypatch.setenv("GRADING_REQUEUE_BACKOFF_SECONDS", "0")
 
     repo = _FailingRepo(mark_failed_raise=RuntimeError("db still unavailable"))
     message = _FakeMessage(json.dumps(_PAYLOAD).encode("utf-8"))
@@ -146,6 +148,28 @@ async def test_queue_message_requeues_when_terminal_state_is_not_durable(
 
     message.ack.assert_not_awaited()
     message.nack.assert_awaited_once_with(requeue=True)
+    message.reject.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_queue_message_sleeps_before_requeue_when_terminal_state_not_durable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRADING_PROVIDER", "fake")
+    monkeypatch.setenv("GRADING_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("GRADING_RETRY_DELAY_SECONDS", "0")
+    monkeypatch.setenv("GRADING_REQUEUE_BACKOFF_SECONDS", "7")
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep_mock)
+
+    repo = _FailingRepo(mark_failed_raise=RuntimeError("db still unavailable"))
+    message = _FakeMessage(json.dumps(_PAYLOAD).encode("utf-8"))
+    await _handle_queue_message(message, repository=repo)  # type: ignore[arg-type]
+
+    sleep_mock.assert_awaited_once_with(7.0)
+    message.nack.assert_awaited_once_with(requeue=True)
+    message.ack.assert_not_awaited()
     message.reject.assert_not_awaited()
 
 

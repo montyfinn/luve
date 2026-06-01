@@ -66,6 +66,18 @@ def _get_retry_delay_seconds() -> float:
     return max(parsed, 0.0)
 
 
+def _get_requeue_backoff_seconds() -> float:
+    # Fixed delay before nack(requeue=True) when terminal state cannot be
+    # persisted (DB down), to avoid a tight redeliver loop. 0 disables.
+    raw = os.getenv("GRADING_REQUEUE_BACKOFF_SECONDS", "5.0")
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("grading.invalid_requeue_backoff_seconds value=%r using_default=5.0", raw)
+        return 5.0
+    return max(parsed, 0.0)
+
+
 def _build_grader_client() -> Any:
     from src.grading_provider_client import GroqClient
     llm_provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
@@ -283,6 +295,9 @@ async def _handle_queue_message(
         await message.reject(requeue=False)
     except Exception:
         logger.exception("grading.job_requeued")
+        backoff = _get_requeue_backoff_seconds()
+        if backoff > 0:
+            await asyncio.sleep(backoff)
         await message.nack(requeue=True)
     else:
         await message.ack()
