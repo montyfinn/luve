@@ -21,12 +21,14 @@ cp .env.example .env
 cp services/core-api/.env.example services/core-api/.env
 cp services/grading-worker/.env.example services/grading-worker/.env
 
-# 2. Start the whole backend
-docker compose up -d
+# 2. Start the whole backend (app services live behind the `app` profile;
+#    first run needs --build so ten_gateway can reuse the core_api image).
+#    Plain `docker compose up -d` starts only infra (Postgres/Redis/RabbitMQ).
+docker compose --profile app up -d --build
 
 # 3. Check status / logs
 docker compose ps
-docker compose logs -f core-api
+docker compose logs -f core_api
 ```
 
 Real `.env` files are git-ignored and must never be committed; only the
@@ -105,7 +107,10 @@ Dưới đây là sơ đồ luồng dữ liệu thời gian thực (Real-time Da
 ### 1. Chạy toàn bộ backend với Docker Compose
 
 ```bash
-docker compose up -d
+# App services nằm sau profile "app"; lần chạy đầu cần --build để ten_gateway
+# dùng lại image core_api. (`docker compose up -d` không kèm profile chỉ khởi
+# động hạ tầng: Postgres/Redis/RabbitMQ.)
+docker compose --profile app up -d --build
 ```
 
 ### 2. Kiểm tra trạng thái các service
@@ -117,7 +122,7 @@ docker compose ps
 ### 3. Xem log của một service 
 
 ```bash
-docker compose logs -f core-api # Xem log trạm kiểm soát chính
+docker compose logs -f core_api # Xem log trạm kiểm soát chính
 ```
 
 ### 4. Dừng toàn bộ hệ thống
@@ -129,13 +134,13 @@ docker compose down
 ## 5. Xem log nhà máy xử lý âm thanh
 
 ```bash
-docker compose logs -f media-server
+docker compose logs -f ten_gateway
 ```
 
 ### 6. Xem log hội đồng giám khảo chấm điểm
 
 ```bash
-docker compose logs -f grading-worker
+docker compose logs -f grading_worker
 ```
 
 ## ⚙️ Cấu hình môi trường
@@ -168,7 +173,7 @@ cp .env.example .env
 
 - Không cần tạo thư mục code cho Database, Redis, RabbitMQ
 - File `docker-compose.yml` tự động tải images có sẵn từ Docker Hub
-- 1 lệnh `docker compose up -d` = toàn bộ hệ thống chạy
+- 1 lệnh `docker compose --profile app up -d --build` = toàn bộ hệ thống chạy (không kèm `--profile app` chỉ chạy hạ tầng)
 
 ### 🔐 Quy tắc 3: Bảo mật file .env
 
