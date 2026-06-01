@@ -1,5 +1,56 @@
 # LUVE Workspace - Monorepo Architecture
 
+## 🌐 About Luve (English)
+
+**Luve** is an open-source, real-time AI backend for speech and pronunciation
+learning, organized as a Docker Compose monorepo with four cooperating parts:
+
+- **core-api** (FastAPI) — session control, auth, and the realtime gateway.
+- **media-server** — a TEN-Framework-compatible realtime pipeline
+  (WebRTC → VAD → STT → LLM → TTS).
+- **grading-worker** — asynchronous post-session scoring via an LLM provider (Groq).
+- **infrastructure** — PostgreSQL, RabbitMQ, and Redis, wired through `docker-compose.yml`.
+
+Services never import each other's code; they communicate over HTTP and RabbitMQ.
+
+### Quick start
+
+```bash
+# 1. Provide configuration (copy each template, fill in real values locally)
+cp .env.example .env
+cp services/core-api/.env.example services/core-api/.env
+cp services/grading-worker/.env.example services/grading-worker/.env
+
+# 2. Start the whole backend
+docker compose up -d
+
+# 3. Check status / logs
+docker compose ps
+docker compose logs -f core-api
+```
+
+Real `.env` files are git-ignored and must never be committed; only the
+`.env.example` templates are tracked.
+
+### Project status (honest)
+
+Luve is under active DevOps/reliability hardening and is **not** a finished
+product:
+
+- **Realtime STT** has so far been validated only in a constrained demo
+  configuration (forced English, `small.en` model, second-pass disabled).
+  Multilingual / auto-language STT is **not** production-validated.
+- **Reliability work in progress:** a RabbitMQ dead-letter queue for poison
+  messages is in place; a transactional session-outbox **foundation** (schema +
+  helper) exists, but the outbox relay is **not yet wired into the runtime**, so
+  event publishing is not yet exactly-once.
+- Some hot-path improvements are still local work-in-progress and are not part
+  of the published history yet.
+
+See `docs/ai/PROJECT_STATE.md` for the detailed baseline and known limitations.
+
+---
+
 ## 📋 Cấu trúc dự án
 
 ```
