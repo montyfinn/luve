@@ -111,3 +111,8 @@ services/core-api/testdata/stt_cases.json
 # Audio Processing temporary files
 temp_audio/
 *.spectrogram
+
+# Local AI-tool artifacts & scratch files (never publish)
+.understand-anything/
+docs/system-map.md
+réume
