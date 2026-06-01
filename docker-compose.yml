@@ -46,7 +46,7 @@ services:
 
   # KHU VỰC 4: RABBITMQ
   rabbitmq_queue:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.13-management-alpine
     container_name: luve_rabbitmq
     restart: always
     environment:
@@ -73,7 +73,7 @@ services:
   # arguments (avoids PRECONDITION_FAILED 406). Reuses the rabbitmq image only
   # as an rabbitmqadmin client — it does NOT start a broker (command override).
   rabbitmq_init:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.13-management-alpine
     container_name: luve_rabbitmq_init
     profiles:
       - app
