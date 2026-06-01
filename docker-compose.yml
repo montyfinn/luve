@@ -50,7 +50,7 @@ services:
     container_name: luve_rabbitmq
     restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       TZ: Asia/Ho_Chi_Minh
     ports:
@@ -83,7 +83,7 @@ services:
       DATABASE_URL: ${GRADING_DATABASE_URL:?set GRADING_DATABASE_URL in .env}
       RABBITMQ_HOST: rabbitmq_queue
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
       RABBITMQ_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       GRADING_PROVIDER: ${GRADING_PROVIDER:-fake}
       GRADING_FAKE_FALLBACK: ${GRADING_FAKE_FALLBACK:-false}
@@ -154,7 +154,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis_cache:6379}
       RABBITMQ_HOST: rabbitmq_queue
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
       RABBITMQ_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
       LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GROQCLOUD_API_KEY: ${GROQCLOUD_API_KEY:-}
