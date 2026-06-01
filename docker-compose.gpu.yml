@@ -1,0 +1,20 @@
+# Opt-in GPU override for ten_gateway STT (T9). NOT loaded by default.
+#
+# Default CPU startup is unchanged:
+#     docker compose --profile app up -d
+#
+# Opt in to GPU STT (ten_gateway only) by layering this file:
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+#
+# This overrides ONLY ten_gateway: it builds the CUDA image (Dockerfile.gpu),
+# tags it separately (luve-core-api:gpu), and grants GPU access (gpus: all).
+# core_api and every other service keep the CPU image (luve-core-api:local).
+# All other ten_gateway settings (env, ports, volumes, depends_on, healthcheck,
+# command) are inherited from docker-compose.yml.
+services:
+  ten_gateway:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile.gpu
+    image: luve-core-api:gpu
+    gpus: all
