@@ -67,6 +67,31 @@ services:
       retries: 5
       start_period: 30s
 
+  # One-shot: declare the grading dead-letter topology (DLX + DLQ + binding +
+  # dead-letter policy) via the management HTTP API. Idempotent; exits after
+  # running. Uses a policy so it never changes the existing queue's declare
+  # arguments (avoids PRECONDITION_FAILED 406). Reuses the rabbitmq image only
+  # as an rabbitmqadmin client — it does NOT start a broker (command override).
+  rabbitmq_init:
+    image: rabbitmq:3-management-alpine
+    container_name: luve_rabbitmq_init
+    profiles:
+      - app
+    depends_on:
+      rabbitmq_queue:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq_queue
+      RABBITMQ_MGMT_PORT: 15672
+      RABBITMQ_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
+    volumes:
+      - ./infrastructure/rabbitmq/init-dlq.sh:/init-dlq.sh:ro
+    command: ["sh", "/init-dlq.sh"]
+    restart: "no"
+    networks:
+      - luve_network
+
   grading_worker:
     build:
       context: ./services/grading-worker
@@ -79,6 +104,8 @@ services:
         condition: service_healthy
       rabbitmq_queue:
         condition: service_healthy
+      rabbitmq_init:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: ${GRADING_DATABASE_URL:?set GRADING_DATABASE_URL in .env}
       RABBITMQ_HOST: rabbitmq_queue
