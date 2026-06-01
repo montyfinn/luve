@@ -1,221 +1,175 @@
-# LUVE Workspace - Monorepo Architecture
+# LUVE
 
-## 🌐 About Luve (English)
+**LUVE** is an open-source backend for **real-time English speaking practice**. A
+browser "control center" streams microphone audio over WebRTC to a realtime
+pipeline (VAD → speech-to-text → LLM reply → text-to-speech), and after a session
+ends the conversation is scored asynchronously by an LLM grader.
 
-**Luve** is an open-source, real-time AI backend for speech and pronunciation
-learning, organized as a Docker Compose monorepo with four cooperating parts:
+It is a Docker Compose monorepo of independent services that communicate over HTTP
+and RabbitMQ — they never import each other's code.
 
-- **core-api** (FastAPI) — session control, auth, and the realtime gateway.
-- **media-server** — a TEN-Framework-compatible realtime pipeline
-  (WebRTC → VAD → STT → LLM → TTS).
-- **grading-worker** — asynchronous post-session scoring via an LLM provider (Groq).
-- **infrastructure** — PostgreSQL, RabbitMQ, and Redis, wired through `docker-compose.yml`.
+## Status
 
-Services never import each other's code; they communicate over HTTP and RabbitMQ.
+**Local / dev / demo-ready — not production-ready.** It runs end-to-end on a
+single machine for demos and development. Production deployment still needs:
+TLS / reverse proxy, secrets management, CI/CD, production migration workflow,
+observability/metrics, deployment hardening, and the transactional-outbox
+**runtime** (only the schema + helper foundation exists today, so event publishing
+is not yet exactly-once).
 
-### Quick start
+Realtime STT has been validated only in a constrained demo config (forced English,
+`small.en`); multilingual/auto-language STT is not validated. See
+`docs/ai/PROJECT_STATE.md` for the detailed baseline.
+
+## Services
+
+| Service | Port | Role |
+|---|---|---|
+| `core_api` | 8000 | REST API, auth, control-center UI + static, readiness |
+| `ten_gateway` | 8080 | WebRTC / TEN realtime pipeline (VAD→STT→LLM→TTS); reuses the `core_api` image |
+| `grading_worker` | — | Consumes `session.completed` from RabbitMQ; grades via Groq (or an offline "fake" grader); writes `grading_results` |
+| `postgres_db` | 5432 | PostgreSQL |
+| `redis_cache` | 6379 | Redis (rate limiting / realtime transcript) |
+| `rabbitmq_queue` | 5672, 15672 | RabbitMQ broker + management UI |
+| `rabbitmq_init` | — | One-shot: declares the grading dead-letter topology, then exits |
+
+App services run under the Compose `app` profile.
+
+## Quick start (CPU default)
+
+These commands run **containers**, not manual `venv` processes.
 
 ```bash
-# 1. Provide configuration (copy each template, fill in real values locally)
-cp .env.example .env
-cp services/core-api/.env.example services/core-api/.env
-cp services/grading-worker/.env.example services/grading-worker/.env
+# 1. Create the root .env (Compose reads this — see "Configuration" below)
+cp .env.example .env   # then fill in real values locally
 
-# 2. Start the whole backend (app services live behind the `app` profile;
-#    first run needs --build so ten_gateway can reuse the core_api image).
-#    Plain `docker compose up -d` starts only infra (Postgres/Redis/RabbitMQ).
+# 2. Start the full stack (first run needs --build so ten_gateway can reuse the
+#    core_api image). Plain `docker compose up -d` (no profile) starts ONLY infra.
 docker compose --profile app up -d --build
 
-# 3. Check status / logs
-docker compose ps
-docker compose logs -f core_api
+# Fast restart later (images already built):
+docker compose --profile app up -d
 ```
 
-Real `.env` files are git-ignored and must never be committed; only the
-`.env.example` templates are tracked.
+CPU STT is the default, stable mode and needs no GPU.
 
-### Optional GPU STT (opt-in)
+## Optional GPU STT (opt-in)
 
-The default startup above is **CPU-capable and requires no GPU** — use it on any
-machine. STT runs on CPU (with automatic CPU fallback) out of the box.
-
-To run `ten_gateway` STT on an NVIDIA GPU, layer the opt-in override:
+Runs `ten_gateway` STT on an NVIDIA GPU. It affects **`ten_gateway` only** —
+`grading_worker`/Groq and every other service are unchanged. Requires the NVIDIA
+Container Toolkit.
 
 ```bash
-# Prerequisites: NVIDIA driver + NVIDIA Container Toolkit. Verify with:
+# Prerequisite check:
 docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 
-# Start with the GPU override (first run needs --build)
+# Start with the GPU override (builds luve-core-api:gpu with the CUDA libs
+# ctranslate2/faster-whisper need):
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
 ```
 
-This builds a separate GPU image (`luve-core-api:gpu`, with the CUDA runtime libs
-`ctranslate2`/`faster-whisper` need) and grants `ten_gateway` GPU access. It
-affects **`ten_gateway` only**; `grading_worker` (Groq) and every other service
-are unchanged. Omit the override to return to the CPU default — no GPU required.
+Omit the override to return to the CPU default — no GPU required.
 
-### Project status (honest)
+## Configuration
 
-Luve is under active DevOps/reliability hardening and is **not** a finished
-product:
+**Compose reads the root `.env`** (Compose variable interpolation). The
+per-service `services/*/.env` files are only for running a service standalone
+(advanced/debug); they are **not** used by Docker Compose. Real `.env` files are
+git-ignored — only `.env.example` templates are tracked. Never commit secrets.
 
-- **Realtime STT** has so far been validated only in a constrained demo
-  configuration (forced English, `small.en` model, second-pass disabled).
-  Multilingual / auto-language STT is **not** production-validated.
-- **Reliability work in progress:** a RabbitMQ dead-letter queue for poison
-  messages is in place; a transactional session-outbox **foundation** (schema +
-  helper) exists, but the outbox relay is **not yet wired into the runtime**, so
-  event publishing is not yet exactly-once.
-- Some hot-path improvements are still local work-in-progress and are not part
-  of the published history yet.
-
-See `docs/ai/PROJECT_STATE.md` for the detailed baseline and known limitations.
-
----
-
-## 📋 Cấu trúc dự án
-
-```
-LUVE_Workspace/
-├── .git/                        # Hệ thống quản lý cỗ máy thời gian
-├── .gitignore                   # Chặn file rác và .env
-├── fullpro.md                    # tổng quan dự án
-├──   workflow.md			# chi tiết workflow
-├── docker-compose.yml           # Bảng giao hưởng: chạy toàn bộ backend 1 lệnh
-├── .rules              # Hiến pháp cho AI (Tuyệt đối quan trọng)
-├── README.md                # Bản đồ chỉ dẫn dự án
-├── TECH_STACK.md            # Đặc tả kỹ thuật (Stack)
-├── FUNCTIONAL_GUIDE.md      # Danh mục chức năng & Độ phức tạp
-├── clients/                     # FRONTEND
-│   └── mobile-app/
-│       ├── src/
-│       └── package.json
-│
-├── services/                    # BACKEND (4 KHU VỰC XỬ LÝ)
-│   ├── core-api/                # Trạm kiểm soát chính
-│   │   ├── src/
-│   │   ├── models/
-│   │   ├── Dockerfile
-│   │   ├── .env.example
-│   │   └── package.json
-│   │
-│   ├── media-server/            # Nhà máy TEN Framework (WebRTC, STT, STS)
-│   │   ├── extensions/
-│   │   ├── property.json
-│   │   └── Dockerfile
-│   │
-│   └── grading-worker/          # Hậu kiểm & LLM (Python + Redis + OpenAI)
-│       ├── src/
-│       ├── Dockerfile
-│       └── requirements.txt
-│
-└── infrastructure/              # HẠ TẦNG & LƯU TRỮ
-    ├── db-init/                 # Script SQL khởi tạo DB
-    └── config/                  # Config Redis, RabbitMQ, v.v.
-```
-
-# 🏛️ Kiến Trúc Hệ Thống L.U.V.E (Architecture Diagram)
-
-Dưới đây là sơ đồ luồng dữ liệu thời gian thực (Real-time Data Flow) của dự án, được chia thành 5 khu vực độc lập để tối ưu hóa hiệu năng và khả năng mở rộng:
-
-![Sơ đồ kiến trúc L.U.V.E](./docs/luve-architecture.drawio.svg)
-
-*Sơ đồ được thiết kế bởi Đạt - Master Architect.*
-
-## 🚀 Bắt đầu nhanh
-
-### 1. Chạy toàn bộ backend với Docker Compose
+Key variables (names only — fill in locally):
 
 ```bash
-# App services nằm sau profile "app"; lần chạy đầu cần --build để ten_gateway
-# dùng lại image core_api. (`docker compose up -d` không kèm profile chỉ khởi
-# động hạ tầng: Postgres/Redis/RabbitMQ.)
-docker compose --profile app up -d --build
+# core_api + ten_gateway use SQLAlchemy async — note the +asyncpg driver:
+DATABASE_URL=postgresql+asyncpg://<user>:<url-encoded-password>@postgres_db:5432/luve_database
+# grading_worker uses raw asyncpg — plain postgresql:// scheme:
+GRADING_DATABASE_URL=postgresql://<user>:<url-encoded-password>@postgres_db:5432/luve_database
+SECRET_KEY=<random-secret>
+
+POSTGRES_USER=dat_admin
+POSTGRES_PASSWORD=<password>
+POSTGRES_DB=luve_database
+RABBITMQ_USER=<user>
+RABBITMQ_PASS=<password>
+
+# Grading provider. Default is the offline "fake" dev grader. For REAL Groq grading:
+GRADING_PROVIDER=llm
+LLM_PROVIDER=groq
+GRADING_FAKE_FALLBACK=false
+GROQCLOUD_API_KEY=<your-groq-key>
 ```
 
-### 2. Kiểm tra trạng thái các service
+URL-encode reserved characters (`@ / : %`) in passwords.
+
+## Access
+
+- Control center UI: `http://localhost:8000/control-center`
+- Core API: `http://localhost:8000`
+- RabbitMQ management: `http://localhost:15672` (credentials from your `.env`)
+
+Readiness / health:
+
+```bash
+curl http://localhost:8000/readyz     # core_api: 200 iff DB reachable
+curl http://localhost:8080/readyz     # ten_gateway: shallow startup readiness
+curl http://localhost:8080/rtc/health # ten_gateway: realtime session snapshot
+```
+
+## Logs & verification
 
 ```bash
 docker compose ps
+docker compose logs -f ten_gateway     # realtime pipeline
+docker compose logs -f grading_worker  # async grading (look for worker.ready, grading.completed)
 ```
 
-### 3. Xem log của một service 
+After a session ends, grading is asynchronous; results land in `grading_results`
+once the worker finishes (you can confirm via `psql` inside `postgres_db` if
+needed).
+
+## Stop
 
 ```bash
-docker compose logs -f core_api # Xem log trạm kiểm soát chính
+docker compose --profile app down
 ```
 
-### 4. Dừng toàn bộ hệ thống
+⚠️ Do **not** add `-v` unless you intend to delete volumes — `down -v` wipes the
+Postgres data and the cached STT model.
 
-```bash
-docker compose down
-```
+## Running a service manually (advanced / debug only)
 
-## 5. Xem log nhà máy xử lý âm thanh
+Manual `venv` runs (`uvicorn src.main:app`, `python run_ten.py`, the worker) are
+for debugging a single service in isolation. **Do not run them while the Compose
+stack is up** — they conflict on ports 8000/8080 and on the RabbitMQ queue.
 
-```bash
-docker compose logs -f ten_gateway
-```
+## Repository layout
 
-### 6. Xem log hội đồng giám khảo chấm điểm
-
-```bash
-docker compose logs -f grading_worker
-```
-
-## ⚙️ Cấu hình môi trường
-
-Mỗi service có file `.env.example`. Để chạy:
-
-```bash
-# Core API
-cd services/core-api
-cp .env.example .env
-# Điền thông tin vào .env (không commit file này!)
-
-# Grading Worker
-cd services/grading-worker
-cp .env.example .env
-# Điền thông tin vào .env
-```
-
-## 📝 3 Quy tắc Sắt Đá
-
-### ✋ Quy tắc 1: Cấm "Vượt rào" (No Cross-importing)
-
-**KHÔNG ĐƯỢC phép**: `services/core-api/` import code từ `services/grading-worker/`
-
-**Lý do**: Chúng sẽ chạy trên 2 máy chủ khác nhau!
-
-**Cách giao tiếp đúng**: HTTP hoặc RabbitMQ (qua mạng), không import code trực tiếp.
-
-### 🐳 Quy tắc 2: Sự kỳ diệu của docker-compose.yml
-
-- Không cần tạo thư mục code cho Database, Redis, RabbitMQ
-- File `docker-compose.yml` tự động tải images có sẵn từ Docker Hub
-- 1 lệnh `docker compose --profile app up -d --build` = toàn bộ hệ thống chạy (không kèm `--profile app` chỉ chạy hạ tầng)
-
-### 🔐 Quy tắc 3: Bảo mật file .env
-
-- ✅ **ĐƯỢC commit**: `.env.example` (file mẫu rỗng)
-- ❌ **KHÔNG commit**: `.env` (chứa mật khẩu thật)
-- File `.env` đã được chặn bởi `.gitignore`
-
-Nội dung `.env.example`:
+![LUVE architecture](./docs/luve-architecture.drawio.svg)
 
 ```
-DATABASE_URL=
-OPENAI_API_KEY=
-RABBITMQ_HOST=
-REDIS_URL=
+luve/
+├── docker-compose.yml          # default CPU stack
+├── docker-compose.gpu.yml      # opt-in GPU override (ten_gateway)
+├── .env.example                # root template (Compose reads root .env)
+├── services/
+│   ├── core-api/               # core_api image (also runs ten_gateway via run_ten.py)
+│   └── grading-worker/         # async grading consumer (Groq / offline fake)
+├── infrastructure/
+│   ├── db-init/                # 01-init.sql (fresh-volume baseline schema)
+│   └── db-migrations/          # numbered SQL migrations
+└── docs/                       # architecture + AI/ops handoff docs
 ```
 
-## 🔗 Links hữu ích
+**Rule — no cross-importing:** `core-api` and `grading-worker` never import each
+other's code; they communicate only over HTTP and RabbitMQ.
 
-- PostgreSQL: `postgres://postgres:postgres@localhost:5432/luve_db`
-- Redis: `redis://localhost:6379`
-- RabbitMQ Management: `http://localhost:15672` (user: guest, pass: guest)
+## Known limitations
 
----
-
-**Created**: 2026-04-09 | **Maintained by**: DevOps Team
+- **Grading is asynchronous** — it runs after disconnect; the Session Analysis
+  panel may need a refresh/poll before the result appears.
+- **Pronunciation** may be unavailable when a session has insufficient clear-audio
+  evidence.
+- **CPU STT** (default) has higher latency than GPU STT.
+- **GPU STT** requires the NVIDIA Container Toolkit.
+- One active realtime session per node (gateway capacity is 1 by design).
+- Not production-ready (see **Status**).
