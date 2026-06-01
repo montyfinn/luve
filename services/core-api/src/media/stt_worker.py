@@ -144,7 +144,7 @@ class WhisperInference:
         self,
         audio_buffer: AudioBuffer,
         *,
-        language: str | None = None,
+        language: str | None = "en",
         initial_prompt: str | None = None,
     ) -> STTAnalysis:
         audio_bytes = await audio_buffer.get_flat_audio()
@@ -158,7 +158,7 @@ class WhisperInference:
         self,
         audio_bytes: bytes,
         *,
-        language: str | None = None,
+        language: str | None = "en",
         initial_prompt: str | None = None,
         beam_size: int | None = None,
         word_timestamps: bool = True,
@@ -173,7 +173,7 @@ class WhisperInference:
 
         async with self._inference_lock:
             try:
-                segments = await asyncio.to_thread(
+                segments, info = await asyncio.to_thread(
                     self._run_transcription,
                     audio_array,
                     language,
@@ -197,7 +197,7 @@ class WhisperInference:
 
                 try:
                     await self._switch_to_cpu_fallback_model()
-                    segments = await asyncio.to_thread(
+                    segments, info = await asyncio.to_thread(
                         self._run_transcription,
                         audio_array,
                         language,
@@ -210,7 +210,7 @@ class WhisperInference:
                 except Exception as retry_exc:
                     raise STTProcessingError("stt_cpu_fallback_failed") from retry_exc
 
-        return self._map_segments_to_schema(segments)
+        return self._map_segments_to_schema(segments, info=info)
 
     def estimate_vram_usage_mb(self) -> tuple[int, int]:
         if self._runtime_config and self._runtime_config.device != "cuda":
@@ -230,6 +230,10 @@ class WhisperInference:
     @property
     def runtime(self) -> RuntimeConfig | None:
         return self._runtime_config
+
+    @property
+    def is_model_loaded(self) -> bool:
+        return self._model is not None
 
     async def _switch_to_cpu_fallback_model(self) -> None:
         async with self._model_lock:
@@ -280,19 +284,23 @@ class WhisperInference:
         if self._model is None:
             raise RuntimeError("Whisper model is not loaded")
         decode_beam_size = beam_size if beam_size is not None and beam_size > 0 else self._beam_size
-        segments, _info = self._model.transcribe(
+        segments, info = self._model.transcribe(
             audio_array,
             beam_size=decode_beam_size,
             word_timestamps=word_timestamps,
-            language="en",          # Ép cứng AI luôn nghe tiếng Anh
+            language=language,
             vad_filter=vad_filter,  # Internal VAD is a cleanup pass, not end-of-utterance detection.
             condition_on_previous_text=condition_on_previous_text,
             initial_prompt=initial_prompt,
         )
-        return list(segments)
+        return list(segments), info
 
     @staticmethod
-    def _map_segments_to_schema(segments: list) -> STTAnalysis:
+    def _map_segments_to_schema(
+        segments: list,
+        *,
+        info: object | None = None,
+    ) -> STTAnalysis:
         raw_text_parts: list[str] = []
         word_points: list[WordPoint] = []
         avg_logprobs: list[float] = []
@@ -336,6 +344,13 @@ class WhisperInference:
                     )
                 )
 
+        detected_language = getattr(info, "language", None)
+        if not isinstance(detected_language, str) or not detected_language.strip():
+            detected_language = None
+        detected_language_probability = getattr(info, "language_probability", None)
+        if not isinstance(detected_language_probability, (int, float)):
+            detected_language_probability = None
+
         return STTAnalysis(
             raw_text=" ".join(raw_text_parts).strip(),
             all_words=word_points,
@@ -343,6 +358,12 @@ class WhisperInference:
             no_speech_prob=max(no_speech_probs) if no_speech_probs else None,
             compression_ratio=max(compression_ratios) if compression_ratios else None,
             segment_count=len(segments),
+            detected_language=detected_language,
+            detected_language_probability=(
+                float(detected_language_probability)
+                if detected_language_probability is not None
+                else None
+            ),
         )
 
     def _resolve_runtime_config(self) -> RuntimeConfig:

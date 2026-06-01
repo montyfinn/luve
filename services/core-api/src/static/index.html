@@ -262,7 +262,7 @@
               
               <div class="cc-grading-footer">
                 <p class="cc-muted-text">
-                  Scores represent initial grading heuristics from the telemetry backend and are not pedagogical grades.
+                  Analysis is generated after the session from saved transcript evidence and STT quality signals.
                 </p>
               </div>
             </div>
@@ -514,6 +514,8 @@
       ttsActive: false,
       ttsReleaseTimer: null,
       remoteAudioStatsTimer: null,
+      gradingPollTimer: null,
+      gradingPollToken: 0,
       lastInboundAudioStats: null,
       remoteAudioDiagnosticsBound: false,
       audioDiagnosticsEnabled: false,
@@ -1256,8 +1258,105 @@
         .replace(/'/g, "&#39;");
     }
 
+    function formatScore(value) {
+      if (value === null || value === undefined || value === "") return "—";
+      const score = Number(value);
+      return Number.isFinite(score) ? score.toFixed(1) : "—";
+    }
+
+    function renderScoreCard(label, value, tone = "") {
+      const muted = value === null || value === undefined || value === "";
+      return `
+        <div class="cc-score-card ${tone}">
+          <span class="cc-score-label">${escapeHtml(label)}</span>
+          <strong class="cc-score-value ${muted ? "is-muted" : ""}">${formatScore(value)}</strong>
+        </div>`;
+    }
+
+    function skillLabel(skill) {
+      const labels = {
+        fluency: "Fluency",
+        grammar: "Grammar",
+        vocabulary: "Vocabulary",
+        vocab: "Vocabulary",
+        pronunciation_clarity: "Pronunciation",
+      };
+      return labels[String(skill || "").toLowerCase()] || "Skill";
+    }
+
+    function renderSkillFeedback(items) {
+      const normalized = Array.isArray(items) ? items : [];
+      if (!normalized.length) return "";
+      const ranked = [...normalized].sort((a, b) => {
+        const aScore = Number.isFinite(Number(a.score)) ? Number(a.score) : 99;
+        const bScore = Number.isFinite(Number(b.score)) ? Number(b.score) : 99;
+        return aScore - bScore;
+      }).slice(0, 4);
+      return `
+        <div class="cc-feedback-list">
+          ${ranked.map((item) => `
+            <article class="cc-feedback-item">
+              <div class="cc-feedback-head">
+                <span class="cc-skill-name">${escapeHtml(skillLabel(item.skill))}</span>
+                <span class="cc-skill-score">${formatScore(item.score)}</span>
+              </div>
+              <p>${escapeHtml(item.summary || "No detailed note available.")}</p>
+              <p class="cc-feedback-action">${escapeHtml(item.suggestion || "Practice this skill in the next session.")}</p>
+            </article>
+          `).join("")}
+        </div>`;
+    }
+
+    function renderCorrections(items) {
+      const corrections = (Array.isArray(items) ? items : [])
+        .filter((c) => c && c.type !== "grader_info" && c.type !== "input_quality")
+        .slice(0, 4);
+      if (!corrections.length) return "";
+      return `
+        <div class="cc-corrections">
+          <h3>Corrections</h3>
+          ${corrections.map((c) => {
+            const original = c.original || c.message || "";
+            const corrected = c.corrected || "";
+            const explanation = c.explanation || "";
+            if (!original && !explanation) return "";
+            return `
+              <article class="cc-correction-item">
+                ${corrected ? `
+                  <div class="cc-correction-flow">
+                    <span class="cc-correction-text">${escapeHtml(original)}</span>
+                    <span class="cc-correction-arrow">→</span>
+                    <span class="cc-correction-text is-corrected">${escapeHtml(corrected)}</span>
+                  </div>
+                ` : `<p>${escapeHtml(original || explanation)}</p>`}
+                ${explanation ? `<p class="cc-correction-note">${escapeHtml(explanation)}</p>` : ""}
+              </article>`;
+          }).join("")}
+        </div>`;
+    }
+
+    function renderDevPreviewNotice(data) {
+      if (!data?.is_dev_preview) return "";
+      return '<p class="cc-grading-message is-warn cc-grading-preview">Preview grading only. This result may use fake or legacy scoring and should not be treated as production analysis.</p>';
+    }
+
+    // Poll config: ~3s interval, ~60s cap.
+    const GRADING_POLL_INTERVAL_MS = 3000;
+    const GRADING_POLL_MAX_ATTEMPTS = 20;
+
+    function clearGradingPoll() {
+      if (state.gradingPollTimer) {
+        clearTimeout(state.gradingPollTimer);
+        state.gradingPollTimer = null;
+      }
+      // Invalidate any in-flight poll callbacks from a previous run.
+      state.gradingPollToken += 1;
+    }
+
     async function fetchAndShowGrading(sessionId) {
       if (!sessionId) return;
+      clearGradingPoll();
+      const pollToken = state.gradingPollToken;
       ui.gradingCard.classList.remove("hidden");
       ui.gradingCard.classList.remove("cc-reveal");
       void ui.gradingCard.offsetWidth;
@@ -1265,6 +1364,12 @@
       ui.gradingContent.innerHTML = '<p class="text-slate-400">Loading grading result…</p>';
 
       await new Promise(r => setTimeout(r, 2000));
+      if (pollToken !== state.gradingPollToken) return;
+      pollGradingStatus(sessionId, pollToken, 0);
+    }
+
+    async function pollGradingStatus(sessionId, pollToken, attempt) {
+      if (pollToken !== state.gradingPollToken) return;
 
       const token = getAuthToken();
       if (!token) {
@@ -1278,6 +1383,7 @@
           buildCoreApiUrl(`/api/v1/sessions/${sessionId}/grading/status`),
           { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } }
         );
+        if (pollToken !== state.gradingPollToken) return;
 
         if (statusRes.status === 404) {
           ui.gradingCard.classList.add("hidden");
@@ -1301,20 +1407,36 @@
           return;
         }
 
-        const { status } = await statusRes.json();
+        const statusPayload = await statusRes.json();
+        const { status } = statusPayload;
 
         if (status === "insufficient_evidence") {
-          ui.gradingContent.innerHTML = '<p class="text-amber-400">Not enough speech to grade. Try a longer session.</p>';
+          const reason = statusPayload.reason ? ` Reason: ${statusPayload.reason}.` : "";
+          ui.gradingContent.innerHTML = `<p class="cc-grading-message is-warn">Not enough reliable speech to grade.${escapeHtml(reason)} Try a longer session.</p>`;
           return;
         }
 
-        if (status === "pending") {
-          ui.gradingContent.innerHTML = '<p class="text-slate-400">Grading pending — try again later.</p>';
-          const retryBtn = document.createElement("button");
-          retryBtn.textContent = "Retry";
-          retryBtn.className = "mt-2 rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium transition hover:bg-slate-600";
-          retryBtn.addEventListener("click", () => fetchAndShowGrading(sessionId));
-          ui.gradingContent.appendChild(retryBtn);
+        if (status === "processing" || status === "pending") {
+          if (attempt + 1 >= GRADING_POLL_MAX_ATTEMPTS) {
+            ui.gradingContent.innerHTML = '<p class="cc-grading-message">Still grading. Try again in a moment.</p>';
+            const retryBtn = document.createElement("button");
+            retryBtn.textContent = "Retry";
+            retryBtn.className = "cc-btn cc-btn-ghost cc-grading-retry";
+            retryBtn.addEventListener("click", () => fetchAndShowGrading(sessionId));
+            ui.gradingContent.appendChild(retryBtn);
+            return;
+          }
+          ui.gradingContent.innerHTML = '<p class="cc-grading-message">Grading is running now. Auto-refreshing…</p>';
+          state.gradingPollTimer = setTimeout(
+            () => pollGradingStatus(sessionId, pollToken, attempt + 1),
+            GRADING_POLL_INTERVAL_MS
+          );
+          return;
+        }
+
+        if (status === "failed") {
+          const code = statusPayload.error_code ? ` (${statusPayload.error_code})` : "";
+          ui.gradingContent.innerHTML = `<p class="cc-grading-message is-error">Grading failed${escapeHtml(code)}. Please retry after the worker is healthy.</p>`;
           return;
         }
 
@@ -1335,36 +1457,27 @@
         }
 
         const data = await res.json();
-        const fmt = (v) => Number(v).toFixed(1);
+        if (pollToken !== state.gradingPollToken) return;
         const gradedAt = data.graded_at ? new Date(data.graded_at).toLocaleString() : "unknown";
-        const corrections = (data.detailed_corrections || [])
-          .map(c => c.message || "").filter(Boolean)
-          .map(m => `<li class="text-slate-400">${escapeHtml(m)}</li>`).join("");
+        const devPreviewNotice = renderDevPreviewNotice(data);
+        const corrections = renderCorrections(data.detailed_corrections || []);
+        const skillFeedback = renderSkillFeedback(data.skill_feedback || []);
 
         ui.gradingContent.innerHTML = `
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div class="rounded-md bg-slate-950 p-2 text-center">
-              <p class="text-xs text-slate-500">Overall</p>
-              <p class="text-xl font-bold text-sky-400">${fmt(data.overall_score)}</p>
-            </div>
-            <div class="rounded-md bg-slate-950 p-2 text-center">
-              <p class="text-xs text-slate-500">Fluency</p>
-              <p class="text-xl font-bold text-emerald-400">${fmt(data.fluency_score)}</p>
-            </div>
-            <div class="rounded-md bg-slate-950 p-2 text-center">
-              <p class="text-xs text-slate-500">Grammar</p>
-              <p class="text-xl font-bold text-emerald-400">${fmt(data.grammar_score)}</p>
-            </div>
-            <div class="rounded-md bg-slate-950 p-2 text-center">
-              <p class="text-xs text-slate-500">Vocab</p>
-              <p class="text-xl font-bold text-emerald-400">${fmt(data.vocab_score)}</p>
-            </div>
+          ${devPreviewNotice}
+          <div class="cc-score-grid">
+            ${renderScoreCard("Overall", data.overall_score, "is-primary")}
+            ${renderScoreCard("Fluency", data.fluency_score)}
+            ${renderScoreCard("Grammar", data.grammar_score)}
+            ${renderScoreCard("Vocabulary", data.vocab_score)}
+            ${renderScoreCard("Pronunciation", data.pronunciation_score)}
           </div>
-          ${data.ai_summary_feedback ? `<p class="mt-3 text-slate-300">${escapeHtml(data.ai_summary_feedback)}</p>` : ""}
-          ${corrections ? `<ul class="mt-2 list-disc pl-4 text-xs">${corrections}</ul>` : ""}
-          <p class="mt-2 text-xs text-slate-500">Graded at: ${escapeHtml(gradedAt)}</p>`;
+          ${data.ai_summary_feedback ? `<p class="cc-grading-summary">${escapeHtml(data.ai_summary_feedback)}</p>` : ""}
+          ${skillFeedback}
+          ${corrections}
+          <p class="cc-grading-meta">Graded at: ${escapeHtml(gradedAt)}${data.grader_version ? ` · ${escapeHtml(data.grader_version)}` : ""}</p>`;
       } catch {
-        ui.gradingContent.innerHTML = '<p class="text-rose-400">Network error loading grading result.</p>';
+        ui.gradingContent.innerHTML = '<p class="cc-grading-message is-error">Network error loading grading result.</p>';
       }
     }
 
@@ -1712,12 +1825,12 @@
         setApiStatus("ready", "API: Session ready");
         logEvent("SDP handshake complete", { sessionId: state.sessionId });
 
-        // Set safe 10-second timeout to handle case where ten_started does not arrive
+        // Set safe timeout to handle case where STT warmup does not complete
         if (state.connectionTimeout) clearTimeout(state.connectionTimeout);
         state.connectionTimeout = setTimeout(() => {
           if (state.peerConnection && ui.statusText.textContent !== "Ready - speak now") {
-            setStatus("thinking", "Speech engine not ready yet");
-            logEvent("Warmup timeout: ten_started not received within 10s");
+            setStatus("thinking", "Speech engine still warming up...");
+            logEvent("Warmup timeout: stt_ready not received within 10s");
           }
         }, 10000);
       } catch (error) {
@@ -1727,6 +1840,7 @@
     }
 
     async function disconnect() {
+      clearGradingPoll();
       if (state.connectionTimeout) {
         clearTimeout(state.connectionTimeout);
         state.connectionTimeout = null;
@@ -2051,25 +2165,38 @@
         case "flush_ack":
         case "barge_in_ack":
         case "ten_started":
+        case "stt_ready":
+        case "stt_ready_error":
         case "session_ended":
           if (data.session_id && eventName !== "session_ended") {
             setCurrentSessionId(data.session_id);
             logEvent(`Session ID received: ${state.sessionId}`);
           }
           if (eventName === "ten_started") {
+            ui.gradingCard.classList.add("hidden");
+            setStatus("thinking", "Preparing speech engine...");
+          } else if (eventName === "stt_ready") {
             if (state.connectionTimeout) {
               clearTimeout(state.connectionTimeout);
               state.connectionTimeout = null;
             }
-            ui.gradingCard.classList.add("hidden");
             setStatus("ready", "Ready - speak now");
-            // Warmup completed: unmute local microphone tracks
             if (state.micStream) {
               state.micStream.getAudioTracks().forEach((track) => {
                 track.enabled = !state.micMuted;
               });
-              logEvent("Microphone active - connection warmup completed");
+              logEvent("Microphone active - STT warmup completed");
             }
+          } else if (eventName === "stt_ready_error") {
+            if (state.connectionTimeout) {
+              clearTimeout(state.connectionTimeout);
+              state.connectionTimeout = null;
+            }
+            setStatus("error", "Speech engine failed to initialize. Disconnect and retry.");
+            logEvent("STT ready error", {
+              reason: data.reason || "unknown",
+              detail: data.detail || null,
+            });
           } else if (eventName === "session_ended") {
             state.acceptIceCandidates = false;
             state.connectionAttemptId += 1;

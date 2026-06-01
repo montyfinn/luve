@@ -122,6 +122,13 @@ def test_control_center_body_contains_marker(client: TestClient) -> None:
     assert "L.U.V.E" in response.text or "Control Center" in response.text
 
 
+def test_control_center_renders_grading_preview_warning() -> None:
+    html = (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert "renderDevPreviewNotice" in html
+    assert "is_dev_preview" in html
+    assert "Preview grading only" in html
+
+
 def test_static_css_served(client: TestClient) -> None:
     response = client.get("/static/styles.css")
     assert response.status_code == 200

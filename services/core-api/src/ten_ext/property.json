@@ -4,6 +4,8 @@
   "json_output_port": "json_out",
   "log_output_port": "log_out",
   "stt_model_size": "small.en",
+  "stt_language_mode": "forced_en",
+  "stt_enable_second_pass_verification": false,
   "vad_energy_threshold_db": -42.0,
   "vad_initial_noise_floor_db": -55.0,
   "vad_adaptive_margin_db": 10.0,

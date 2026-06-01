@@ -911,6 +911,149 @@ pre#event-log {
   font-size: 0.82rem;
   line-height: 1.5;
 }
+.cc-score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.5rem;
+}
+.cc-score-card {
+  min-width: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  background: rgba(2, 6, 23, 0.72);
+  padding: 0.55rem 0.5rem;
+  text-align: center;
+}
+.cc-score-card.is-primary {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+.cc-score-label {
+  display: block;
+  overflow: hidden;
+  color: var(--cc-text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cc-score-value {
+  display: block;
+  color: var(--cc-emerald);
+  font-size: 1.22rem;
+  line-height: 1.35;
+}
+.cc-score-card.is-primary .cc-score-value {
+  color: var(--cc-cyan);
+}
+.cc-score-value.is-muted {
+  color: var(--cc-text-dim);
+}
+.cc-grading-summary {
+  margin: 0.75rem 0 0;
+  color: var(--cc-text);
+}
+.cc-feedback-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+.cc-feedback-item,
+.cc-correction-item {
+  min-width: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  background: rgba(15, 23, 42, 0.58);
+  padding: 0.62rem;
+}
+.cc-feedback-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.cc-skill-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cc-amber);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cc-skill-score {
+  flex: 0 0 auto;
+  color: var(--cc-cyan);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+.cc-feedback-item p {
+  margin: 0;
+  color: var(--cc-text-muted);
+}
+.cc-feedback-action {
+  margin-top: 0.35rem !important;
+  color: var(--cc-text) !important;
+}
+.cc-corrections {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+.cc-corrections h3 {
+  margin: 0;
+  color: var(--cc-text);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+.cc-correction-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+}
+.cc-correction-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--cc-text-muted);
+}
+.cc-correction-text.is-corrected {
+  color: var(--cc-emerald);
+}
+.cc-correction-arrow {
+  color: var(--cc-text-dim);
+}
+.cc-correction-note {
+  margin: 0.35rem 0 0;
+  color: var(--cc-text-muted);
+}
+.cc-grading-message {
+  margin: 0;
+  color: var(--cc-text-muted);
+}
+.cc-grading-message.is-warn {
+  color: var(--cc-amber);
+}
+.cc-grading-message.is-error {
+  color: var(--cc-rose);
+}
+.cc-grading-preview {
+  margin-bottom: 0.75rem;
+}
+.cc-grading-retry {
+  margin-top: 0.5rem;
+}
+.cc-grading-meta {
+  margin: 0.65rem 0 0;
+  color: var(--cc-text-dim);
+  font-size: 0.72rem;
+}
 .cc-grading-footer {
   border-top: 1px dashed var(--cc-border) !important;
   padding-top: 0.625rem;
@@ -1240,4 +1383,3 @@ body.view-app #cc-view-app {
   box-shadow: 0 6px 22px 0 rgba(251, 113, 133, 0.45) !important;
   text-shadow: none !important;
 }
-

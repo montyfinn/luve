@@ -81,6 +81,10 @@ class STTAnalysis(BaseModel):
     no_speech_prob: float | None = None
     compression_ratio: float | None = None
     segment_count: int = 0
+    detected_language: str | None = None
+    detected_language_probability: float | None = None
+    verification_language: str | None = None
+    verification_language_probability: float | None = None
 
     @computed_field
     @property

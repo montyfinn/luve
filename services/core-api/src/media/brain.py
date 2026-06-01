@@ -7,6 +7,8 @@ import logging
 import urllib.error
 import urllib.request
 from collections.abc import Awaitable, Callable
+from collections.abc import Mapping
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,6 +71,7 @@ class LLMProcessor:
         session_id: UUID,
         stt: STTAnalysis,
         on_token: TokenCallback,
+        stt_metadata: Mapping[str, Any] | None = None,
     ) -> PedagogicalReply:
         transcript = stt.raw_text.strip()
         if not transcript:
@@ -78,7 +81,7 @@ class LLMProcessor:
                 source="local_fallback",
             )
 
-        prompt = self._build_user_prompt(stt)
+        prompt = self._build_user_prompt(stt, stt_metadata=stt_metadata)
         try:
             if self._provider == "groq":
                 raw_output = await self._complete_from_groq(
@@ -263,21 +266,49 @@ class LLMProcessor:
                     await result
                 return
 
-    def _build_user_prompt(self, stt: STTAnalysis) -> str:
+    def _build_user_prompt(
+        self,
+        stt: STTAnalysis,
+        *,
+        stt_metadata: Mapping[str, Any] | None = None,
+    ) -> str:
         low_confidence_words = [
             item.word for item in stt.all_words if item.confidence < 0.6
         ]
         low_confidence_text = (
             ", ".join(low_confidence_words) if low_confidence_words else "None"
         )
+        stt_note = self._build_stt_note(stt_metadata)
 
         return (
             "Learner transcript:\n"
             f"{stt.raw_text.strip()}\n\n"
+            f"{stt_note}"
             "Low-confidence tokens (likely pronunciation uncertainty):\n"
             f"{low_confidence_text}\n\n"
             f"Suspicious count: {stt.suspicious_count}\n"
+            "Do not quote or mention transcription reliability notes directly unless asking for clarification.\n"
             "Provide the 2-line output format exactly."
+        )
+
+    @staticmethod
+    def _build_stt_note(stt_metadata: Mapping[str, Any] | None) -> str:
+        if not isinstance(stt_metadata, Mapping):
+            return ""
+        quality = str(stt_metadata.get("stt_quality") or "").strip().lower()
+        if quality != "uncertain":
+            return ""
+
+        reasons = stt_metadata.get("uncertainty_reasons")
+        reason_list: list[str] = []
+        if isinstance(reasons, list):
+            for item in reasons:
+                if isinstance(item, str) and item.strip():
+                    reason_list.append(item.strip())
+        reason_text = ", ".join(reason_list) if reason_list else "uncertain_transcript"
+        return (
+            f"Transcription reliability: uncertain ({reason_text}). "
+            "Use caution; do not mention this note to the learner.\n\n"
         )
 
     @staticmethod

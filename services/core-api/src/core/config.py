@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     vad_silence_timeout_ms: int = Field(default=900, alias="VAD_SILENCE_TIMEOUT_MS")
     vad_pre_roll_ms: int = Field(default=300, alias="VAD_PRE_ROLL_MS")
     stt_model_size: str = Field(default="small.en", alias="STT_MODEL_SIZE")
+    stt_language_mode: str = Field(default="forced_en", alias="STT_LANGUAGE_MODE")
     stt_beam_size: int = Field(default=3, alias="STT_BEAM_SIZE")
     stt_partial_beam_size: int = Field(default=1, alias="STT_PARTIAL_BEAM_SIZE")
     stt_final_beam_size: int = Field(default=3, alias="STT_FINAL_BEAM_SIZE")
@@ -75,6 +76,9 @@ class Settings(BaseSettings):
     )
     stt_enable_cuda_fallback_to_cpu: bool = Field(
         default=True, alias="STT_ENABLE_CUDA_FALLBACK_TO_CPU"
+    )
+    stt_enable_second_pass_verification: bool = Field(
+        default=False, alias="STT_ENABLE_SECOND_PASS_VERIFICATION"
     )
     stt_min_word_confidence: float = Field(
         default=0.55, alias="STT_MIN_WORD_CONFIDENCE"

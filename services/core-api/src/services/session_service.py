@@ -161,15 +161,25 @@ async def get_session_grading(
             """
             SELECT
                 gr.session_id,
+                gr.status,
+                gr.provider,
+                gr.grader_version,
+                gr.score_schema_version,
                 gr.overall_score,
                 gr.fluency_score,
                 gr.grammar_score,
                 gr.vocab_score,
+                gr.pronunciation_score,
                 gr.detailed_corrections,
+                gr.skill_feedback_json AS skill_feedback,
+                gr.input_quality_json AS input_quality,
                 gr.ai_summary_feedback,
+                gr.error_code,
+                gr.error_message,
                 gr.graded_at
             FROM grading_results gr
             WHERE gr.session_id = :session_id
+              AND gr.status = 'graded'
             LIMIT 1
             """
         ),
@@ -181,7 +191,32 @@ async def get_session_grading(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Grading result not ready",
         )
-    return GradingRead(**grading_row)
+
+    grading_data = dict(grading_row)
+    grading_data["is_dev_preview"] = _is_dev_preview_grading(
+        grading_data.get("provider"),
+        grading_data.get("grader_version"),
+    )
+    return GradingRead(**grading_data)
+
+
+def _is_dev_preview_grading(provider: Any, grader_version: Any) -> bool:
+    normalized_provider = str(provider or "").strip().lower()
+    normalized_grader_version = str(grader_version or "").strip().lower()
+
+    if normalized_provider == "fake":
+        return True
+    if normalized_grader_version.startswith("fake_"):
+        return True
+    if normalized_grader_version == "legacy":
+        return True
+    if normalized_provider in {"", "unknown"}:
+        return True
+
+    return not (
+        normalized_provider == "llm"
+        and normalized_grader_version
+    )
 
 
 def _parse_raw_backup_events(raw_backup_json: Any) -> list[Any]:
@@ -213,7 +248,9 @@ def _compute_student_word_count(raw_backup_json: Any) -> int | None:
         payload = event.get("payload", {})
         if not isinstance(payload, Mapping):
             payload = {}
-        text_value = str(payload.get("text") or "").strip()
+        if payload.get("grading_eligible") is False:
+            continue
+        text_value = str(payload.get("english_segment") or payload.get("text") or "").strip()
         if text_value:
             total += len(text_value.split())
     return total
@@ -238,9 +275,13 @@ async def get_session_grading_status(
             SELECT
                 s.user_id,
                 s.raw_backup_json,
-                (gr.session_id IS NOT NULL) AS has_grading
+                gr.status AS grading_status,
+                gr.error_code AS grading_error_code,
+                gsl.skipped_reason,
+                gsl.student_word_count AS skipped_student_word_count
             FROM sessions s
             LEFT JOIN grading_results gr ON gr.session_id = s.id
+            LEFT JOIN grading_skip_log gsl ON gsl.session_id = s.id
             WHERE s.id = :session_id
               AND s.deleted_at IS NULL
             LIMIT 1
@@ -261,8 +302,26 @@ async def get_session_grading_status(
             detail="This session is not owned by the current account.",
         )
 
-    if status_row["has_grading"]:
+    grading_status = status_row["grading_status"]
+    if grading_status == "graded":
         return GradingStatusRead(session_id=session_id, status="graded")
+    if grading_status == "processing":
+        return GradingStatusRead(session_id=session_id, status="processing")
+    if grading_status == "failed":
+        return GradingStatusRead(
+            session_id=session_id,
+            status="failed",
+            error_code=status_row["grading_error_code"],
+        )
+
+    skipped_reason = status_row["skipped_reason"]
+    if skipped_reason is not None:
+        return GradingStatusRead(
+            session_id=session_id,
+            status="insufficient_evidence",
+            student_word_count=status_row["skipped_student_word_count"],
+            reason=skipped_reason,
+        )
 
     word_count = _compute_student_word_count(status_row["raw_backup_json"])
     min_words = _get_min_student_words()
@@ -283,4 +342,3 @@ async def get_session_grading_status(
         status=inferred,
         student_word_count=word_count,
     )
-

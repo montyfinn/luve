@@ -44,10 +44,43 @@ PCM16_MONO_16KHZ_BYTES_PER_SECOND = 32000
 # Adaptive STT Rejection thresholds for learner English attempts
 LEARNER_PHRASE_MIN_SPEECH_MS = 500.0
 LEARNER_SHORT_ANSWER_MIN_SPEECH_MS = 350.0
+CONTROLLED_SHORT_ENGLISH_MIN_SPEECH_MS = 300.0
 RELAXED_STT_MIN_AVG_LOGPROB = -1.15
 RELAXED_STT_MAX_LOW_CONFIDENCE_WORD_RATIO = 0.75
 RELAXED_STT_MAX_NO_SPEECH_PROB = 0.80
-
+NON_ENGLISH_VERIFICATION_TIMEOUT_SECONDS = 1.5
+NON_ENGLISH_VERIFICATION_MIN_PROBABILITY = 0.60
+VIETNAMESE_ACCENTED_CHARS = "ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ"
+STT_LANGUAGE_MODES = {"forced_en", "auto", "auto_en_vi"}
+INCOMPLETE_SHORT_ENGLISH_FRAGMENTS = {
+    "are you",
+    "can you",
+    "did you",
+    "do you",
+    "how is",
+    "i am",
+    "i need",
+    "i want",
+    "it is",
+    "this is",
+    "what are",
+    "what do",
+    "what does",
+    "what is",
+    "where is",
+    "who is",
+    "you are",
+}
+CANNED_STT_HALLUCINATION_PHRASES = {
+    "go home now everyone",
+    "have a good day",
+    "i don t know what to say",
+    "i dont know what to say",
+    "don t ask me to speak english",
+    "dont ask me to speak english",
+    "thank you very much",
+    "today is a club night",
+}
 # A set of core pronouns, verbs, prepositions, and high-frequency classroom/speech terms
 COMMON_ENGLISH_WORDS = {
     # Pronouns
@@ -57,7 +90,43 @@ COMMON_ENGLISH_WORDS = {
     # Articles / Prepositions / Conjunctions
     "the", "a", "an", "to", "in", "on", "at", "for", "with", "of", "and", "but", "or", "so", "because", "about", "up", "out", "into", "over", "after", "before", "between", "under", "through", "during", "without",
     # Adjectives / Adverbs / Nouns / Common Helpers
-    "not", "no", "yes", "ok", "okay", "good", "bad", "new", "old", "first", "last", "right", "wrong", "well", "very", "just", "more", "most", "some", "any", "other", "all", "what", "where", "when", "why", "how", "who", "which", "there", "here", "then", "now", "always", "never", "sometimes", "often", "people", "time", "year", "day", "way", "thing", "world", "life", "school", "english", "teacher", "student", "class", "lesson", "coffee", "rice", "market", "yesterday", "today", "tomorrow", "please", "thank", "thanks"
+    "not", "no", "yes", "ok", "okay", "good", "bad", "new", "old", "first", "last", "right", "wrong", "well", "very", "just", "more", "most", "some", "any", "other", "all", "what", "where", "when", "why", "how", "who", "which", "there", "here", "then", "now", "always", "never", "sometimes", "often", "people", "time", "year", "day", "way", "thing", "world", "life", "school", "english", "teacher", "student", "class", "lesson", "coffee", "rice", "market", "yesterday", "today", "tomorrow", "please", "thank", "thanks", "name", "live", "help", "friend", "understand", "question", "grammar", "practice"
+}
+
+CONTROLLED_SHORT_ENGLISH_UTTERANCES = {
+    "hello",
+    "hi",
+    "hey",
+    "what",
+    "where",
+    "when",
+    "why",
+    "who",
+    "how",
+    "yes",
+    "no",
+    "ok",
+    "okay",
+    "pardon",
+    "sorry",
+}
+
+LOW_INFORMATION_SHORT_TOKENS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "at",
+    "for",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "you",
 }
 
 VIETNAMESE_PHONETIC_TOKENS = {
@@ -65,9 +134,10 @@ VIETNAMESE_PHONETIC_TOKENS = {
     "toi", "toy", "di", "dee", "hoc", "xin", "chao", "ban", "hom", "nay", "troi", "dep", "qua",
     "tuan", "thuy", "minh", "anh", "co", "viet", "nam", "tieng", "nha", "giao", "vien", "sinh",
     "la", "gi", "sao", "the", "cung", "duoc", "khong", "biet", "chua", "roi", "va", "nhieu", "it",
+    "dang", "kiem", "tra", "he", "thong", "dong", "noi", "nghe", "nguoi", "lam",
     "mot", "hai", "ba", "bon", "nam", "sau", "bay", "tam", "chin", "muoi", "cam", "on",
     # Accented Vietnamese words
-    "tôi", "đi", "học", "xin", "chào", "bạn", "hôm", "nay", "trời", "đẹp", "quá", "tuấn", "thuỷ", "thủy", "minh", "anh", "cô", "việt", "nam", "tiếng", "nhà", "giáo", "viên", "sinh", "là", "gì", "sao", "thế", "cũng", "được", "không", "biết", "chưa", "rồi", "và", "nhiều", "ít", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín", "mười", "cảm", "ơn"
+    "tôi", "đi", "học", "xin", "chào", "bạn", "hôm", "nay", "trời", "đẹp", "quá", "tuấn", "thuỷ", "thủy", "minh", "anh", "cô", "việt", "nam", "tiếng", "nhà", "giáo", "viên", "sinh", "là", "gì", "sao", "thế", "cũng", "được", "không", "biết", "chưa", "rồi", "và", "nhiều", "ít", "đang", "kiểm", "tra", "hệ", "thống", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín", "mười", "cảm", "ơn"
 }
 
 
@@ -201,6 +271,10 @@ class LUVEExtension(ten.Extension):
         self._stt_final_min_audio_bytes = int(0.25 * PCM16_MONO_16KHZ_BYTES_PER_SECOND)
         self._stt_partial_beam_size = 1
         self._stt_final_beam_size = 3
+        self._stt_language_mode = "forced_en"
+        self._stt_transcribe_language: str | None = "en"
+        self._stt_second_pass_verification_enabled = False
+        self._stt_model_size = "small.en"
         self._stt_initial_prompt = (
             "This is a spoken English conversation between a learner and an AI tutor."
         )
@@ -312,6 +386,10 @@ class LUVEExtension(ten.Extension):
                     "tts_enabled": self._tts_output_enabled,
                 },
             )
+            self._schedule_on_runtime(
+                lambda: self._ensure_stt_ready_for_session(session_id),
+                label="on_cmd:START:stt_ready",
+            )
             self._emit_log(f"TEN command START accepted, session_id={session_id}")
             return
 
@@ -370,10 +448,17 @@ class LUVEExtension(ten.Extension):
         self._cleanup_lock = asyncio.Lock()
 
         self._stt_worker = await WhisperInference.get_instance(
-            model_size=str(self._properties.get("stt_model_size", "small")),
+            model_size=self._stt_model_size,
             preferred_device="cuda",
             preferred_compute_type="float16",
             beam_size=int(self._properties.get("stt_beam_size", 5)),
+        )
+        logger.info(
+            "ten.stt.language_config mode=%s model=%s transcribe_language=%s second_pass_verification=%s",
+            self._stt_language_mode,
+            self._stt_model_size,
+            self._stt_transcribe_language,
+            self._stt_second_pass_verification_enabled,
         )
 
         llm_provider = str(
@@ -451,6 +536,54 @@ class LUVEExtension(ten.Extension):
         self._inference_queue = asyncio.Queue(maxsize=1)
         self._inference_task = asyncio.create_task(
             self._inference_loop(), name="ten-inference-loop"
+        )
+
+    async def _ensure_stt_ready_for_session(self, session_id: str) -> None:
+        if self._stt_worker is None:
+            self._emit_json(
+                "stt_ready_error",
+                {
+                    "status": "error",
+                    "session_id": session_id,
+                    "reason": "stt_worker_unavailable",
+                },
+            )
+            return
+
+        was_loaded = self._stt_worker.is_model_loaded
+        try:
+            await self._stt_worker.load_model()
+        except Exception as exc:
+            logger.exception("ten.stt.ready_failed session_id=%s", session_id)
+            if self._session_id != session_id:
+                return
+            self._emit_json(
+                "stt_ready_error",
+                {
+                    "status": "error",
+                    "session_id": session_id,
+                    "reason": "stt_model_load_failed",
+                    "detail": type(exc).__name__,
+                },
+            )
+            return
+
+        if self._session_id != session_id:
+            return
+
+        runtime = self._stt_worker.runtime
+        self._emit_json(
+            "stt_ready",
+            {
+                "status": "ok",
+                "session_id": session_id,
+                "already_loaded": was_loaded,
+                "device": runtime.device if runtime is not None else None,
+                "compute_type": runtime.compute_type if runtime is not None else None,
+                "language_mode": self._stt_language_mode,
+                "transcribe_language": self._stt_transcribe_language,
+                "model_size": self._stt_model_size,
+            },
         )
 
     async def _async_stop(self) -> None:
@@ -924,6 +1057,7 @@ class LUVEExtension(ten.Extension):
                     self._stt_inference_busy = True
                     analysis = await self._stt_worker.transcribe_audio_bytes(
                         job.pcm_bytes,
+                        language=self._stt_transcribe_language,
                         initial_prompt=contextual_prompt,
                         beam_size=self._stt_final_beam_size
                         if job.is_final
@@ -964,6 +1098,34 @@ class LUVEExtension(ten.Extension):
                     self._stt_inference_busy = False
 
                 analysis.raw_text = sanitize_transcript(analysis.raw_text)
+                original_stt_text = analysis.raw_text
+                mixed_language_filtered = False
+                mixed_language_reasons: list[str] = []
+                if job.is_final and original_stt_text.strip():
+                    prepared_text, mixed_reasons = self._split_mixed_language_transcript(
+                        original_stt_text
+                    )
+                    mixed_language_reasons = mixed_reasons
+                    if "mixed_non_english" in mixed_reasons:
+                        self._emit_json(
+                            "stt_result_suppressed",
+                            {
+                                "reason": "mixed_non_english",
+                                "is_final": job.is_final,
+                                "trigger": job.trigger,
+                                "text": original_stt_text,
+                                "audio": job.audio_stats,
+                                "stt": analysis.model_dump(),
+                                "confidence": self._stt_confidence_metrics(analysis),
+                            },
+                        )
+                        if job.is_final:
+                            self._reset_current_utterance()
+                        continue
+                    if prepared_text and prepared_text != original_stt_text:
+                        analysis = analysis.model_copy(update={"raw_text": prepared_text})
+                        mixed_language_filtered = True
+
                 if self._is_probable_stt_hallucination(
                     analysis.raw_text,
                     is_final=job.is_final,
@@ -983,6 +1145,44 @@ class LUVEExtension(ten.Extension):
                     if job.is_final:
                         self._reset_current_utterance()
                     continue
+
+                verification_status = "skipped"
+                verification_analysis: STTAnalysis | None = None
+                confidence = self._stt_confidence_metrics(analysis)
+                if (
+                    job.is_final
+                    and analysis.raw_text.strip()
+                    and not mixed_language_filtered
+                ):
+                    verification_status, verification_analysis = (
+                        await self._verify_non_english_if_suspicious(
+                            analysis=analysis,
+                            pcm_bytes=job.pcm_bytes,
+                            audio_stats=job.audio_stats,
+                            confidence=confidence,
+                        )
+                    )
+                    if verification_status == "suppressed":
+                        self._emit_json(
+                            "stt_result_suppressed",
+                            {
+                                "reason": "non_english_verification_failed",
+                                "is_final": job.is_final,
+                                "trigger": job.trigger,
+                                "text": analysis.raw_text,
+                                "audio": job.audio_stats,
+                                "stt": analysis.model_dump(),
+                                "confidence": confidence,
+                                "verification": (
+                                    verification_analysis.model_dump()
+                                    if verification_analysis is not None
+                                    else None
+                                ),
+                            },
+                        )
+                        if job.is_final:
+                            self._reset_current_utterance()
+                        continue
 
                 stt_rejection = self._stt_rejection_reason(
                     analysis,
@@ -1006,6 +1206,47 @@ class LUVEExtension(ten.Extension):
                         self._reset_current_utterance()
                     continue
 
+                hop_ms = max((time.perf_counter() - job.queued_at) * 1000, 0.0)
+                inference_ms = (time.perf_counter() - started) * 1000
+                turn_metadata = self._stt_quality_assessment(
+                    analysis,
+                    audio_stats=job.audio_stats,
+                    inference_ms=inference_ms,
+                    verification_status=verification_status,
+                    original_text=original_stt_text,
+                    mixed_language_filtered=mixed_language_filtered,
+                    mixed_language_reasons=mixed_language_reasons,
+                ) if job.is_final and analysis.raw_text.strip() else None
+
+                if job.is_final and turn_metadata is not None:
+                    final_rejection = self._final_stt_acceptance_rejection_reason(
+                        analysis,
+                        trigger=job.trigger,
+                        audio_stats=job.audio_stats,
+                        turn_metadata=turn_metadata,
+                        mixed_language_filtered=mixed_language_filtered,
+                    )
+                    if final_rejection is not None:
+                        self._emit_json(
+                            "stt_result_suppressed",
+                            {
+                                "reason": final_rejection,
+                                "is_final": job.is_final,
+                                "trigger": job.trigger,
+                                "text": analysis.raw_text,
+                                "audio": job.audio_stats,
+                                "stt": analysis.model_dump(),
+                                "confidence": self._stt_confidence_metrics(analysis),
+                                "turn_metadata": turn_metadata,
+                                "latency": {
+                                    "graph_hop_ms": round(hop_ms, 2),
+                                    "stt_inference_ms": round(inference_ms, 2),
+                                },
+                            },
+                        )
+                        self._reset_current_utterance()
+                        continue
+
                 # Update context only after the final text survives cleanup.
                 if job.is_final and analysis.raw_text.strip():
                     self._previous_stt_text = analysis.raw_text.strip()
@@ -1013,9 +1254,6 @@ class LUVEExtension(ten.Extension):
                 logger.info(
                     f"TEN STT Output (final={job.is_final}): '{analysis.raw_text}'"
                 )
-
-                hop_ms = max((time.perf_counter() - job.queued_at) * 1000, 0.0)
-                inference_ms = (time.perf_counter() - started) * 1000
                 stt_log(
                     "ten.stt.job_finished is_final=%s trigger=%s inference_ms=%.2f total_ms=%.2f",
                     job.is_final,
@@ -1052,9 +1290,7 @@ class LUVEExtension(ten.Extension):
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "payload": {
                                 "text": analysis.raw_text,
-                                "confidence": 1.0,  # Faster-Whisper confidence is tricky to average here without all_words
-                                "stt_inference_ms": round(inference_ms, 2),
-                                "audio": job.audio_stats,
+                                **(turn_metadata or {}),
                             },
                         }
                     )
@@ -1068,7 +1304,7 @@ class LUVEExtension(ten.Extension):
                             },
                         )
                     else:
-                        await self._spawn_llm_for_final(analysis)
+                        await self._spawn_llm_for_final(analysis, turn_metadata or {})
             except Exception:
                 logger.exception("ten-inference-loop error")
                 await asyncio.sleep(1.0)
@@ -1076,7 +1312,11 @@ class LUVEExtension(ten.Extension):
                 if acquired_job and self._inference_queue is not None:
                     self._inference_queue.task_done()
 
-    async def _spawn_llm_for_final(self, analysis: STTAnalysis) -> None:
+    async def _spawn_llm_for_final(
+        self,
+        analysis: STTAnalysis,
+        stt_metadata: dict[str, object],
+    ) -> None:
         if not self._responses_enabled():
             return
         self._reset_tts_timing()
@@ -1085,7 +1325,7 @@ class LUVEExtension(ten.Extension):
             return
 
         task = asyncio.create_task(
-            self._run_llm_pipeline(analysis), name="ten-llm-pipeline"
+            self._run_llm_pipeline(analysis, stt_metadata), name="ten-llm-pipeline"
         )
         self._llm_tasks.add(task)
         task.add_done_callback(self._llm_tasks.discard)
@@ -1136,7 +1376,11 @@ class LUVEExtension(ten.Extension):
             )
             self._is_assistant_speaking = False  # ALWAYS unblock mic input
 
-    async def _run_llm_pipeline(self, analysis: STTAnalysis) -> None:
+    async def _run_llm_pipeline(
+        self,
+        analysis: STTAnalysis,
+        stt_metadata: dict[str, object],
+    ) -> None:
         if not self._responses_enabled():
             return
         if self._llm_processor is None:
@@ -1199,6 +1443,7 @@ class LUVEExtension(ten.Extension):
                 session_id=uuid4(),
                 stt=analysis,
                 on_token=on_token,
+                stt_metadata=stt_metadata,
             )
             if not self._responses_enabled():
                 return
@@ -1610,6 +1855,37 @@ class LUVEExtension(ten.Extension):
                 self._stt_initial_prompt,
             )
         )
+        configured_model_size = str(
+            self._properties.get("stt_model_size", settings.stt_model_size)
+        )
+        if settings.stt_model_size != "small.en":
+            configured_model_size = settings.stt_model_size
+        configured_language_mode = self._properties.get(
+            "stt_language_mode", settings.stt_language_mode
+        )
+        if self._normalize_stt_language_mode(settings.stt_language_mode) != "forced_en":
+            configured_language_mode = settings.stt_language_mode
+        self._stt_language_mode = self._normalize_stt_language_mode(
+            configured_language_mode
+        )
+        self._stt_transcribe_language = self._stt_transcription_language(
+            self._stt_language_mode
+        )
+        property_second_pass_enabled = self._coerce_bool(
+            self._properties.get(
+                "stt_enable_second_pass_verification",
+                settings.stt_enable_second_pass_verification,
+            ),
+            default=False,
+        )
+        self._stt_second_pass_verification_enabled = (
+            property_second_pass_enabled
+            or settings.stt_enable_second_pass_verification
+        )
+        self._stt_model_size = self._select_stt_model_size(
+            configured_model_size,
+            self._stt_language_mode,
+        )
 
         self._force_flush_timeout_seconds = max(
             float(self._properties.get("tts_force_flush_timeout_ms", 600)) / 1000.0,
@@ -1789,6 +2065,55 @@ class LUVEExtension(ten.Extension):
         return f"{previous} {cleaned}"
 
     @staticmethod
+    def _normalize_stt_language_mode(value: object) -> str:
+        mode = str(value or "forced_en").strip().lower()
+        if mode in STT_LANGUAGE_MODES:
+            return mode
+        logger.warning(
+            "ten.stt.invalid_language_mode mode=%r fallback=forced_en",
+            value,
+        )
+        return "forced_en"
+
+    @staticmethod
+    def _stt_transcription_language(language_mode: str) -> str | None:
+        mode = LUVEExtension._normalize_stt_language_mode(language_mode)
+        return "en" if mode == "forced_en" else None
+
+    @staticmethod
+    def _select_stt_model_size(configured_model: object, language_mode: str) -> str:
+        model = str(configured_model or "").strip() or settings.stt_model_size
+        mode = LUVEExtension._normalize_stt_language_mode(language_mode)
+        if mode == "forced_en":
+            return model
+
+        if model.endswith(".en"):
+            multilingual_model = model[:-3]
+            logger.warning(
+                "ten.stt.auto_language_requires_multilingual_model configured=%s selected=%s mode=%s",
+                model,
+                multilingual_model,
+                mode,
+            )
+            return multilingual_model
+        return model
+
+    @staticmethod
+    def _coerce_bool(value: object, *, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+            return default
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return default
+
+    @staticmethod
     def _normalize_stt_text(text: str) -> str:
         return " ".join(
             "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in text).split()
@@ -1808,8 +2133,7 @@ class LUVEExtension(ten.Extension):
         if len(words) < 2:
             return False
 
-        # Negative guard: if the transcript contains any known Vietnamese phonetic token, reject
-        if any(w in VIETNAMESE_PHONETIC_TOKENS for w in words):
+        if self._contains_vietnamese_text(text):
             return False
 
         english_tokens = [w for w in words if w in COMMON_ENGLISH_WORDS]
@@ -1827,55 +2151,423 @@ class LUVEExtension(ten.Extension):
 
         return False
 
-    def _is_strong_short_english_response(
+    def _has_strong_learner_english_attempt(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized:
+            return False
+        if self._contains_vietnamese_text(text):
+            return False
+
+        words = normalized.split()
+        if len(words) < 3:
+            return False
+
+        english_tokens = [w for w in words if w in COMMON_ENGLISH_WORDS]
+        content_tokens = [
+            w
+            for w in words
+            if len(w) >= 3 and w not in LOW_INFORMATION_SHORT_TOKENS
+        ]
+        english_ratio = len(english_tokens) / len(words)
+
+        if len(english_tokens) >= 3:
+            return True
+        if len(english_tokens) >= 2 and len(content_tokens) >= 2:
+            return True
+        if len(words) >= 6 and len(english_tokens) >= 2 and english_ratio >= 0.30 and len(content_tokens) >= 4:
+            return True
+
+        return False
+
+    def _is_controlled_short_english_candidate(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized or self._contains_vietnamese_text(text):
+            return False
+        words = normalized.split()
+        if len(words) == 0 or len(words) > 2:
+            return False
+        return any(word in CONTROLLED_SHORT_ENGLISH_UTTERANCES for word in words)
+
+    def _contains_vietnamese_text(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized:
+            return False
+
+        raw_lower = text.lower()
+        if any(char in raw_lower for char in VIETNAMESE_ACCENTED_CHARS):
+            return True
+
+        return any(word in VIETNAMESE_PHONETIC_TOKENS for word in normalized.split())
+
+    def _is_incomplete_short_english_fragment(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized:
+            return False
+        return normalized in INCOMPLETE_SHORT_ENGLISH_FRAGMENTS
+
+    def _token_contains_vietnamese_marker(self, token: str) -> bool:
+        lowered = token.lower()
+        if any(char in lowered for char in VIETNAMESE_ACCENTED_CHARS):
+            return True
+        normalized = self._normalize_stt_text(token)
+        if not normalized:
+            return False
+        return any(word in VIETNAMESE_PHONETIC_TOKENS for word in normalized.split())
+
+    def _is_plausible_short_english_text(self, text: str) -> bool:
+        normalized = self._normalize_stt_text(text)
+        if not normalized or self._contains_vietnamese_text(text):
+            return False
+        if not text.isascii():
+            return False
+
+        words = normalized.split()
+        if len(words) == 0 or len(words) > 2:
+            return False
+        if self._is_incomplete_short_english_fragment(text):
+            return False
+        if any(not word.isalpha() for word in words):
+            return False
+        if len(words) == 1 and words[0] in LOW_INFORMATION_SHORT_TOKENS:
+            return False
+        if len(words) == 2 and all(word in LOW_INFORMATION_SHORT_TOKENS for word in words):
+            return False
+
+        boosted = self._is_controlled_short_english_candidate(text)
+        anchor_count = sum(
+            1
+            for word in words
+            if word in COMMON_ENGLISH_WORDS or word in CONTROLLED_SHORT_ENGLISH_UTTERANCES
+        )
+        has_content_word = any(len(word) >= 4 for word in words)
+        if len(words) == 1:
+            return (
+                boosted
+                or (words[0] in COMMON_ENGLISH_WORDS and len(words[0]) >= 4)
+                or len(words[0]) >= 5
+            )
+        return anchor_count >= 1 and has_content_word
+
+    def _mixed_english_runs(self, text: str) -> list[str]:
+        runs: list[str] = []
+        current_tokens: list[str] = []
+        for raw_token in text.split():
+            if self._token_contains_vietnamese_marker(raw_token):
+                if current_tokens:
+                    runs.append(" ".join(current_tokens).strip(" ,.;:!?"))
+                    current_tokens = []
+                continue
+            current_tokens.append(raw_token)
+
+        if current_tokens:
+            runs.append(" ".join(current_tokens).strip(" ,.;:!?"))
+
+        return runs
+
+    def _english_segment_from_mixed_text(self, text: str) -> str | None:
+        if not self._contains_vietnamese_text(text):
+            return None
+
+        best_segment: str | None = None
+        best_score: tuple[int, int, int] = (-1, -1, -1)
+        for segment in self._mixed_english_runs(text):
+            normalized = self._normalize_stt_text(segment)
+            words = normalized.split()
+            if not words:
+                continue
+            if self._contains_vietnamese_text(segment):
+                continue
+            if len(words) < 3:
+                continue
+            if self._is_incomplete_short_english_fragment(segment):
+                continue
+            if not (
+                self._has_learner_english_evidence(segment)
+                or self._has_strong_learner_english_attempt(segment)
+            ):
+                continue
+
+            anchor_count = sum(
+                1
+                for word in words
+                if word in COMMON_ENGLISH_WORDS or word in CONTROLLED_SHORT_ENGLISH_UTTERANCES
+            )
+            score = (anchor_count, len(words), len(segment))
+            if score > best_score:
+                best_segment = segment
+                best_score = score
+
+        return best_segment
+
+    def _weak_english_fragment_from_mixed_text(self, text: str) -> str | None:
+        if not self._contains_vietnamese_text(text):
+            return None
+
+        best_fragment: str | None = None
+        best_score: tuple[int, int, int] = (-1, -1, -1)
+        for segment in self._mixed_english_runs(text):
+            normalized = self._normalize_stt_text(segment)
+            words = normalized.split()
+            if not words or len(words) > 2:
+                continue
+            if self._contains_vietnamese_text(segment) or not segment.isascii():
+                continue
+            if any(not word.isalpha() for word in words):
+                continue
+            if len(words) == 1 and words[0] in LOW_INFORMATION_SHORT_TOKENS:
+                continue
+            if len(words) == 2 and all(word in LOW_INFORMATION_SHORT_TOKENS for word in words):
+                continue
+
+            anchor_count = sum(
+                1
+                for word in words
+                if word in COMMON_ENGLISH_WORDS or word in CONTROLLED_SHORT_ENGLISH_UTTERANCES
+            )
+            if anchor_count == 0:
+                continue
+            has_content_word = any(len(word) >= 4 for word in words)
+            if len(words) == 2 and not has_content_word:
+                continue
+            score = (anchor_count, len(words), len(segment))
+            if score > best_score:
+                best_fragment = segment
+                best_score = score
+
+        return best_fragment
+
+    def _split_mixed_language_transcript(self, text: str) -> tuple[str, list[str]]:
+        if not self._contains_vietnamese_text(text):
+            return text, []
+
+        extracted = self._english_segment_from_mixed_text(text)
+        if extracted:
+            return extracted, ["mixed_language_filtered"]
+        weak_fragment = self._weak_english_fragment_from_mixed_text(text)
+        if weak_fragment:
+            return weak_fragment, ["weak_mixed_language_english"]
+        return "", ["mixed_non_english"]
+
+    def _is_plausible_short_english_utterance(
         self,
         analysis: STTAnalysis,
         audio_stats: dict[str, object] | None,
         confidence: dict[str, object],
     ) -> bool:
-        normalized = self._normalize_stt_text(analysis.raw_text)
-        if not normalized:
+        if not self._is_plausible_short_english_text(analysis.raw_text):
             return False
-        words = normalized.split()
-        if len(words) != 1:
-            return False
-        word = words[0]
-        if word not in {"yes", "no", "ok", "okay"}:
-            return False
+        boosted = self._is_controlled_short_english_candidate(analysis.raw_text)
 
-        # Strong acoustic evidence checks
         speech_ms = None
         if audio_stats is not None:
             value = audio_stats.get("speech_ms")
             if isinstance(value, (int, float)):
                 speech_ms = float(value)
 
-        # Check speech duration
-        if speech_ms is not None and speech_ms < LEARNER_SHORT_ANSWER_MIN_SPEECH_MS:
+        if speech_ms is not None and speech_ms < CONTROLLED_SHORT_ENGLISH_MIN_SPEECH_MS:
             return False
 
-        # Check no speech prob
+        max_no_speech_prob = 0.35 if boosted else 0.30
         if (
             analysis.no_speech_prob is not None
-            and analysis.no_speech_prob > 0.25
+            and analysis.no_speech_prob > max_no_speech_prob
         ):
             return False
 
-        # Check avg logprob
+        min_avg_logprob = -0.78 if boosted else -0.70
         if (
             analysis.avg_logprob is not None
-            and analysis.avg_logprob < -0.55
+            and analysis.avg_logprob < min_avg_logprob
         ):
             return False
 
-        # Check low confidence word ratio
+        max_low_conf_ratio = 0.45 if boosted else 0.35
         if (
             confidence.get("word_count", 0) > 0
-            and confidence.get("low_confidence_word_ratio", 0.0) > 0.25
+            and confidence.get("low_confidence_word_ratio", 0.0) > max_low_conf_ratio
+        ):
+            return False
+
+        if (
+            analysis.compression_ratio is not None
+            and analysis.compression_ratio > settings.stt_max_compression_ratio
         ):
             return False
 
         return True
+
+    def _is_acoustically_plausible_incomplete_fragment(
+        self,
+        analysis: STTAnalysis,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+    ) -> bool:
+        if not self._is_incomplete_short_english_fragment(analysis.raw_text):
+            return False
+        if self._contains_vietnamese_text(analysis.raw_text) or not analysis.raw_text.isascii():
+            return False
+        if any(canned in self._normalize_stt_text(analysis.raw_text) for canned in CANNED_STT_HALLUCINATION_PHRASES):
+            return False
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+        if speech_ms is not None and speech_ms < CONTROLLED_SHORT_ENGLISH_MIN_SPEECH_MS:
+            return False
+        if analysis.no_speech_prob is not None and analysis.no_speech_prob > 0.35:
+            return False
+        if analysis.avg_logprob is not None and analysis.avg_logprob < -0.80:
+            return False
+        if (
+            confidence.get("word_count", 0) > 0
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) > 0.45
+        ):
+            return False
+        return True
+
+    def _should_run_non_english_verification(
+        self,
+        analysis: STTAnalysis,
+        *,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+    ) -> bool:
+        normalized = self._normalize_stt_text(analysis.raw_text)
+        if not normalized or self._contains_vietnamese_text(analysis.raw_text):
+            return False
+        if not analysis.raw_text.isascii():
+            return False
+
+        words = normalized.split()
+        if len(words) == 0 or len(words) > 6:
+            return False
+
+        has_phrase_evidence = self._has_learner_english_evidence(analysis.raw_text)
+        has_strong_learner_attempt = self._has_strong_learner_english_attempt(
+            analysis.raw_text
+        )
+        is_plausible_short = self._is_plausible_short_english_utterance(
+            analysis,
+            audio_stats,
+            confidence,
+        )
+        possible_stt_autocorrection = self._is_possible_stt_autocorrection(
+            analysis,
+            confidence=confidence,
+            has_phrase_evidence=has_phrase_evidence,
+            is_strong_short=is_plausible_short,
+        )
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+
+        if (
+            len(words) <= 2
+            and is_plausible_short
+            and (speech_ms is None or speech_ms >= 450)
+            and (analysis.no_speech_prob is None or analysis.no_speech_prob <= 0.18)
+            and (analysis.avg_logprob is None or analysis.avg_logprob >= -0.45)
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) <= 0.20
+        ):
+            return False
+        if (
+            len(words) > 2
+            and has_strong_learner_attempt
+            and has_phrase_evidence
+            and not possible_stt_autocorrection
+            and (speech_ms is None or speech_ms >= 1000)
+            and (analysis.no_speech_prob is None or analysis.no_speech_prob <= 0.22)
+            and (analysis.avg_logprob is None or analysis.avg_logprob >= -0.60)
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) <= 0.40
+        ):
+            return False
+
+        suspicious_signals = 0
+        if not has_phrase_evidence and not has_strong_learner_attempt:
+            suspicious_signals += 1
+        if analysis.avg_logprob is not None and analysis.avg_logprob < -0.55:
+            suspicious_signals += 1
+        if analysis.no_speech_prob is not None and analysis.no_speech_prob > 0.20:
+            suspicious_signals += 1
+        if analysis.compression_ratio is not None and analysis.compression_ratio > 1.6:
+            suspicious_signals += 1
+        if (
+            confidence["word_count"] > 0
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) > 0.25
+        ):
+            suspicious_signals += 1
+        if possible_stt_autocorrection:
+            suspicious_signals += 1
+        if len(words) <= 2 and not is_plausible_short:
+            suspicious_signals += 1
+        if speech_ms is not None and speech_ms < 700:
+            suspicious_signals += 1
+
+        if len(words) <= 2:
+            return suspicious_signals >= 1
+        return suspicious_signals >= 2
+
+    @staticmethod
+    def _verification_indicates_non_english(verification: STTAnalysis) -> bool:
+        language = str(verification.detected_language or "").strip().lower()
+        probability = verification.detected_language_probability
+        if not language or language == "en":
+            return False
+        if probability is None:
+            return False
+        return float(probability) >= NON_ENGLISH_VERIFICATION_MIN_PROBABILITY
+
+    async def _verify_non_english_if_suspicious(
+        self,
+        *,
+        analysis: STTAnalysis,
+        pcm_bytes: bytes,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+    ) -> tuple[str, STTAnalysis | None]:
+        if not getattr(self, "_stt_second_pass_verification_enabled", False):
+            return "skipped", None
+        if self._stt_worker is None:
+            return "skipped", None
+        if not self._should_run_non_english_verification(
+            analysis,
+            audio_stats=audio_stats,
+            confidence=confidence,
+        ):
+            return "skipped", None
+
+        try:
+            verification = await asyncio.wait_for(
+                self._stt_worker.transcribe_audio_bytes(
+                    pcm_bytes,
+                    language=None,
+                    initial_prompt=None,
+                    beam_size=1,
+                    word_timestamps=False,
+                    vad_filter=False,
+                    condition_on_previous_text=False,
+                ),
+                timeout=NON_ENGLISH_VERIFICATION_TIMEOUT_SECONDS,
+            )
+        except (asyncio.TimeoutError, STTProcessingError, RuntimeError):
+            return "unavailable", None
+        except Exception:
+            logger.warning("ten.stt.non_english_verification_failed", exc_info=True)
+            return "unavailable", None
+
+        analysis.verification_language = verification.detected_language
+        analysis.verification_language_probability = (
+            verification.detected_language_probability
+        )
+
+        if self._verification_indicates_non_english(verification):
+            return "suppressed", verification
+        return "verified", verification
 
     def _is_probable_stt_hallucination(
         self,
@@ -1906,17 +2598,21 @@ class LUVEExtension(ten.Extension):
                     return True
 
         # 2. Suspicious canned Whisper hallucination phrases guard
-        CANNED_HALLUCINATIONS = {
-            "go home now everyone",
-            "today is a club night",
-            "thank you very much",
-        }
-        if any(canned in normalized for canned in CANNED_HALLUCINATIONS):
+        if any(canned in normalized for canned in CANNED_STT_HALLUCINATION_PHRASES):
             # Suppress canned phrases when speech/audio duration is not exceptionally long,
             # indicating it's a forced-English hallucination from shorter audio/Vietnamese speech.
             if "thank you very much" in normalized:
                 min_speech = 1500
                 min_audio = 2.0
+            elif (
+                "have a good day" in normalized
+                or "i don t know what to say" in normalized
+                or "i dont know what to say" in normalized
+                or "don t ask me to speak english" in normalized
+                or "dont ask me to speak english" in normalized
+            ):
+                min_speech = 1800
+                min_audio = 2.5
             else:
                 min_speech = 3000
                 min_audio = 3.5
@@ -1967,16 +2663,19 @@ class LUVEExtension(ten.Extension):
         normalized = self._normalize_stt_text(analysis.raw_text)
         if not normalized:
             return "empty_transcript"
-
         confidence = self._stt_confidence_metrics(analysis)
+        if (
+            self._is_incomplete_short_english_fragment(analysis.raw_text)
+            and not self._is_acoustically_plausible_incomplete_fragment(
+                analysis,
+                audio_stats,
+                confidence,
+            )
+        ):
+            return "incomplete_short_fragment"
 
         # 3. Check suspicious canned/filler forced-English hallucinations
-        CANNED_HALLUCINATIONS = {
-            "go home now everyone",
-            "today is a club night",
-            "thank you very much",
-        }
-        if any(canned in normalized for canned in CANNED_HALLUCINATIONS):
+        if any(canned in normalized for canned in CANNED_STT_HALLUCINATION_PHRASES):
             # Require strong acoustic confidence to keep genuine learner attempts
             if (
                 analysis.avg_logprob is not None
@@ -1987,8 +2686,25 @@ class LUVEExtension(ten.Extension):
             ):
                 return "probable_hallucination"
 
-        is_strong_short = self._is_strong_short_english_response(analysis, audio_stats, confidence)
+        is_short_with_boost = self._is_controlled_short_english_candidate(
+            analysis.raw_text
+        )
+        is_plausible_short = self._is_plausible_short_english_utterance(
+            analysis,
+            audio_stats,
+            confidence,
+        )
+        is_plausible_incomplete_fragment = (
+            self._is_acoustically_plausible_incomplete_fragment(
+                analysis,
+                audio_stats,
+                confidence,
+            )
+        )
         has_phrase_evidence = self._has_learner_english_evidence(analysis.raw_text)
+        has_strong_learner_attempt = self._has_strong_learner_english_attempt(
+            analysis.raw_text
+        )
 
         speech_ms = None
         if audio_stats is not None:
@@ -2008,7 +2724,7 @@ class LUVEExtension(ten.Extension):
         has_vietnamese = False
         if normalized:
             words = normalized.split()
-            has_vietnamese = any(w in VIETNAMESE_PHONETIC_TOKENS for w in words)
+            has_vietnamese = self._contains_vietnamese_text(analysis.raw_text)
             if not has_vietnamese and analysis.raw_text.isascii():
                 if (
                     analysis.avg_logprob is not None
@@ -2019,8 +2735,10 @@ class LUVEExtension(ten.Extension):
 
         is_eligible_learner_english = (
             (
-                is_strong_short
+                is_plausible_short
+                or is_plausible_incomplete_fragment
                 or has_phrase_evidence
+                or has_strong_learner_attempt
                 or is_exceptionally_high_confidence
                 or is_strong_acoustic_ascii
             )
@@ -2033,8 +2751,8 @@ class LUVEExtension(ten.Extension):
         # For strong short answers, minimum duration is LEARNER_SHORT_ANSWER_MIN_SPEECH_MS (350ms)
         # For learner phrase attempts, minimum is max(self._stt_final_min_speech_ms, LEARNER_PHRASE_MIN_SPEECH_MS) (500ms)
         # Otherwise, enforce strict configured minimum (typically 1000ms).
-        if is_strong_short:
-            min_speech_ms = LEARNER_SHORT_ANSWER_MIN_SPEECH_MS
+        if is_plausible_short or is_plausible_incomplete_fragment:
+            min_speech_ms = CONTROLLED_SHORT_ENGLISH_MIN_SPEECH_MS
         elif is_eligible_learner_english:
             min_speech_ms = max(self._stt_final_min_speech_ms, LEARNER_PHRASE_MIN_SPEECH_MS)
         else:
@@ -2046,7 +2764,11 @@ class LUVEExtension(ten.Extension):
         # 2. Check word count.
         # Strong short responses bypass settings.stt_min_words_for_llm (which might be >= 2)
         # Otherwise, we enforce settings.stt_min_words_for_llm
-        expected_min_words = 1 if is_strong_short else settings.stt_min_words_for_llm
+        expected_min_words = (
+            1
+            if is_plausible_short or is_plausible_incomplete_fragment
+            else settings.stt_min_words_for_llm
+        )
         if word_count < expected_min_words:
             return "too_few_words"
 
@@ -2063,6 +2785,15 @@ class LUVEExtension(ten.Extension):
         max_no_speech = RELAXED_STT_MAX_NO_SPEECH_PROB if is_eligible_learner_english else settings.stt_max_no_speech_prob
         min_avg_logprob = RELAXED_STT_MIN_AVG_LOGPROB if is_eligible_learner_english else settings.stt_min_avg_logprob
         max_low_conf_ratio = RELAXED_STT_MAX_LOW_CONFIDENCE_WORD_RATIO if is_eligible_learner_english else settings.stt_max_low_confidence_word_ratio
+
+        if is_short_with_boost and not has_phrase_evidence:
+            max_no_speech = max(max_no_speech, 0.35)
+            min_avg_logprob = min(min_avg_logprob, -0.78)
+            max_low_conf_ratio = max(max_low_conf_ratio, 0.45)
+        if has_strong_learner_attempt:
+            max_no_speech = max(max_no_speech, 0.90)
+            min_avg_logprob = min(min_avg_logprob, -1.30)
+            max_low_conf_ratio = max(max_low_conf_ratio, 0.85)
 
         if (
             analysis.no_speech_prob is not None
@@ -2089,7 +2820,7 @@ class LUVEExtension(ten.Extension):
         return None
 
     @staticmethod
-    def _stt_confidence_metrics(analysis: STTAnalysis) -> dict[str, object]:
+    def _stt_confidence_summary(analysis: STTAnalysis) -> dict[str, object]:
         word_count = len(analysis.all_words)
         low_confidence_word_count = sum(
             1
@@ -2100,6 +2831,7 @@ class LUVEExtension(ten.Extension):
             low_confidence_word_count / word_count if word_count else 0.0
         )
         return {
+            "confidence_score": None,
             "avg_logprob": analysis.avg_logprob,
             "no_speech_prob": analysis.no_speech_prob,
             "compression_ratio": analysis.compression_ratio,
@@ -2108,7 +2840,284 @@ class LUVEExtension(ten.Extension):
             "low_confidence_word_count": low_confidence_word_count,
             "low_confidence_word_ratio": round(low_confidence_word_ratio, 4),
             "min_word_confidence": settings.stt_min_word_confidence,
+            "detected_language": analysis.detected_language,
+            "detected_language_probability": analysis.detected_language_probability,
+            "verification_language": analysis.verification_language,
+            "verification_language_probability": analysis.verification_language_probability,
         }
+
+    @classmethod
+    def _stt_confidence_metrics(cls, analysis: STTAnalysis) -> dict[str, object]:
+        return cls._stt_confidence_summary(analysis)
+
+    def _stt_uncertainty_reasons(
+        self,
+        analysis: STTAnalysis,
+        *,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+        is_strong_short: bool,
+        has_phrase_evidence: bool,
+        is_strong_acoustic_ascii: bool,
+        possible_stt_autocorrection: bool,
+        verification_status: str,
+        mixed_language_filtered: bool,
+    ) -> list[str]:
+        reasons: list[str] = []
+
+        if analysis.avg_logprob is not None and analysis.avg_logprob < -0.55:
+            reasons.append("low_average_logprob")
+        if analysis.no_speech_prob is not None and analysis.no_speech_prob > 0.25:
+            reasons.append("high_no_speech_probability")
+        if (
+            confidence["word_count"] > 0
+            and confidence["low_confidence_word_ratio"] > 0.25
+        ):
+            reasons.append("many_low_confidence_words")
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+        if (
+            not is_strong_short
+            and speech_ms is not None
+            and speech_ms < LEARNER_PHRASE_MIN_SPEECH_MS
+        ):
+            reasons.append("short_utterance")
+
+        if (
+            not has_phrase_evidence
+            and not is_strong_short
+            and is_strong_acoustic_ascii
+            and reasons
+        ):
+            reasons.append("borderline_learner_english")
+
+        if possible_stt_autocorrection:
+            reasons.append("possible_stt_autocorrection")
+        if mixed_language_filtered:
+            reasons.append("mixed_language_filtered")
+        if verification_status == "unavailable":
+            reasons.append("verification_unavailable")
+        elif (
+            verification_status == "verified"
+            and analysis.verification_language
+            and analysis.verification_language.lower() != "en"
+            and analysis.verification_language_probability is not None
+            and float(analysis.verification_language_probability) >= 0.35
+        ):
+            reasons.append("verification_language_mismatch")
+
+        return reasons
+
+    def _is_possible_stt_autocorrection(
+        self,
+        analysis: STTAnalysis,
+        *,
+        confidence: dict[str, object],
+        has_phrase_evidence: bool,
+        is_strong_short: bool,
+    ) -> bool:
+        if is_strong_short or not has_phrase_evidence:
+            return False
+        if not analysis.raw_text.isascii():
+            return False
+        if len(self._normalize_stt_text(analysis.raw_text).split()) < 3:
+            return False
+
+        low_conf_ratio = float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0)
+        has_clean_word_confidence = confidence.get("word_count", 0) == 0 or low_conf_ratio <= 0.25
+        return (
+            has_clean_word_confidence
+            and analysis.avg_logprob is not None
+            and analysis.avg_logprob < -0.55
+        )
+
+    def _stt_quality_assessment(
+        self,
+        analysis: STTAnalysis,
+        *,
+        audio_stats: dict[str, object] | None,
+        inference_ms: float,
+        verification_status: str = "skipped",
+        original_text: str | None = None,
+        mixed_language_filtered: bool = False,
+        mixed_language_reasons: list[str] | None = None,
+    ) -> dict[str, object]:
+        confidence = self._stt_confidence_summary(analysis)
+        normalized = self._normalize_stt_text(analysis.raw_text)
+        words = normalized.split() if normalized else []
+
+        is_plausible_short = self._is_plausible_short_english_utterance(
+            analysis,
+            audio_stats,
+            confidence,
+        )
+        is_plausible_incomplete_fragment = (
+            self._is_acoustically_plausible_incomplete_fragment(
+                analysis,
+                audio_stats,
+                confidence,
+            )
+        )
+        has_phrase_evidence = self._has_learner_english_evidence(analysis.raw_text)
+        has_vietnamese = self._contains_vietnamese_text(analysis.raw_text)
+        mixed_reason_set = set(mixed_language_reasons or [])
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+
+        is_strong_acoustic_ascii = (
+            not has_vietnamese
+            and analysis.raw_text.isascii()
+            and analysis.avg_logprob is not None
+            and analysis.avg_logprob >= -0.50
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) <= 0.20
+        )
+        is_exceptionally_high_confidence = (
+            analysis.avg_logprob is not None
+            and analysis.avg_logprob >= -0.40
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) <= 0.15
+            and (speech_ms is None or speech_ms >= LEARNER_PHRASE_MIN_SPEECH_MS)
+        )
+        possible_stt_autocorrection = self._is_possible_stt_autocorrection(
+            analysis,
+            confidence=confidence,
+            has_phrase_evidence=has_phrase_evidence,
+            is_strong_short=is_plausible_short,
+        )
+        uncertainty_reasons = self._stt_uncertainty_reasons(
+            analysis,
+            audio_stats=audio_stats,
+            confidence=confidence,
+            is_strong_short=is_plausible_short,
+            has_phrase_evidence=has_phrase_evidence,
+            is_strong_acoustic_ascii=is_strong_acoustic_ascii,
+            possible_stt_autocorrection=possible_stt_autocorrection,
+            verification_status=verification_status,
+            mixed_language_filtered=mixed_language_filtered,
+        )
+        if (
+            not uncertainty_reasons
+            and not is_plausible_short
+            and not is_exceptionally_high_confidence
+            and not has_phrase_evidence
+            and is_strong_acoustic_ascii
+        ):
+            uncertainty_reasons.append("borderline_learner_english")
+        if is_plausible_incomplete_fragment:
+            if "short_utterance" not in uncertainty_reasons:
+                uncertainty_reasons.append("short_utterance")
+            if "incomplete_fragment" not in uncertainty_reasons:
+                uncertainty_reasons.append("incomplete_fragment")
+
+        payload: dict[str, object] = {
+            "confidence": 1.0,
+            "stt_quality": "uncertain" if uncertainty_reasons else "confident",
+            "stt_confidence": confidence,
+            "uncertainty_reasons": uncertainty_reasons,
+            "possible_hallucination": False,
+            "possible_stt_autocorrection": possible_stt_autocorrection,
+            "tutor_visible": True,
+            "grading_eligible": True,
+            "turn_language_type": "mixed" if mixed_language_filtered else "english",
+            "stt_inference_ms": round(inference_ms, 2),
+            "audio": audio_stats,
+        }
+        if is_plausible_incomplete_fragment:
+            payload["grading_eligible"] = False
+        if mixed_language_filtered and original_text and original_text != analysis.raw_text:
+            payload["original_stt_text"] = original_text
+            payload["english_segment"] = analysis.raw_text
+            payload["mixed_language"] = True
+            payload["removed_non_english"] = True
+            if "weak_mixed_language_english" in mixed_reason_set:
+                payload["english_segment"] = ""
+                payload["grading_eligible"] = False
+                payload["excluded_from_grading_reason"] = "weak_mixed_language_english"
+                if "weak_mixed_language_english" not in uncertainty_reasons:
+                    uncertainty_reasons.append("weak_mixed_language_english")
+        if analysis.all_words:
+            payload["words"] = [
+                {
+                    "word": item.word,
+                    "probability": item.confidence,
+                    "start_ms": item.start_ms,
+                    "end_ms": item.end_ms,
+                }
+                for item in analysis.all_words
+            ]
+        return payload
+
+    def _mixed_english_segment_has_final_evidence(
+        self,
+        analysis: STTAnalysis,
+        *,
+        audio_stats: dict[str, object] | None,
+        confidence: dict[str, object],
+    ) -> bool:
+        normalized = self._normalize_stt_text(analysis.raw_text)
+        words = normalized.split() if normalized else []
+        if len(words) < 3:
+            return False
+        if self._is_incomplete_short_english_fragment(analysis.raw_text):
+            return False
+        if self._contains_vietnamese_text(analysis.raw_text):
+            return False
+        if not analysis.raw_text.isascii():
+            return False
+        if not (
+            self._has_learner_english_evidence(analysis.raw_text)
+            or self._has_strong_learner_english_attempt(analysis.raw_text)
+        ):
+            return False
+
+        speech_ms = None
+        if audio_stats is not None:
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+        if speech_ms is not None and speech_ms < 700:
+            return False
+        if analysis.no_speech_prob is not None and analysis.no_speech_prob > 0.35:
+            return False
+        if analysis.avg_logprob is not None and analysis.avg_logprob < -0.80:
+            return False
+        if (
+            confidence.get("word_count", 0) > 0
+            and float(confidence.get("low_confidence_word_ratio", 0.0) or 0.0) > 0.45
+        ):
+            return False
+        return True
+
+    def _final_stt_acceptance_rejection_reason(
+        self,
+        analysis: STTAnalysis,
+        *,
+        trigger: str,
+        audio_stats: dict[str, object] | None,
+        turn_metadata: dict[str, object],
+        mixed_language_filtered: bool,
+    ) -> str | None:
+        if not analysis.raw_text.strip():
+            return "empty_transcript"
+
+        raw_reasons = turn_metadata.get("uncertainty_reasons")
+        reasons = {
+            item.strip()
+            for item in raw_reasons
+            if isinstance(item, str) and item.strip()
+        } if isinstance(raw_reasons, list) else set()
+
+        if "verification_language_mismatch" in reasons:
+            return "verification_language_mismatch"
+
+        return None
 
     @staticmethod
     def _extract_response_text(raw_stream: str) -> str:
