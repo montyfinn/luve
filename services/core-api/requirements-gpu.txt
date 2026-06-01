@@ -1,0 +1,9 @@
+# GPU-only CUDA runtime libraries for the ctranslate2/faster-whisper CUDA path.
+# Installed ONLY in Dockerfile.gpu (the opt-in GPU image) — kept out of the
+# default CPU image to avoid bloating CPU/CI installs.
+#
+# ctranslate2==4.7.1 dynamically links cuBLAS 12 and cuDNN 9 at runtime; the
+# python:3.10-slim base provides neither. The NVIDIA driver itself (libcuda)
+# is injected at runtime by `gpus: all`, not from these wheels.
+nvidia-cublas-cu12>=12.1,<13
+nvidia-cudnn-cu12>=9,<10

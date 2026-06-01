@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+# ============================================================
+# LUVE core-api GPU image (opt-in; T9 GPU STT enablement)
+#
+# Identical to ./Dockerfile (CPU) except it adds the CUDA 12 runtime libraries
+# (cuBLAS 12 + cuDNN 9) that ctranslate2==4.7.1 / faster-whisper dynamically
+# link for the CUDA STT path. The python:3.10-slim base ships neither; the
+# NVIDIA *driver* (libcuda) is injected at runtime by `gpus: all`.
+#
+# Opt-in only — used by docker-compose.gpu.yml for ten_gateway. The default CPU
+# image (./Dockerfile) and `docker compose --profile app up -d` are unchanged.
+# ============================================================
+
+# ---- Builder: install pinned deps + CUDA runtime wheels into an isolated venv ----
+FROM python:3.10-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Same pinned app deps as the CPU image (identical layer → cache-shareable).
+COPY requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock
+
+# GPU-only: CUDA runtime libs for ctranslate2/faster-whisper CUDA execution.
+COPY requirements-gpu.txt ./requirements-gpu.txt
+RUN pip install --no-cache-dir -r requirements-gpu.txt
+
+# ---- Runtime: slim image + venv + CUDA libs on the loader path ----
+FROM python:3.10-slim AS runtime
+
+# LD_LIBRARY_PATH points the dynamic loader at the cuBLAS/cuDNN .so files that
+# the nvidia-*-cu12 wheels install under the venv's site-packages.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    HF_HOME=/cache/huggingface \
+    LD_LIBRARY_PATH="/opt/venv/lib/python3.10/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib"
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+
+RUN mkdir -p /cache/huggingface
+
+COPY src ./src
+COPY run_ten.py ./run_ten.py
+COPY graph.json ./graph.json
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
