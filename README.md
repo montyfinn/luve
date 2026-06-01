@@ -34,6 +34,26 @@ docker compose logs -f core_api
 Real `.env` files are git-ignored and must never be committed; only the
 `.env.example` templates are tracked.
 
+### Optional GPU STT (opt-in)
+
+The default startup above is **CPU-capable and requires no GPU** — use it on any
+machine. STT runs on CPU (with automatic CPU fallback) out of the box.
+
+To run `ten_gateway` STT on an NVIDIA GPU, layer the opt-in override:
+
+```bash
+# Prerequisites: NVIDIA driver + NVIDIA Container Toolkit. Verify with:
+docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+
+# Start with the GPU override (first run needs --build)
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+```
+
+This builds a separate GPU image (`luve-core-api:gpu`, with the CUDA runtime libs
+`ctranslate2`/`faster-whisper` need) and grants `ten_gateway` GPU access. It
+affects **`ten_gateway` only**; `grading_worker` (Groq) and every other service
+are unchanged. Omit the override to return to the CPU default — no GPU required.
+
 ### Project status (honest)
 
 Luve is under active DevOps/reliability hardening and is **not** a finished

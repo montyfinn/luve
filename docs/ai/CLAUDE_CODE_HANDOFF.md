@@ -364,6 +364,15 @@ How the realtime STT path bounds load today. This is descriptive (T9 is docs-onl
 - **Final-utterance bound.** Final utterances are length-bounded: `stt_max_utterance_ms` (default 16000 ms) force-finalizes a turn via the `max_utterance` trigger in `ten_ext/luve_extension.py`, so a single final's audio (and thus its inference duration) is capped at ~16 s — there is no unbounded-monologue case.
 - **Known limitations / non-goals (current):** no multi-session scheduler (single-session by design); **no per-inference timeout** (a hung `to_thread` transcription would hold `_inference_lock`; `asyncio.to_thread` is not cancellable, so `stop()` waits ≈ one inference); no GPU tests in CI. These residual improvements live in hot-path files (`ten_ext/luve_extension.py`, `media/stt_worker.py`) and should wait for a clean hot-path baseline before any code change.
 
+## L4. Optional GPU STT (opt-in)
+
+GPU STT for `ten_gateway` is **opt-in** and does not affect the default flow.
+
+- **Default stays CPU, unchanged:** `docker compose --profile app up -d` uses `luve-core-api:local` (CPU). No GPU required anywhere; CPU STT fallback is intact.
+- **GPU opt-in:** `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build` builds `luve-core-api:gpu` from `services/core-api/Dockerfile.gpu` and grants `ten_gateway` `gpus: all`. **`ten_gateway` only** — `grading_worker`/Groq and other services are untouched. Requires the NVIDIA Container Toolkit.
+- **Why a separate image:** the default `python:3.10-slim` base lacks `libcublas.so.12` (cuBLAS 12) and cuDNN 9 that `ctranslate2==4.7.1`/`faster-whisper` dynamically link for CUDA; the GPU image adds them via the `nvidia-cublas-cu12`/`nvidia-cudnn-cu12` wheels + `LD_LIBRARY_PATH`. The NVIDIA driver itself is injected at runtime by `gpus: all`.
+- **Do NOT commit a personal `docker-compose.gpu.local.yml`** — it stays local/untracked; the tracked opt-in override is `docker-compose.gpu.yml`.
+
 ## M. Mermaid Graphs
 
 ### Folder / Module Graph
