@@ -3179,6 +3179,26 @@ class LUVEExtension(ten.Extension):
                         "sid": session_id,
                     },
                 )
+
+                # T7b: shadow transactional outbox. Write the session.completed
+                # event in the SAME transaction as the completion UPDATE (before
+                # commit) so the outbox row is durable iff completion commits. The
+                # inline publish below is unchanged; the relay (T7c) drains the
+                # outbox later. Enqueue failure is intentionally fatal -> rollback.
+                from src.services.outbox_repository import enqueue_session_event
+
+                await enqueue_session_event(
+                    session,
+                    session_id=session_id,
+                    event_type="session.completed",
+                    schema_version="v1",
+                    payload={
+                        "event_type": "session.completed",
+                        "schema_version": "v1",
+                        "session_id": session_id,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
                 await session.commit()
                 logger.info(
                     "Phase 1: SUCCESS - Blackbox logs saved to DB for session %s",
