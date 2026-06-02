@@ -122,6 +122,15 @@ services:
       GROQCLOUD_API_KEY: ${GROQCLOUD_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
       GROQ_TIMEOUT_SECONDS: ${GROQ_TIMEOUT_SECONDS:-20.0}
+      # T7 outbox relay — default OFF. Enable only via a deliberate, monitored
+      # step (set OUTBOX_RELAY_ENABLED=true in the root .env, recreate the worker).
+      # Conservative defaults bound row-lock time and poll chatter. Inline publish
+      # stays active until a later atomic de-dup switch.
+      OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-false}
+      OUTBOX_RELAY_BATCH_SIZE: ${OUTBOX_RELAY_BATCH_SIZE:-5}
+      OUTBOX_RELAY_POLL_INTERVAL_SECONDS: ${OUTBOX_RELAY_POLL_INTERVAL_SECONDS:-5}
+      OUTBOX_RELAY_PUBLISH_TIMEOUT_SECONDS: ${OUTBOX_RELAY_PUBLISH_TIMEOUT_SECONDS:-5}
+      OUTBOX_RELAY_MAX_ATTEMPTS: ${OUTBOX_RELAY_MAX_ATTEMPTS:-5}
     networks:
       - luve_network
 
