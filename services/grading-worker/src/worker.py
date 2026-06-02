@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -14,6 +15,11 @@ from src.evaluation_input_builder import build_evaluation_input
 from src.fake_grader import fake_grade
 from src.grading_repository import GradingRepository
 from src.llm_grader import LLMGraderError, llm_grade_with_client
+from src.outbox_repository import (
+    claim_pending_session_events,
+    mark_session_event_published,
+    mark_session_event_retry_or_failed,
+)
 from src.session_eligibility import evaluate_grading_eligibility
 
 
@@ -76,6 +82,51 @@ def _get_requeue_backoff_seconds() -> float:
         logger.warning("grading.invalid_requeue_backoff_seconds value=%r using_default=5.0", raw)
         return 5.0
     return max(parsed, 0.0)
+
+
+def _get_outbox_relay_enabled() -> bool:
+    # T7c-2: default OFF. The relay only runs when explicitly enabled.
+    return os.getenv("OUTBOX_RELAY_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_outbox_relay_poll_interval_seconds() -> float:
+    raw = os.getenv("OUTBOX_RELAY_POLL_INTERVAL_SECONDS", "5.0")
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("outbox_relay.invalid_poll_interval value=%r using_default=5.0", raw)
+        return 5.0
+    return max(parsed, 0.5)
+
+
+def _get_outbox_relay_batch_size() -> int:
+    raw = os.getenv("OUTBOX_RELAY_BATCH_SIZE", "20")
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("outbox_relay.invalid_batch_size value=%r using_default=20", raw)
+        return 20
+    return max(parsed, 1)
+
+
+def _get_outbox_relay_max_attempts() -> int:
+    raw = os.getenv("OUTBOX_RELAY_MAX_ATTEMPTS", "5")
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("outbox_relay.invalid_max_attempts value=%r using_default=5", raw)
+        return 5
+    return max(parsed, 1)
+
+
+def _get_outbox_relay_publish_timeout_seconds() -> float:
+    raw = os.getenv("OUTBOX_RELAY_PUBLISH_TIMEOUT_SECONDS", "10.0")
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("outbox_relay.invalid_publish_timeout value=%r using_default=10.0", raw)
+        return 10.0
+    return max(parsed, 1.0)
 
 
 def _build_grader_client() -> Any:
@@ -227,6 +278,115 @@ async def consume_forever() -> None:
         await repository.close()
 
 
+def _outbox_payload_to_body(payload: Any) -> bytes:
+    # session_outbox.payload is JSONB. asyncpg returns it as a JSON string (no
+    # codec on the relay pool); publish it as-is. Handle dict/bytes defensively.
+    if isinstance(payload, (bytes, bytearray)):
+        return bytes(payload)
+    if isinstance(payload, str):
+        return payload.encode("utf-8")
+    return json.dumps(payload).encode("utf-8")
+
+
+async def _publish_outbox_message(channel: Any, body: bytes, *, timeout: float) -> None:
+    # First RabbitMQ publisher in the worker. Mirrors core-api's
+    # session_event_publisher: persistent message to the default exchange,
+    # routing_key = queue name. aio-pika channels enable publisher confirms by
+    # default, so publish() returns only after the broker acks; the timeout
+    # bounds how long an outbox row lock can be held during a stuck publish.
+    import aio_pika
+
+    message = aio_pika.Message(
+        body=body,
+        content_type="application/json",
+        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+    )
+    await asyncio.wait_for(
+        channel.default_exchange.publish(message, routing_key=QUEUE_NAME),
+        timeout=timeout,
+    )
+
+
+async def _relay_drain_once(
+    pool: Any,
+    channel: Any,
+    *,
+    batch_size: int,
+    max_attempts: int,
+    publish_timeout: float,
+) -> int:
+    # Claim + publish + mark all inside ONE transaction so the FOR UPDATE
+    # SKIP LOCKED row locks are held until the marks commit (T7c-1 contract).
+    published = 0
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await claim_pending_session_events(conn, batch_size)
+            for row in rows:
+                outbox_id = row["id"]
+                body = _outbox_payload_to_body(row["payload"])
+                try:
+                    await _publish_outbox_message(channel, body, timeout=publish_timeout)
+                    await mark_session_event_published(conn, outbox_id)
+                    published += 1
+                except Exception as exc:
+                    logger.warning(
+                        "outbox_relay.publish_failed outbox_id=%s error=%s",
+                        outbox_id,
+                        type(exc).__name__,
+                    )
+                    await mark_session_event_retry_or_failed(
+                        conn, outbox_id, f"{type(exc).__name__}: {exc}", max_attempts
+                    )
+    return published
+
+
+async def relay_forever() -> None:
+    import aio_pika
+    import asyncpg
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required")
+
+    poll_interval = _get_outbox_relay_poll_interval_seconds()
+    batch_size = _get_outbox_relay_batch_size()
+    max_attempts = _get_outbox_relay_max_attempts()
+    publish_timeout = _get_outbox_relay_publish_timeout_seconds()
+
+    pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2)
+    connection = await aio_pika.connect_robust(_build_rabbitmq_url())
+    try:
+        channel = await connection.channel()
+        # Ensure the durable queue exists (idempotent); does not touch the DLX/DLQ.
+        await channel.declare_queue(QUEUE_NAME, durable=True)
+        logger.info(
+            "outbox_relay.ready queue=%s poll_interval_s=%s batch_size=%s max_attempts=%s",
+            QUEUE_NAME,
+            poll_interval,
+            batch_size,
+            max_attempts,
+        )
+        while True:
+            try:
+                published = await _relay_drain_once(
+                    pool,
+                    channel,
+                    batch_size=batch_size,
+                    max_attempts=max_attempts,
+                    publish_timeout=publish_timeout,
+                )
+                if published:
+                    logger.info("outbox_relay.drained published=%s", published)
+            except Exception:
+                logger.exception("outbox_relay.cycle_failed")
+            await asyncio.sleep(poll_interval)
+    finally:
+        with contextlib.suppress(Exception):
+            await connection.close()
+        with contextlib.suppress(Exception):
+            await pool.close()
+
+
 async def _process_payload_with_retries(
     payload: Any,
     *,
@@ -367,9 +527,17 @@ def _build_rabbitmq_url() -> str:
     return f"amqp://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/"
 
 
+async def _run_consumer_with_relay() -> None:
+    await asyncio.gather(consume_forever(), relay_forever())
+
+
 def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-    asyncio.run(consume_forever())
+    if _get_outbox_relay_enabled():
+        logger.info("outbox_relay.enabled=true — starting consumer + relay")
+        asyncio.run(_run_consumer_with_relay())
+    else:
+        asyncio.run(consume_forever())
 
 
 if __name__ == "__main__":
