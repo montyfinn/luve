@@ -145,7 +145,7 @@ Grading worker:
 
 Known delivery gap:
 
-- There is no durable outbox yet.
+- The durable outbox exists but its relay is default-off (§L5); inline publish is still the live path, so with the relay disabled a completed session can miss grading if RabbitMQ is down at publish time until the relay is enabled or recovery tooling/backfill runs.
 - If RabbitMQ is down at publish time, a completed session can miss grading until recovery tooling runs.
 - Recovery tooling now exists via a manual backfill script and a one-shot reconciliation scanner, but neither is a transactional outbox.
 - Historical DB audit showed many completed sessions missing `grading_results`; many were test/stress sessions, so recovery tooling must filter carefully.
@@ -236,7 +236,7 @@ Do not generalize this as production readiness. It proves the current local base
 ## I. Known Limitations
 
 - Not production-ready.
-- No durable outbox/backfill yet for missed grading jobs.
+- Durable outbox exists but its relay is default-off (§L5); missed grading jobs rely on the relay when enabled, recovery tooling, or manual backfill.
 - `close_publisher()` is not wired into shutdown; TEN shutdown may log a robust connection reconnect warning.
 - Word-level confidence should move to offline/post-session analysis. Realtime word-level confidence can increase latency.
 - Non-English/background speech turn-boundary finalization is future work.
@@ -257,7 +257,7 @@ Historical note:
 
 - The original recommendation here was to audit grading delivery reliability and add a dry-run-first backfill path.
 - That work has since moved forward: manual backfill and reconciliation scanner tooling now exist.
-- The remaining strategic gap is still the lack of a durable outbox.
+- The durable outbox + relay have since been built (T7, default-off — §L5); the remaining gap is making the relay the default path and retiring inline publish after a sustained monitored enable.
 
 ## K. Files Claude Must Not Touch Without Explicit Permission
 
