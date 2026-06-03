@@ -19,53 +19,82 @@ Two honesty notes about reliability:
 
 - **Realtime STT** is validated only in a constrained demo config (forced English,
   `small.en`); multilingual / auto-language modes exist but are not validated.
-- **Event delivery is at-least-once.** When a session ends, the gateway commits
-  session state *and* a `session_outbox` row in one transaction, then publishes
-  `session.completed` inline. A transactional **outbox relay** (in
-  `grading_worker`) adds durable retry for publish-side failures, but it does
-  **not** guarantee exactly-once delivery — it can republish after a crash between
-  broker confirm and the DB mark. Grading is idempotent (deduped on `session_id`),
-  so duplicate `session.completed` messages do not double-grade. The relay is
-  **disabled by default** (`OUTBOX_RELAY_ENABLED=false`); inline publish remains
-  the live path. See `docs/ai/CLAUDE_CODE_HANDOFF.md` §L5.
+- **Session completion delivery records durable recovery state, not
+  exactly-once delivery.** When a session ends, the gateway commits session state
+  *and* a `session_outbox` row in one transaction, then publishes
+  `session.completed` inline. That inline publish is the current live RabbitMQ
+  path. The transactional **outbox relay** (in `grading_worker`) is **disabled by
+  default** (`OUTBOX_RELAY_ENABLED=false`); when deliberately enabled, it drains
+  pending outbox rows for durable, at-least-once recovery on the publish side.
+  It can republish after a crash between broker confirm and the DB mark, so
+  grading is idempotent (deduped on `session_id`) and duplicate
+  `session.completed` messages do not double-grade.
 
 ## Architecture
 
-A browser session talks to two app services: `core_api` (REST/auth/UI) and
-`ten_gateway` (the realtime WebRTC pipeline). When a session ends, the gateway
-persists state and publishes `session.completed`; `grading_worker` consumes it and
-writes scores. State lives in PostgreSQL; the queue is RabbitMQ; Redis is an
-auxiliary store.
+A browser session talks to two app services: `core_api` for REST/auth/session UI
+and `ten_gateway` for realtime WebRTC audio/control. PostgreSQL is the source of
+truth for sessions, grading results, skip logs, and outbox rows. RabbitMQ carries
+the live `session.completed` grading job. Redis is auxiliary to the legacy
+`/ws/chat/{session_id}` session-key check, not the current TEN/WebRTC transcript
+store.
+
+### Service topology
 
 ```mermaid
-flowchart LR
-    Browser["Browser<br/>control center"]
+flowchart TB
+    Browser["Browser / control center"]
 
     subgraph app["App services (Compose profile: app)"]
-      API["core_api :8000<br/>REST API · UI · auth · readiness"]
-      GW["ten_gateway :8080<br/>VAD → STT → LLM → TTS"]
-      W["grading_worker<br/>Groq / offline fake grader"]
+      API["core_api :8000<br/>REST · auth · session UI · readiness"]
+      GW["ten_gateway :8080<br/>WebRTC speech pipeline<br/>VAD → STT → LLM → TTS"]
+      W["grading_worker<br/>RabbitMQ consumer<br/>Groq or offline fake grader"]
     end
 
     subgraph infra["Infrastructure"]
-      PG[("postgres_db")]
-      MQ{{"rabbitmq_queue"}}
-      R[("redis_cache")]
+      PG[("postgres_db<br/>sessions · grading_results · session_outbox")]
+      MQ[["rabbitmq_queue<br/>luve.session.completed"]]
+      R[("redis_cache<br/>legacy /ws session key")]
     end
 
-    Browser -- "REST / auth" --> API
-    Browser -- "WebRTC audio" --> GW
-    GW -- "session state + outbox row" --> PG
-    GW -- "publish session.completed" --> MQ
-    MQ -- "consume" --> W
-    W -- "grading_results" --> PG
-    API -- "read sessions / results" --> PG
-    API -. "rate limit / transcript" .-> R
+    Browser -->|"HTTP / REST / UI"| API
+    Browser -->|"WebRTC offer / audio / control"| GW
+    API -->|"create and read sessions / results"| PG
+    GW -->|"SQL session store"| PG
+    GW -->|"inline publish session.completed"| MQ
+    MQ -->|"deliver session.completed"| W
+    W -->|"write grading_results / skip log"| PG
+    API -.->|"legacy /ws session-key check"| R
+```
+
+### Session completion and grading flow
+
+```mermaid
+sequenceDiagram
+    participant GW as ten_gateway
+    participant DB as postgres_db
+    participant MQ as rabbitmq_queue
+    participant W as grading_worker
+    participant API as core_api
+
+    GW->>DB: update session completed + insert session_outbox row
+    DB-->>GW: commit transaction
+    GW->>MQ: inline publish session.completed
+    MQ-->>W: deliver session.completed
+    W->>DB: dedup by session_id, then grade or skip
+    W->>DB: write grading_results or grading_skip_log
+    API->>DB: read session and grading status for UI
+
+    Note over DB,W: Outbox relay exists but is disabled by default.
+    Note over GW,MQ: Inline publish remains the live delivery path.
 ```
 
 `rabbitmq_init` is a one-shot service that declares the dead-letter topology
 (`luve.session.completed.dlq`) so poison messages are retained. The outbox relay
-is not shown as a live path because it is disabled by default.
+is not shown as a live path because it is disabled by default; enabling it is a
+separate operator decision, not the normal startup path. The relay is a recovery
+mechanism for pending `session_outbox` rows, not an exactly-once delivery
+guarantee.
 
 ## Services
 
@@ -75,7 +104,7 @@ is not shown as a live path because it is disabled by default.
 | `ten_gateway` | 8080 | WebRTC / TEN realtime pipeline (VAD→STT→LLM→TTS); reuses the `core_api` image |
 | `grading_worker` | — | Consumes `session.completed` from RabbitMQ; grades via Groq (or an offline "fake" grader); writes `grading_results` |
 | `postgres_db` | 5432 | PostgreSQL (sessions, grading results, outbox) |
-| `redis_cache` | 6379 | Redis (rate limiting / realtime transcript) |
+| `redis_cache` | 6379 | Redis (legacy WebSocket session-key check; auxiliary to the TEN/WebRTC path) |
 | `rabbitmq_queue` | 5672, 15672 | RabbitMQ broker + management UI |
 | `rabbitmq_init` | — | One-shot: declares the grading dead-letter topology, then exits |
 
@@ -97,7 +126,7 @@ docker compose --profile app up -d --build
 docker compose --profile app up -d
 ```
 
-CPU STT is the default, stable mode and needs no GPU.
+CPU STT is the default demo mode and needs no GPU.
 
 ## Configuration
 
@@ -139,10 +168,15 @@ GRADING_FAKE_FALLBACK=false
 GROQCLOUD_API_KEY=<your-groq-key>
 ```
 
+These keys have safe Compose defaults (`fake` grader, no external calls); add
+them to the root `.env` only when overriding the default fake grader.
+
 **Outbox relay** — disabled by default; Compose passes conservative defaults
 (`OUTBOX_RELAY_ENABLED=false`, batch 5, poll 5s, publish timeout 5s, max attempts
 5). Do **not** enable it without the preflight in `docs/ai/CLAUDE_CODE_HANDOFF.md`
-§L5; inline publish stays the live path until a monitored cutover.
+§L5. The reliability model remains at-least-once retry when the relay is enabled,
+not exactly-once delivery; inline publish stays the live path until a monitored
+cutover.
 
 ## Optional GPU STT (opt-in)
 
@@ -230,7 +264,8 @@ other's code; they communicate only over HTTP and RabbitMQ.
 
 ## Known limitations
 
-- **At-least-once delivery** — the default-off outbox relay adds durable retry,
+- **Delivery recovery is not automatic by default** — inline publish is the live
+  path; the default-off outbox relay can provide at-least-once retry when enabled,
   while idempotent grading handles duplicate `session.completed` messages.
 - **Grading is asynchronous** — the Session Analysis panel may need a refresh/poll
   before the result appears.
