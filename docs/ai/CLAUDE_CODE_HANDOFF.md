@@ -373,6 +373,61 @@ GPU STT for `ten_gateway` is **opt-in** and does not affect the default flow.
 - **Why a separate image:** the default `python:3.10-slim` base lacks `libcublas.so.12` (cuBLAS 12) and cuDNN 9 that `ctranslate2==4.7.1`/`faster-whisper` dynamically link for CUDA; the GPU image adds them via the `nvidia-cublas-cu12`/`nvidia-cudnn-cu12` wheels + `LD_LIBRARY_PATH`. The NVIDIA driver itself is injected at runtime by `gpus: all`.
 - **Do NOT commit a personal `docker-compose.gpu.local.yml`** — it stays local/untracked; the tracked opt-in override is `docker-compose.gpu.yml`.
 
+## L5. Outbox relay ops (T7)
+
+The transactional outbox relay drains `session_outbox` → RabbitMQ as exactly-once insurance for the publish-side dual-write gap. **It is default-OFF and not yet a normal runtime path.**
+
+**Current state**
+- Relay is **disabled by default**: `OUTBOX_RELAY_ENABLED=false` (compose passes `${OUTBOX_RELAY_ENABLED:-false}` to `grading_worker`). The passthrough exists but **does not enable** the relay on its own.
+- **Inline `publish_session_completed` is still the live delivery path** — it runs after the completion commit and must stay until a later, separate atomic de-dup step.
+- core-api writes the `session.completed` outbox row in the completion transaction (T7b); the worker has the relay loop + primitives (T7c-1/T7c-2), exercised only when the flag is true.
+
+**Smoke evidence (all on throwaway services, fake grading, no Groq, no dev mutation)**
+- One-shot relay: claim → publish → confirm → `published`; broker failure → `pending` → `failed` (bounded attempts), no row loss.
+- Duplicate/idempotency: first → `grading.completed`; duplicate → `grading.already_graded`; `grading_results` count stays 1.
+- Full-loop enable: `outbox_relay.ready` + `worker.ready`; `outbox_relay.drained published=2`; `grading.completed` for both synthetic sessions; queue depth drained to 0; duplicate transport → `already_graded`.
+
+**Preflight (before enabling in any real/dev env)**
+- Confirm `0003`/`session_outbox` schema is applied.
+- Backlog: `SELECT status, count(*) FROM session_outbox GROUP BY status ORDER BY status;`
+- Inspect failed rows:
+  ```sql
+  SELECT id, session_id, status, attempt_count, left(coalesce(last_error,''),120) AS last_error
+  FROM session_outbox WHERE status='failed' ORDER BY updated_at DESC LIMIT 20;
+  ```
+- **Provider decision:** use `GRADING_PROVIDER=fake` for the first controlled dev enable, or **explicitly accept Groq cost** if `llm` (a backlog of ungraded rows would call Groq).
+- Verify RabbitMQ queue/DLQ health; confirm no surprising pending backlog. **Do not enable** if the backlog is unexpected or the provider is unsafe.
+
+**Recommended first-enable values** (bound lock time; safer than code defaults of batch 20 / timeout 10):
+```
+OUTBOX_RELAY_ENABLED=true
+OUTBOX_RELAY_BATCH_SIZE=5
+OUTBOX_RELAY_POLL_INTERVAL_SECONDS=5
+OUTBOX_RELAY_PUBLISH_TIMEOUT_SECONDS=5
+OUTBOX_RELAY_MAX_ATTEMPTS=5
+```
+
+**Enable** (only after preflight): set the values in the root `.env` (or a controlled shell override), then recreate **only** the worker:
+```
+docker compose --profile app up -d --no-deps --force-recreate grading_worker
+```
+Do **not** use `down -v`.
+
+**Observe during enable**
+- Logs: `outbox_relay.ready`, `outbox_relay.drained`; **no** `outbox_relay.cycle_failed` / `outbox_relay.publish_failed`.
+- DB: `SELECT status, count(*) FROM session_outbox GROUP BY status ORDER BY status;` (pending→published, failed=0); per-row `published_at`/`last_error`.
+- RabbitMQ queue depth (draining).
+- Duplicate check: `SELECT session_id, count(*) FROM grading_results GROUP BY session_id HAVING count(*) > 1;` (expect **no rows**).
+
+**Rollback**
+- Set `OUTBOX_RELAY_ENABLED=false` (or unset) → recreate **only** `grading_worker`.
+- **Preserve** `pending`/`failed` rows for diagnosis — never delete rows, never `down -v`.
+- Inline publish stays active, so grading continues via the existing path.
+
+**Hard stops:** failed rows climbing · queue depth growing/not draining · duplicate grading appears · provider would call Groq unintentionally · repeated `cycle_failed`/`publish_failed` · CPU/log hot-spin · a command targets the wrong stack · surprising pending backlog.
+
+**Do NOT yet:** enable in committed defaults · remove inline publish · drain the dev backlog blindly · run with `GRADING_PROVIDER=llm` without accepting Groq cost · claim production readiness.
+
 ## M. Mermaid Graphs
 
 ### Folder / Module Graph
