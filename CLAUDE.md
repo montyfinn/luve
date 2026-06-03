@@ -25,6 +25,60 @@ license: MIT
 - Do not run destructive database commands (`DROP`, `DELETE`, `TRUNCATE`, `UPDATE` without a `WHERE`) under any circumstances.
 - Never print or log secrets, passwords, tokens, API keys, JWTs, cookies, or database URLs containing credentials.
 
+## Architecture Orientation
+
+LUVE is a Docker Compose monorepo for real-time English speaking practice. Services communicate only over HTTP and RabbitMQ — **`core-api` and `grading-worker` never import each other's code.**
+
+- `services/core-api/` — the `core_api` image. Runs two FastAPI apps from the same codebase: `src/main.py` (REST/auth/session UI, port `8000`) and `run_ten.py` (TEN/WebRTC realtime gateway, port `8080`). The realtime hot path lives here: `src/ten_ext/luve_extension.py` (orchestration), `src/realtime/adapters/ten_compat.py` (WebRTC bridge, 1-session/node cap), `src/media/{stt_worker,brain,tts}.py` (STT / LLM / TTS).
+- `services/grading-worker/` — RabbitMQ consumer for `luve.session.completed`. Grades via Groq or an offline `fake` grader (`GRADING_PROVIDER` env flag). Eligibility/word-count gating in `src/session_eligibility.py` + `src/worker.py`.
+- `infrastructure/db-init/01-init.sql` — fresh-volume baseline schema. `infrastructure/db-migrations/000N_*.sql` — numbered manual migrations (no Alembic); existing volumes need manual apply per `db-migrations/README.md`.
+
+**Session→grading flow:** on session end the gateway commits `sessions` (status, `raw_backup_json`, `ended_at`) **and** a `session_outbox` row in one transaction, then publishes `session.completed` inline. Inline publish is the live path; the transactional outbox relay exists but is **default-off** (`OUTBOX_RELAY_ENABLED=false`). Grading is idempotent (deduped on `session_id`). Full service map, pipelines, and protected-file list: `docs/ai/CLAUDE_CODE_HANDOFF.md`.
+
+## Build, Run, and Test Commands
+
+Compose runs **containers**; manual `venv` runs are for debugging a single service and must not run while the stack is up (port/queue conflicts).
+
+```bash
+# Full stack (CPU default). Plain `up -d` with no profile starts ONLY infra.
+docker compose --profile app up -d --build      # first run / after image changes
+docker compose --profile app up -d              # fast restart
+docker compose --profile app down               # stop (NEVER add -v — wipes DB + STT model)
+
+# Opt-in GPU STT (ten_gateway only):
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+
+# Logs / status
+docker compose ps
+docker compose logs -f ten_gateway              # realtime pipeline
+docker compose logs -f grading_worker           # look for worker.ready, grading.completed
+```
+
+Tests use each service's `pytest`, run from the **core-api venv** (grading-worker has no venv of its own and needs `pytest-asyncio`, which lives there):
+
+```bash
+# core-api
+cd services/core-api && venv/bin/python -m pytest tests/ -q
+
+# grading-worker (run from its dir, using the core-api venv interpreter)
+cd services/grading-worker && ../core-api/venv/bin/python -m pytest tests/ -q
+
+# single file / single test
+venv/bin/python -m pytest tests/test_worker_patch2a.py -q
+venv/bin/python -m pytest tests/test_worker_patch2a.py::test_name -q
+```
+
+Prefer **focused** test runs — a full `tests/` run has intermittently hung in some environments, so the full suite is not asserted green. Quick syntax/import smokes used throughout this repo:
+
+```bash
+cd services/core-api
+venv/bin/python -m py_compile src/main.py run_ten.py          # compile check
+venv/bin/python -c "from src.main import app; print(app.title)"   # import smoke
+node --check src/static/index.html   # (after extracting the inline <script>) JS syntax
+```
+
+Health checks: `curl http://localhost:8000/readyz` (core_api: 200 iff DB reachable), `curl http://localhost:8080/readyz` (gateway: shallow startup readiness), `curl http://localhost:8080/rtc/health` (realtime session snapshot). Control center UI: `http://localhost:8000/control-center`.
+
 ---
 
 # 12 Comprehensive AI Coding Guidelines
