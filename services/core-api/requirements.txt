@@ -11,6 +11,7 @@ faster-whisper
 edge-tts
 pydantic[email]
 pydantic-settings
+httpx
 python-jose[cryptography]
 passlib[bcrypt]
 bcrypt==4.0.1

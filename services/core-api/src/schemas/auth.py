@@ -18,6 +18,12 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class GoogleExchangeRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    google_code: str = Field(min_length=1, max_length=512)
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -25,7 +25,10 @@ class User(Base):
     )
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable: Google-only accounts have no password. Uniqueness of google_sub is
+    # enforced at the DB level by the partial index in migration 0004.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(Text, nullable=True)
     fluency_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     quota_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default=text("60"))
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=text("true"))

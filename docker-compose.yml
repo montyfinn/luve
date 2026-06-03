@@ -153,6 +153,12 @@ services:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: ${REDIS_URL:-redis://redis_cache:6379}
+      # Google OAuth (optional). Feature stays disabled while these are empty.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
+      CONTROL_CENTER_URL: ${CONTROL_CENTER_URL:-http://localhost:8000/control-center}
       TZ: Asia/Ho_Chi_Minh
     ports:
       - "8000:8000"

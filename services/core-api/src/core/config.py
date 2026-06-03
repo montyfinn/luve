@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     algorithm: str = Field(default="HS256", alias="ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
+    # Google OAuth / OIDC (optional; feature is disabled unless all three are set).
+    google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str | None = Field(default=None, alias="GOOGLE_REDIRECT_URI")
+    google_allowed_hd: str | None = Field(default=None, alias="GOOGLE_ALLOWED_HD")
+    control_center_url: str = Field(
+        default="http://localhost:8000/control-center", alias="CONTROL_CENTER_URL"
+    )
+
     redis_url: str | None = Field(default=None, alias="REDIS_URL")
     rabbitmq_host: str | None = Field(default=None, alias="RABBITMQ_HOST")
     rabbitmq_port: int | None = Field(default=None, alias="RABBITMQ_PORT")
@@ -86,6 +95,12 @@ class Settings(BaseSettings):
     stt_max_low_confidence_word_ratio: float = Field(
         default=0.40, alias="STT_MAX_LOW_CONFIDENCE_WORD_RATIO"
     )
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(
+            self.google_client_id and self.google_client_secret and self.google_redirect_uri
+        )
 
     @property
     def effective_groq_api_key(self) -> str | None:
