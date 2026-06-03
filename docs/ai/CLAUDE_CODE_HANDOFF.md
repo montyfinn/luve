@@ -375,7 +375,7 @@ GPU STT for `ten_gateway` is **opt-in** and does not affect the default flow.
 
 ## L5. Outbox relay ops (T7)
 
-The transactional outbox relay drains `session_outbox` → RabbitMQ as exactly-once insurance for the publish-side dual-write gap. **It is default-OFF and not yet a normal runtime path.**
+The transactional outbox relay drains `session_outbox` → RabbitMQ, providing durable at-least-once recovery for pending rows in the publish-side dual-write gap (idempotent grading dedupes any duplicates) — it is **not** an exactly-once delivery guarantee. **It is default-OFF and not yet a normal runtime path.**
 
 **Current state**
 - Relay is **disabled by default**: `OUTBOX_RELAY_ENABLED=false` (compose passes `${OUTBOX_RELAY_ENABLED:-false}` to `grading_worker`). The passthrough exists but **does not enable** the relay on its own.
