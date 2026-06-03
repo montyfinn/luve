@@ -1,92 +1,351 @@
-# Local Dev Commands Example
+# Chạy LUVE bằng Docker Compose
 
-This file documents common local commands without storing private credentials,
-local login payloads, or machine-specific secrets.
+# Chạy CPU/default
+docker compose --profile app up -d
 
-## Core API
+# Chạy GPU
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+
+# Chuyển CPU -> GPU
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build --force-recreate ten_gateway
+
+# Chuyển GPU -> CPU
+docker compose --profile app up -d --force-recreate ten_gateway
+
+# Tắt app, giữ data
+docker compose --profile app down
+
+# Tắt app GPU mode, giữ data
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app down
+
+# Nếu muốn dừng API/gateway/worker nhưng giữ Postgres/Redis/RabbitMQ:
+docker compose stop core_api ten_gateway grading_worker
+
+## 1. Nguyên tắc
+
+                                                 http://127.0.0.1:8080/control-center
+
+LUVE hiện chạy bằng Docker Compose, gồm các container:
+
+* `postgres_db`
+* `redis_cache`
+* `rabbitmq_queue`
+* `rabbitmq_init`
+* `core_api`
+* `ten_gateway`
+* `grading_worker`
+
+## 2. Vào thư mục project
 
 ```bash
-cd services/core-api
-source venv/bin/activate
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+cd ~/project/luve
 ```
 
-Production-ish local command:
+---
+
+## 3. Kiểm tra root `.env`
+
+Compose đọc biến từ file root `.env`:
 
 ```bash
-cd services/core-api
-source venv/bin/activate
-python -m gunicorn src.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+~/project/luve/.env
 ```
 
-## Infrastructure
+Không phải:
 
 ```bash
-docker compose up -d
+services/grading-worker/.env
+```
+
+Kiểm tra các biến chính, không in secret:
+
+```bash
+grep -nE '^(DATABASE_URL|GRADING_DATABASE_URL|GRADING_PROVIDER|LLM_PROVIDER|GRADING_FAKE_FALLBACK)=' .env
+grep -n '^GROQCLOUD_API_KEY=' .env | sed 's/=.*/=<redacted>/'
+```
+
+Kỳ vọng:
+
+```env
+DATABASE_URL=postgresql+asyncpg://...
+GRADING_DATABASE_URL=postgresql://...
+GRADING_PROVIDER=llm
+LLM_PROVIDER=groq
+GRADING_FAKE_FALLBACK=false
+GROQCLOUD_API_KEY=<redacted>
+```
+
+Lưu ý:
+
+* `DATABASE_URL` dùng cho `core_api` và `ten_gateway`, phải là `postgresql+asyncpg://...`
+* `GRADING_DATABASE_URL` dùng cho `grading_worker`, là `postgresql://...`
+* Trong Docker, host DB là `postgres_db`, không phải `localhost`
+* Không paste secret/key/password vào chat/log
+
+---
+
+## 4. Kiểm tra port 8000/8080 trước khi chạy
+
+Nếu từng chạy manual app, kiểm tra port:
+
+```bash
+sudo ss -ltnp 'sport = :8000 or sport = :8080' || true
+```
+
+Nếu thấy process host như `uvicorn`, `python`, `python3` đang chiếm port, dừng bằng PID:
+
+```bash
+sudo kill <PID_8000> <PID_8080>
+```
+
+Kiểm lại:
+
+```bash
+sudo ss -ltnp 'sport = :8000 or sport = :8080' || true
+```
+
+Nếu chỉ thấy `docker-proxy` sau khi app đã chạy bằng Compose thì bình thường.
+
+---
+
+## 5. Chạy full app
+
+# cpu
+
+Lần đầu hoặc sau khi đổi Dockerfile/dependency:
+
+```bash
+docker compose --profile app up -d --build
+```
+
+Nếu image đã build rồi:
+
+```bash
+docker compose --profile app up -d
+```
+
+Nếu vừa sửa root `.env`, recreate các app service:
+
+```bash
+docker compose --profile app up -d --force-recreate core_api ten_gateway grading_worker
+```
+# gpu 
+
+cd ~/project/luve
+
+```bash #chỉ chạy lần đầu 
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+```
+```bash 
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs -f ten_gateway
+```
+---
+
+## 6. Kiểm tra container
+
+```bash
 docker compose ps
-docker compose stop
-docker compose start
-docker compose down
-docker compose up -d --build
 ```
 
-## TEN/WebRTC Gateway
+Kỳ vọng:
+
+```text
+postgres_db        healthy
+redis_cache        healthy
+rabbitmq_queue     healthy
+rabbitmq_init      Exited (0)
+core_api           healthy, port 8000 published
+ten_gateway        healthy, port 8080 published
+grading_worker     Up
+```
+
+Kiểm port publish:
 
 ```bash
-cd services/core-api
-source venv/bin/activate
-python run_ten.py
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'luve_core_api|luve_ten_gateway'
 ```
 
+Kỳ vọng có:
 
-##Grading
-
-```
-cd ~/project/luve/services/grading-worker
-
-set -a
-source ../core-api/.env 2>/dev/null
-set +a
-export DATABASE_URL="$(grep '^DATABASE_URL=' ../core-api/.env | cut -d= -f2-)"
-
-PYTHONPATH=. ../core-api/venv/bin/python -m src.worker
-
+```text
+0.0.0.0:8000->8000/tcp
+0.0.0.0:8080->8080/tcp
 ```
 
-## Auth Token For Local Debug
+---
 
-Keep login payload files local and ignored by git. Do not commit real tokens,
-passwords, cookies, or login payloads.
+## 7. Kiểm readiness
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d @login.json \
-  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])'
+curl -fsS http://localhost:8000/readyz; echo
+curl -fsS http://localhost:8080/readyz; echo
+curl -fsS http://localhost:8080/rtc/health; echo
 ```
 
+Kỳ vọng:
+
+```json
+{"status":"ready","checks":{"database":"ok"}}
+{"status":"ready","checks":{"gateway":"initialized"}}
+{"status":"ok", ...}
+```
+
+---
+
+## 8. Kiểm grading worker đang dùng Groq thật
+
+```bash
+docker compose exec grading_worker sh -lc '
+printf "GRADING_PROVIDER=%s\n" "$GRADING_PROVIDER"
+printf "LLM_PROVIDER=%s\n" "$LLM_PROVIDER"
+printf "GRADING_FAKE_FALLBACK=%s\n" "$GRADING_FAKE_FALLBACK"
+if [ -n "$GROQCLOUD_API_KEY" ]; then echo "GROQCLOUD_API_KEY=<set>"; else echo "GROQCLOUD_API_KEY=<missing>"; fi
+'
+```
+
+Kỳ vọng:
+
+```text
+GRADING_PROVIDER=llm
+LLM_PROVIDER=groq
+GRADING_FAKE_FALLBACK=false
+GROQCLOUD_API_KEY=<set>
+```
+
+Xem log worker:
+
+```bash
+docker compose logs --tail=100 grading_worker
+```
+
+Kỳ vọng:
+
+```text
+worker.ready queue=luve.session.completed prefetch_count=1
+```
+
+---
+
+## 9. Mở app
+
+Mở trên trình duyệt:
+
+```text
+http://localhost:8000
+```
+
+Nếu cần vào control center qua gateway:
+
+```text
 http://127.0.0.1:8080/control-center
+```
 
-Chạy:
+Tạo/connect session, cho phép microphone, nói tiếng Anh đủ dài.
 
-ss -ltnp | grep -E ':(8000|8080|8081|8082|8083|8084|8085|8086)'
-Nếu muốn dọn sạch toàn bộ app LUVE đang chiếm các port đó:
+Ví dụ câu test:
 
-fuser -k 8000/tcp 8080/tcp 8081/tcp 8082/tcp 8083/tcp 8084/tcp 8085/tcp 8086/tcp
-Sau đó kiểm tra lại:
+```text
+Today I practiced English with my virtual tutor. I talked about my daily routine, my study goals, and why I want to improve my speaking confidence.
+```
 
-ss -ltnp | grep -E ':(8000|8080|8081|8082|8083|8084|8085|8086)'
-Nếu không còn dòng nào thì chạy lại từ đầu:
+Sau đó end/disconnect session.
 
-cd services/core-api
-source venv/bin/activate
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
-Terminal khác:
+---
 
-cd services/core-api
-source venv/bin/activate
-python run_ten.py
-Nếu máy không có fuser, dùng cách thủ công:
+## 10. Theo dõi logs khi demo
 
-ss -ltnp
-kill <PID>
+Mở terminal riêng:
+
+```bash
+cd ~/project/luve
+docker compose logs -f grading_worker
+```
+
+Nếu muốn xem realtime/STT gateway:
+
+```bash
+docker compose logs -f ten_gateway
+```
+
+---
+
+## 11. Kiểm kết quả grading
+
+```bash
+docker compose exec postgres_db psql -U dat_admin -d luve_database -c \
+"SELECT session_id,status,provider,grader_version,overall_score,graded_at
+ FROM grading_results
+ ORDER BY graded_at DESC
+ LIMIT 5;"
+```
+
+Nếu không có result, kiểm skip log:
+
+```bash
+docker compose exec postgres_db psql -U dat_admin -d luve_database -c \
+"SELECT session_id,skipped_reason,student_word_count,skipped_at
+ FROM grading_skip_log
+ ORDER BY skipped_at DESC
+ LIMIT 5;"
+```
+
+---
+
+## 12. Kiểm RabbitMQ queue / DLQ
+
+```bash
+docker compose exec rabbitmq_queue rabbitmqctl list_queues name messages consumers | grep -E 'luve.session.completed|dlq'
+```
+
+Kỳ vọng:
+
+```text
+luve.session.completed      0   1
+luve.session.completed.dlq  0   0
+```
+
+---
+
+## 13. Tắt app
+
+Tắt container nhưng giữ data volume:
+
+```bash
+docker compose down
+```
+
+Không dùng `-v` trừ khi cố ý xóa DB/RabbitMQ volumes.
+
+---
+
+# Ghi chú về GPU/CUDA
+
+Hiện app chạy được bằng CPU fallback. Docker GPU runtime trên máy đã được cài và `docker run --gpus all ... nvidia-smi` đã pass.
+
+Tuy nhiên, khi ép `ten_gateway` dùng GPU, STT CUDA hiện fail vì image thiếu CUDA runtime library:
+
+```text
+RuntimeError: Library libcublas.so.12 is not found or cannot be loaded
+```
+
+Vì vậy để demo ổn định, chạy CPU mode trước. Không dùng GPU override nếu chưa fix Docker image CUDA libs.
+
+Nếu lỡ tạo file local GPU override:
+
+```bash
+docker-compose.gpu.local.yml
+```
+
+thì không dùng nó khi chạy demo thường. Chạy demo thường bằng:
+
+```bash
+docker compose --profile app up -d
+```
+
+Không chạy:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.local.yml ...
+```
+
+cho tới khi CUDA image được fix.
