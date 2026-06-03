@@ -17,6 +17,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-google-oauth-tests")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 import pytest  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -144,6 +145,46 @@ class _ScalarSession:
 
     async def scalar(self, *_a, **_k):
         return self._user
+
+
+class _ConflictBegin:
+    """begin() context that raises IntegrityError at commit (no body exception)."""
+
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001
+        if exc_type is None:
+            raise IntegrityError("INSERT INTO users", {}, Exception("duplicate"))
+        return False  # propagate body exceptions unchanged
+
+
+class _ConflictSession:
+    """First two scalar() calls (sub, email) return None so the insert is
+    attempted; the commit raises IntegrityError; the post-rollback re-query
+    returns ``winner``."""
+
+    def __init__(self, winner):  # noqa: ANN001
+        self._winner = winner
+        self._calls = 0
+        self.rolled_back = False
+        self.added: list[User] = []
+
+    def begin(self):
+        return _ConflictBegin()
+
+    async def scalar(self, *_a, **_k):
+        self._calls += 1
+        return None if self._calls <= 2 else self._winner
+
+    def add(self, obj):  # noqa: ANN001
+        self.added.append(obj)
+
+    async def rollback(self):
+        self.rolled_back = True
+
+    async def refresh(self, *_a, **_k):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +332,28 @@ def test_resolve_email_with_other_google_sub_rejects_link_conflict() -> None:
             resolve_or_create_google_user(session, google_sub="sub-new", email="dup@example.com", name=None)
         )
     assert exc.value.code == "link_conflict"
+
+
+def test_resolve_integrity_error_race_returns_existing_winner() -> None:
+    winner = User(username="g", email="g@example.com", password_hash=None, google_sub="sub-race")
+    session = _ConflictSession(winner=winner)
+    user = asyncio.run(
+        resolve_or_create_google_user(session, google_sub="sub-race", email="g@example.com", name="G")
+    )
+    assert user is winner
+    assert session.rolled_back is True
+
+
+def test_resolve_integrity_error_email_collision_rejects_account_exists() -> None:
+    # IntegrityError with no live google_sub winner = unique-email collision
+    # (e.g. a soft-deleted row still owns the email). Never link or revive.
+    session = _ConflictSession(winner=None)
+    with pytest.raises(GoogleAccountConflictError) as exc:
+        asyncio.run(
+            resolve_or_create_google_user(session, google_sub="sub-new", email="dup@example.com", name=None)
+        )
+    assert exc.value.code == "account_exists"
+    assert session.rolled_back is True
 
 
 # ---------------------------------------------------------------------------
@@ -446,3 +509,16 @@ def test_exchange_unknown_code_returns_400(monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert resp.status_code == 400
     assert resp.json()["detail"] == "invalid_or_expired_code"
+
+
+def test_exchange_feature_off_returns_404_without_touching_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "google_client_id", None)
+
+    def _no_redis():
+        raise AssertionError("Redis must not be accessed when Google OAuth is disabled")
+
+    monkeypatch.setattr(auth_module, "_build_redis_client", _no_redis)
+    resp = TestClient(_make_app()).post(
+        "/api/v1/auth/google/exchange", json={"google_code": "anything"}
+    )
+    assert resp.status_code == 404

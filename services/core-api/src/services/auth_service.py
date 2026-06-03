@@ -75,31 +75,45 @@ async def resolve_or_create_google_user(
        * password acct  -> raise ``account_exists`` (never silently link).
        * other google   -> raise ``link_conflict``.
     """
-    async with db.begin():
-        user = await db.scalar(
+    try:
+        async with db.begin():
+            user = await db.scalar(
+                select(User).where(User.google_sub == google_sub, User.deleted_at.is_(None))
+            )
+            if user is not None:
+                return user
+
+            existing = await db.scalar(
+                select(User).where(User.email == email, User.deleted_at.is_(None))
+            )
+            if existing is not None:
+                if existing.google_sub and existing.google_sub != google_sub:
+                    raise GoogleAccountConflictError("link_conflict")
+                # Existing password account (google_sub IS NULL): do NOT auto-link by
+                # email — registration never verified the email, so linking would be
+                # an account-takeover vector.
+                raise GoogleAccountConflictError("account_exists")
+
+            user = User(
+                username=_derive_username(email, name),
+                email=email,
+                password_hash=None,
+                google_sub=google_sub,
+            )
+            db.add(user)
+    except IntegrityError:
+        # The insert lost a race (a concurrent callback for the same google_sub)
+        # or collided with a row invisible to the deleted_at IS NULL lookups
+        # (e.g. a soft-deleted account still owning the unique email). Re-query by
+        # google_sub: a live winner means a concurrent create succeeded; anything
+        # else is an email collision we refuse to link or revive.
+        await db.rollback()
+        winner = await db.scalar(
             select(User).where(User.google_sub == google_sub, User.deleted_at.is_(None))
         )
-        if user is not None:
-            return user
-
-        existing = await db.scalar(
-            select(User).where(User.email == email, User.deleted_at.is_(None))
-        )
-        if existing is not None:
-            if existing.google_sub and existing.google_sub != google_sub:
-                raise GoogleAccountConflictError("link_conflict")
-            # Existing password account (google_sub IS NULL): do NOT auto-link by
-            # email — registration never verified the email, so linking would be
-            # an account-takeover vector.
-            raise GoogleAccountConflictError("account_exists")
-
-        user = User(
-            username=_derive_username(email, name),
-            email=email,
-            password_hash=None,
-            google_sub=google_sub,
-        )
-        db.add(user)
+        if winner is not None:
+            return winner
+        raise GoogleAccountConflictError("account_exists") from None
 
     await db.refresh(user)
     return user

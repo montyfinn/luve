@@ -211,6 +211,11 @@ async def google_callback(
 
 @router.post("/google/exchange", response_model=Token)
 async def google_exchange(payload: GoogleExchangeRequest) -> Token:
+    if not settings.google_oauth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Google login is not available"
+        )
+
     redis = _build_redis_client()
     try:
         access_token = await oauth_state_store.pop_code(redis, payload.google_code)

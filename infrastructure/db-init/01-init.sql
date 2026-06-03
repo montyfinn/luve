@@ -6,13 +6,15 @@ CREATE TABLE USERS (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(255) NOT NULL CHECK (char_length(username) >= 3),
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL, 
+    password_hash TEXT, -- NULL for Google-only accounts (see chk_users_auth_method)
+    google_sub TEXT, -- Google OIDC subject; NULL for password accounts (parity with migration 0004)
     fluency_level INT NOT NULL DEFAULT 1 CHECK (fluency_level IN (1, 2, 3)),
     quota_minutes INT NOT NULL DEFAULT 60,
     is_active BOOLEAN DEFAULT TRUE,
     is_banned BOOLEAN DEFAULT FALSE, -- Chặn người dùng phá hoại
     deleted_at TIMESTAMP WITH TIME ZONE, -- Soft Delete
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_users_auth_method CHECK (password_hash IS NOT NULL OR google_sub IS NOT NULL)
 );
 
 -- 2. BẢNG LESSONS: Thư viện kịch bản
@@ -112,4 +114,5 @@ CREATE INDEX idx_grading_updated_at ON GRADING_RESULTS(updated_at DESC);
 CREATE INDEX grading_skip_log_skipped_reason_idx ON GRADING_SKIP_LOG(skipped_reason);
 CREATE INDEX grading_skip_log_skipped_at_idx ON GRADING_SKIP_LOG(skipped_at DESC);
 CREATE INDEX idx_users_email ON USERS(email) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_key ON USERS (google_sub) WHERE google_sub IS NOT NULL;
 CREATE INDEX session_outbox_pending_idx ON SESSION_OUTBOX(created_at) WHERE status = 'pending';
