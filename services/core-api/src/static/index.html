@@ -135,6 +135,7 @@
         <div class="cc-auth-actions" style="margin-top: 1.5rem;">
           <button id="login-btn" class="cc-btn cc-btn-cyan cc-btn-lg">Sign In to Lab Console</button>
           <button id="register-btn" class="cc-btn cc-btn-emerald cc-btn-lg hidden">Register Lab Account</button>
+          <button id="google-login-btn" type="button" class="cc-btn cc-btn-ghost cc-btn-lg">Continue with Google</button>
           <label class="cc-check-label">
             <input id="remember-token" type="checkbox" />
             <span>Remember session token for subsequent visits</span>
@@ -471,6 +472,7 @@
       cmdEndpoint: document.getElementById("cmd-endpoint"),
       loginBtn: document.getElementById("login-btn"),
       registerBtn: document.getElementById("register-btn"),
+      googleLoginBtn: document.getElementById("google-login-btn"),
       clearTokenBtn: document.getElementById("clear-token-btn"),
       createSessionBtn: document.getElementById("create-session-btn"),
       loadGradingBtn: document.getElementById("load-grading-btn"),
@@ -1154,6 +1156,88 @@
 
       logEvent("Registered account", { email: credentials.email });
       return await loginWithForm({ statusText: "API: Signing in after register..." });
+    }
+
+    function googleAuthErrorMessage(code) {
+      const messages = {
+        state_mismatch: "Google sign-in expired or was interrupted. Please try again.",
+        email_unverified: "Your Google email is not verified.",
+        account_exists: "An account with that email already exists. Sign in with your password.",
+        link_conflict: "That email is linked to a different Google account.",
+        exchange_failed: "Google sign-in failed. Please try again.",
+        cancelled: "Google sign-in was cancelled.",
+        invalid_or_expired_code: "Google sign-in expired. Please try again.",
+      };
+      return messages[code] || "Google sign-in could not be completed.";
+    }
+
+    function scrubGoogleAuthParams() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("google_code");
+      url.searchParams.delete("auth_error");
+      const query = url.searchParams.toString();
+      const cleaned = url.pathname + (query ? `?${query}` : "") + url.hash;
+      history.replaceState({}, document.title, cleaned);
+    }
+
+    async function startGoogleLogin() {
+      persistControlSettings();
+      const startUrl = buildCoreApiUrl("/api/v1/auth/google/start");
+      try {
+        const response = await fetch(startUrl, { method: "GET", redirect: "manual" });
+        if (response.status === 404) {
+          updateAuthState("Google login is not configured yet.");
+          return;
+        }
+        if (
+          response.type === "opaqueredirect" ||
+          response.status === 0 ||
+          (response.status >= 300 && response.status < 400)
+        ) {
+          // Backend redirected to Google; perform the real top-level navigation.
+          window.location.assign(startUrl);
+          return;
+        }
+        if (!response.ok) {
+          updateAuthState("Google login is unavailable right now.");
+          return;
+        }
+        // Unexpected 2xx without a redirect — fall back to direct navigation.
+        window.location.assign(startUrl);
+      } catch {
+        updateAuthState("Google login is unavailable right now.");
+      }
+    }
+
+    async function handleGoogleCallbackParams() {
+      const params = new URLSearchParams(window.location.search);
+      const authError = params.get("auth_error");
+      const googleCode = params.get("google_code");
+      if (authError) {
+        updateAuthState(googleAuthErrorMessage(authError));
+        scrubGoogleAuthParams();
+        return;
+      }
+      if (!googleCode) return;
+      try {
+        const response = await fetch(buildCoreApiUrl("/api/v1/auth/google/exchange"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ google_code: googleCode }),
+        });
+        const payload = await readJsonResponse(response);
+        if (response.ok && payload && payload.access_token) {
+          setAuthToken(String(payload.access_token), "Signed in with Google.");
+          logEvent("Signed in with Google");
+        } else {
+          const detail = typeof payload?.detail === "string" ? payload.detail : "exchange_failed";
+          updateAuthState(googleAuthErrorMessage(detail));
+        }
+      } catch {
+        updateAuthState(googleAuthErrorMessage("exchange_failed"));
+      } finally {
+        scrubGoogleAuthParams();
+      }
     }
 
     function setCurrentSessionId(sessionId) {
@@ -2257,6 +2341,10 @@
       }
     });
 
+    ui.googleLoginBtn.addEventListener("click", () => {
+      startGoogleLogin().catch(() => updateAuthState("Google login is unavailable right now."));
+    });
+
     ui.clearTokenBtn.addEventListener("click", () => {
       clearAuthToken();
     });
@@ -2390,6 +2478,7 @@
     window.addEventListener("beforeunload", cleanupRealtimeForPageUnload);
 
     restoreControlSettings();
+    handleGoogleCallbackParams().catch(() => updateAuthState("Google sign-in could not be completed."));
     ui.coreApiUrl.addEventListener("change", persistControlSettings);
     ui.gatewayUrl.addEventListener("change", persistControlSettings);
     ui.sessionIdInput.addEventListener("change", persistControlSettings);
