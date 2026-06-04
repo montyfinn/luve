@@ -55,6 +55,7 @@ htmlcov/
 .idea/
 .cursor/
 .codegraph/
+.playwright-mcp/
 *.swp
 *.swo
 *~
