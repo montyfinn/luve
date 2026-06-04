@@ -428,6 +428,37 @@ Do **not** use `down -v`.
 
 **Do NOT yet:** enable in committed defaults · remove inline publish · drain the dev backlog blindly · run with `GRADING_PROVIDER=llm` without accepting Groq cost · claim production readiness.
 
+## L6. Google OAuth login (auth) — merged, disabled until configured
+
+Google sign-in (server-side OIDC authorization-code flow) is **merged and public** but **OFF by default** — it activates only when Google credentials exist in the root `.env`. Same pattern as §L5: code shipped, enablement is a separate local operator step.
+
+**Merged commits:** `1060078` backend foundation · `b9cc51c` schema-parity + conflict hardening · `0372e46` control-center "Continue with Google" + `google_code` exchange · `6289b07` ignore `.playwright-mcp/`.
+
+**Done / verified (local dev):**
+- Migration `0004` (`users.google_sub`, nullable `password_hash`, `chk_users_auth_method` CHECK, partial unique `users_google_sub_key`) applied + verified on the dev DB; `infrastructure/db-init/01-init.sql` has parity for fresh volumes. Pre-`0004` backup: `/tmp/luve_dev_backup_before_0004_20260604_122358.sql`.
+- App rebuilt (`--build`); `core_api`/`ten_gateway`/`grading_worker` healthy.
+- Password login/register still work. `GET /api/v1/auth/google/start` and `POST /api/v1/auth/google/exchange` return **404 "Google login is not available"** while disabled (no 500). The "Continue with Google" button renders; disabled-state click shows "Google login is not configured yet."
+
+**To enable (first smoke — use `localhost` consistently):**
+1. Google Cloud Console → Web OAuth client. Authorized redirect URI **exactly**: `http://localhost:8000/api/v1/auth/google/callback`.
+2. Add to the **root** `.env` (Compose reads root `.env`, not `services/*/.env`; plain line-start `KEY=value`, no `export`/quotes; never paste secrets into chat):
+   ```
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
+   CONTROL_CENTER_URL=http://localhost:8000/control-center
+   GOOGLE_ALLOWED_HD=
+   ```
+   Self-check (counts only, no values): `grep -c '^GOOGLE_CLIENT_ID=' .env` → `1`.
+3. Recreate only `core_api` (env-only change; `--build` NOT required): `docker compose --profile app up -d --force-recreate core_api`.
+4. Open `http://localhost:8000/control-center` — **not** `127.0.0.1` or `:8080` for the first smoke: the CSRF `g_oauth_state` cookie is host-bound, so mixing hosts yields `auth_error=state_mismatch`.
+
+**Enabled-path expectation:** `/auth/google/start` → **302 to accounts.google.com** (+ `Set-Cookie g_oauth_state`); consent → returns to `…/control-center?google_code=…` → frontend `POST /auth/google/exchange` → `setAuthToken` → URL scrubbed → "Signed in with Google." The new `users` row has `google_sub` set and `password_hash NULL`.
+
+**Policy reminders (do not weaken):** no auto-link by email (existing password email → `account_exists`); a different `google_sub` on the same email → `link_conflict`; `GRADING_FAKE_FALLBACK`/outbox/STT behavior untouched. Redirect URI must byte-match the Console entry (`redirect_uri_mismatch` otherwise).
+
+**Housekeeping:** debug user `debug-oauth-migration@example.com` exists in the dev DB from earlier smokes — cleanup optional. **Live Google login is not yet smoke-verified end-to-end** (blocked on credentials); do not claim it complete.
+
 ## M. Mermaid Graphs
 
 ### Folder / Module Graph
@@ -531,3 +562,22 @@ flowchart TD
 - Do not claim production-ready unless deployment, load, retry, and data recovery paths are proven.
 - If a change touches STT, VAD, WebRTC, TTS, LLM, session completion, or RabbitMQ delivery, include a verification plan before commit.
 - If docs and code disagree, trust code and runtime evidence first.
+
+## O. Claude Design + Claude Code UI Workflow
+
+A two-phase, review-gated workflow for control-center UI/UX changes. It keeps design exploration separate from surgical implementation so the realtime product is never destabilized by a UI redesign.
+
+**A. Claude Design phase — spec only, no code or patch.**
+- Inputs: `README.md`, the current `services/core-api/src/static/index.html` constraints, screenshots, and the product goal.
+- Outputs: a UX spec — layout direction, component hierarchy, visual language, and every state (default / empty / loading / error / success), plus responsive behavior.
+- Must preserve product realities: realtime voice session lifecycle, transcript/session events, the Session Analysis grading panel, the full auth flow (email/password **and** Google sign-in §L6), and backend constraints/ports (`core_api` :8000, `ten_gateway` :8080).
+- Must list design assumptions and tradeoffs explicitly. Must **not** emit an implementation diff.
+
+**B. Claude Code phase — implement only after the design is approved.**
+- Surgical changes only; do **not** rewrite `static/index.html` wholesale.
+- Preserve existing element IDs, JS function names, and API contracts unless the approved design requires a reviewed change.
+- Split into small commits: (1) UI structure/markup, (2) styling, (3) behavior wiring, (4) tests/static checks.
+- Verify: `node --check` on the extracted inline script, a browser visual check, and the existing auth/session smoke (password login + Google disabled-gate 404).
+- Never touch `.env`/secrets; no DB/RabbitMQ/Redis mutation for UI-only changes.
+
+**C. Review loop.** Design proposes → user/assistant reviews for product truth + feasibility → Code implements → Codex/Claude Code review verifies the diff, runtime, and no scope creep before merge/push.
