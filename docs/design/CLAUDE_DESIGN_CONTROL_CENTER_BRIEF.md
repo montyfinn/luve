@@ -24,6 +24,25 @@ inventing backend capabilities that do not exist.
 This brief tells Claude Design exactly what the backend supports, what the UI must expose,
 which flows and states are required, and which constraints are non-negotiable.
 
+### 1.1 First-30-seconds demo priority (design for this path first)
+
+The single most important thing this UI must do well is carry a new visitor through one
+successful practice loop without friction. Design this **happy path** before anything else:
+
+> **landing → sign in (email or Google) → Start practice → speak / listen → end → analysis**
+
+- **Start practice is the primary call to action.** On the authenticated home it is the one
+  obviously-primary button; nothing competes with it visually.
+- **Diagnostics are hidden by default.** URLs, tokens, event logs, provider/health readouts
+  do not appear in this path; they live in a collapsed Developer diagnostics drawer (§13)
+  that a learner never needs to open to complete the loop.
+- **Every step has a calm, learner-legible state** — no engineering jargon on the happy path.
+  Sign-in confirms who you are; the live view shows speaking/listening/thinking plainly;
+  ending leads to an analysis that loads gracefully (§12).
+
+Everything else in this brief (operator visibility, full state matrix, edge cases) supports
+this loop; it does not outrank it.
+
 ## 2. How Claude Design should use this brief
 
 - **Produce a UX/UI specification, not code.** Layouts, component hierarchy, copy,
@@ -107,19 +126,11 @@ containers `#cc-view-landing`, `#cc-view-auth`, `#cc-view-app`):
    `#cc-sec-session` (session + URLs), `#cc-sec-controls` (realtime controls),
    `#cc-sec-diagnostics` (logs/endpoints), `#cc-sec-insights` (grading).
 
-**Key existing element IDs** (Claude Code must preserve these unless a change is explicitly
-approved — see §19): `core-api-url`, `gateway-url`, `session-id`, `last-session-id`,
-`auth-token`, `clear-token-btn`, `create-session-btn`, `connect-btn`, `disconnect-btn`,
-`mute-mic-btn`, `barge-btn`, `stt-only`, `mute-tts`, `copy-stt-summary-btn`,
-`subtitle-final`, `subtitle-partial`, `assistant-meta`, `assistant-stream`, `remote-audio`,
-`event-log`, `stt-diagnostics`, `status-monitor` (`status-dot`/`status-text`),
-`api-status` (`api-status-dot`/`api-status-text`), `session-grading-card`, `grading-content`,
-`pedagogical-zone`, `pedagogical-text`, `offer-endpoint`, `ice-endpoint`, `cmd-endpoint`.
-
-**Current realtime status vocabulary in code** (`statusThemes`): `disconnected`, `thinking`
-("AI Thinking"), `ready`, `error`, `llm-error`. **API status** (`apiStatusThemes`): `idle`,
-`busy`, `ready`, `error`. The design should *expand* this into a clearer, more granular set
-(§8) while keeping these as a baseline.
+The concrete implementation inventory — the existing element IDs Claude Code must preserve,
+and the current status-theme vocabulary in code — is **not** design-facing material and has
+been moved to **Appendix A (§22)** so it sits with the Claude Code constraints rather than
+alongside learner UX. Designers can ignore it; it exists so the later implementation phase
+maps cleanly onto the current file.
 
 **Current strengths to preserve:** working auth (incl. Google button), explicit
 API/gateway/token controls useful for dev, live transcript display, visible operational
@@ -187,9 +198,13 @@ worker-health API · degraded (e.g., CPU STT high latency).
 **Responsive:** mobile / narrow viewport for at least the learner journey (auth → session →
 analysis); the operator drawer may be desktop-first.
 
-> Note: today's code emits a *subset* of these (e.g., `disconnected`/`thinking`/`ready`/
-> `error`/`llm-error`). The design should define the full set above; Claude Code will wire
-> the additional ones to existing events where present and stub the rest.
+> Note: today's code emits only a *subset* of these (e.g., `disconnected`/`thinking`/`ready`/
+> `error`/`llm-error`). The design should **define a visual/copy treatment for every state**
+> above so the system is complete on paper. But at implementation time a state is **only shown
+> when it maps to a concrete backend event or probe** — Claude Code wires the states backed by
+> real events/signals and leaves the rest as defined-but-dormant treatments, **not** as fake
+> UI that asserts a condition the backend can't actually report. No invented telemetry, no
+> placeholder readouts dressed as live data.
 
 ## 9. Data / API contract summary (for the designer)
 
@@ -225,7 +240,7 @@ shallow startup readiness only; `GET /healthz` (gateway) = liveness. *Evidence: 
 
 - Support **email + password** (register has username ≥3, password ≥8) and **Continue with
   Google** side by side.
-- **Google flow (server-driven):** the button navigates to `/auth/google/start`; the backend
+- **Google flow (server-driven):** the button navigates to `/api/v1/auth/google/start`; the backend
   redirects to Google; after consent the user returns to the control center with a one-time
   `google_code` in the URL; the frontend immediately exchanges it for a JWT and **scrubs the
   URL**. The design must present: a normal button, a *redirecting* state, a *signed in with
@@ -274,6 +289,14 @@ shallow startup readiness only; `GET /healthz` (gateway) = liveness. *Evidence: 
   in a secondary/expandable area, not the learner's headline.
 
 ## 13. Developer / operator diagnostics requirements
+
+**Hide-by-default rule.** The following are operator concerns and must be **collapsed inside a
+single "Developer diagnostics" drawer/panel**, closed by default and absent from the learner
+happy path (§1.1): raw bearer-token input, core-api/gateway URL controls, the event log,
+provider/grader metadata, and health/readiness diagnostics. A learner can complete a full
+practice loop without ever opening this drawer. The one honesty signal that may surface
+outside the drawer is the **fake/dev-preview warning** on an analysis result — and even then
+it is a calm, secondary note (§12), visible when relevant but never dominant.
 
 Keep, but demote to a **diagnostics drawer / secondary surface**:
 - Editable **core-api URL** and **gateway URL** (the app genuinely needs these in dev).
@@ -327,6 +350,23 @@ Style anchors (adjectives, not brands): **"professional language lab," "AI coach
 simplicity."** Status color semantics already in code are a reasonable base: green=ready,
 amber=busy/thinking, red=error, rose=disconnected — keep them consistent and accessible.
 
+### 15.1 Polish & microinteractions (bounded)
+
+Motion and microinteractions should make the product feel calm and responsive — never flashy.
+Keep them subtle, purposeful, and tied to real state changes:
+
+- **View transitions:** gentle cross-fades / slides between auth → home → live → analysis;
+  short durations, easing, no bounce or parallax.
+- **Live conversational cues:** a quiet, breathing **speaking / listening** indicator on the
+  mic; a distinct **AI thinking** affordance while the LLM responds and a **STT processing**
+  cue while a partial finalizes — calm pulses, not spinners that imply error.
+- **Analysis loading:** use **skeleton placeholders** for the score cards and summary while
+  grading is pending/processing, rather than a single dead spinner.
+- **Reduced motion:** honor `prefers-reduced-motion` — replace animated cues with static
+  state labels/icons; never gate comprehension on motion.
+- **Do not:** neon/cyberpunk glow, gratuitous gradients, decorative "AI sparkle" noise,
+  looping background animation, or any motion that competes with the Start-practice CTA.
+
 ## 16. Accessibility & responsive requirements
 
 - WCAG-minded contrast; do not rely on color alone for state (pair color with icon/label —
@@ -361,7 +401,8 @@ So the design is actually implementable surgically:
 - The frontend is **one large protected file** (`services/core-api/src/static/index.html`,
   markup + `cc-*` classes + one inline `<script>`). Implementation will be **incremental**, not
   a wholesale rewrite.
-- **Preserve existing element IDs, JS function names, and API call contracts** (§5) unless a
+- **Preserve existing element IDs, JS function names, and API call contracts** (Appendix A,
+  §22) unless a
   change is explicitly approved in design review. Many IDs are wired to behavior
   (`setAuthToken`, `createSession`, `fetchAndShowGrading`, `startGoogleLogin`, etc.).
 - **No secret handling in the frontend**; **no JWT in URLs**; Google uses the one-time
@@ -371,21 +412,29 @@ So the design is actually implementable surgically:
   tests/static checks (`node --check` on the inline script + browser visual + auth/session
   smoke). The design should be decomposable along those lines.
 
-## 20. Open questions for the user (resolve before/with the design)
+## 20. Resolved product direction (decisions for v1)
 
-1. **Primary audience for v1:** learner-first with operator drawer (recommended), or keep it
-   primarily a developer console with a nicer skin?
-2. **Single canonical URL?** Should the control center standardize on `:8000/control-center`
-   (same-origin, simplest, best for Google), and treat `:8080` as gateway-only?
-3. **Lessons/curriculum:** design a placeholder "practice topics" area now, or omit entirely
-   until an API exists?
-4. **Branding:** keep the "L.U.V.E" name and current dark theme, or open to a lighter,
-   calmer learner theme?
-5. **Token UX:** move bearer-token controls fully into the developer drawer (recommended), or
-   keep a visible token field?
-6. **Mobile priority:** is a learner mobile experience in scope for v1, or desktop-first?
-7. **Naming/tone:** soften "industrial / telemetry / lab console" wording toward learner value,
-   or retain the technical identity?
+These were open questions in earlier drafts; they are now **decided**. Design to them.
+
+1. **Primary audience — learner-first.** v1 is a learner product with the operator/developer
+   surface demoted to a secondary diagnostics drawer (§6, §13). It is not a developer console
+   with a nicer skin.
+2. **Canonical URL — `http://localhost:8000/control-center`.** Standardize the control center
+   on same-origin `:8000` (simplest, best for Google sign-in); treat `:8080` as gateway-only.
+   This is also the canonical first-smoke URL for QA.
+3. **Lessons/curriculum — omit from the v1 primary UI.** No "practice topics" placeholder is
+   shown unless/until a backend lessons API exists; keep it out of the learner happy path
+   (still listed as future in §18).
+4. **Branding/theme — calm, coaching tone.** Keep the L.U.V.E name; lead with a calm,
+   coaching, learner-first treatment over the "industrial console" identity. A lighter theme
+   is acceptable as long as status semantics (§15) stay accessible.
+5. **Token UX — diagnostics-only.** Bearer-token controls live entirely in the Developer
+   diagnostics drawer (§13); no token field appears in the learner flow.
+6. **Mobile — learner flow in scope.** The learner journey (auth → session → analysis) must
+   work on a narrow/mobile viewport (§16); the operator drawer may remain desktop-first.
+7. **Tone — soften toward learner value.** Replace "industrial / telemetry / lab console"
+   wording with calm coaching language; retain only enough technical identity for the
+   operator drawer.
 
 ## 21. Source evidence appendix (files inspected)
 
@@ -415,6 +464,26 @@ So the design is actually implementable surgically:
   eligibility gate.
 - `services/core-api/src/static/index.html` — current 3-view UI, element IDs, status themes,
   realtime/transcript/grading wiring (inventory in §5).
+
+## 22. Appendix A — Claude Code implementation inventory (not design-facing)
+
+This appendix is for the later Claude Code implementation phase, **not** for the designer. It
+records the concrete handles in the current `static/index.html` so the spec can be wired
+surgically (§19). None of these IDs/strings are UX decisions; they are constraints.
+
+**Existing element IDs to preserve** (unless a change is explicitly approved in design review):
+`core-api-url`, `gateway-url`, `session-id`, `last-session-id`, `auth-token`,
+`clear-token-btn`, `create-session-btn`, `connect-btn`, `disconnect-btn`, `mute-mic-btn`,
+`barge-btn`, `stt-only`, `mute-tts`, `copy-stt-summary-btn`, `subtitle-final`,
+`subtitle-partial`, `assistant-meta`, `assistant-stream`, `remote-audio`, `event-log`,
+`stt-diagnostics`, `status-monitor` (`status-dot`/`status-text`), `api-status`
+(`api-status-dot`/`api-status-text`), `session-grading-card`, `grading-content`,
+`pedagogical-zone`, `pedagogical-text`, `offer-endpoint`, `ice-endpoint`, `cmd-endpoint`.
+
+**Current status-theme vocabulary in code:** `statusThemes` = `disconnected`, `thinking`
+("AI Thinking"), `ready`, `error`, `llm-error`; `apiStatusThemes` = `idle`, `busy`, `ready`,
+`error`. The design's expanded state set (§8) is the target; these are the baseline the
+implementation starts from and maps onto real events.
 
 ---
 
