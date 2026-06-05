@@ -13,6 +13,15 @@ export interface StoredSession {
   user: AuthUser;
 }
 
+/** The stored bearer token, if any (for authenticated API calls). */
+export function loadToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function loadSession(): StoredSession | null {
   try {
     const token = localStorage.getItem(TOKEN_KEY);

@@ -8,12 +8,14 @@ interface Settings {
 interface HomeProps {
   userName: string;
   onStart: () => void;
+  starting?: boolean;
+  startError?: string | null;
   settings: Settings;
   setSettings: (s: Settings) => void;
 }
 
 /** Authenticated home — primary "Start practice" + a quiet practice-settings disclosure. */
-export function Home({ userName, onStart, settings, setSettings }: HomeProps) {
+export function Home({ userName, onStart, starting = false, startError = null, settings, setSettings }: HomeProps) {
   const [open, setOpen] = useState(false);
   return (
     <div className="p-view p-main">
@@ -27,9 +29,14 @@ export function Home({ userName, onStart, settings, setSettings }: HomeProps) {
           </div>
           <h2>Ready for a conversation?</h2>
           <p>Find a quiet spot, allow your microphone, and start talking. The tutor will respond out loud.</p>
-          <button className="btn btn--primary btn--xl" onClick={onStart}>
-            Start practice
+          <button className="btn btn--primary btn--xl" onClick={onStart} disabled={starting}>
+            {starting ? "Starting…" : "Start practice"}
           </button>
+          {startError && (
+            <p className="p-note" style={{ color: "var(--err-ink)", marginTop: "14px" }} role="alert">
+              {startError}
+            </p>
+          )}
 
           <div className="p-settings">
             <button className="p-disclosure" aria-expanded={open} onClick={() => setOpen(!open)}>

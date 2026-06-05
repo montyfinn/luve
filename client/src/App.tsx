@@ -26,10 +26,11 @@ export function App() {
   // The bearer token is persisted via session.ts (localStorage) for later
   // authenticated calls (sessions/grading); C4 doesn't need it in React state.
 
-  // diagnostics / event-log state (mock readouts; auth log lines are real)
+  // diagnostics / event-log state (mock readouts; auth + session log lines are real)
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [diag, setDiag] = useState<DiagState>({ googleEnabled: false, gradingMode: "real" });
   const [log, setLog] = useState<LogLine[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null); // real session_id once created
 
   const setDiagPart = useCallback((p: Partial<DiagState>) => setDiag((d) => ({ ...d, ...p })), []);
   const addLog = useCallback((m: string) => {
@@ -40,6 +41,7 @@ export function App() {
   const signOut = useCallback(() => {
     clearSession();
     setUser(null);
+    setSessionId(null);
     addLog("signed out");
     go("intro");
   }, [addLog, go]);
@@ -131,10 +133,18 @@ export function App() {
           setSettings={setSettings}
           gradingMode={diag.gradingMode}
           addLog={addLog}
+          onSessionCreated={setSessionId}
         />
       )}
 
-      <DiagnosticsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} state={diag} set={setDiagPart} log={log} />
+      <DiagnosticsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        state={diag}
+        set={setDiagPart}
+        log={log}
+        sessionId={sessionId}
+      />
     </div>
   );
 }

@@ -3,11 +3,10 @@
  * existing endpoints under /api/v1/auth (register / login / me). No Google,
  * realtime, or grading wiring here; the rest of the app stays mock.
  *
- * Base URL comes from VITE_CORE_API_URL (default http://localhost:8000).
+ * Base URL comes from config (VITE_CORE_API_URL, default http://localhost:8000).
  * :5173 is already in the core_api CORS allow-list.
  */
-
-const CORE_API_URL = (import.meta.env.VITE_CORE_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+import { CORE_API_URL } from "./config";
 
 /** UserRead from core_api (services/core-api/src/schemas/user.py). */
 export interface AuthUser {

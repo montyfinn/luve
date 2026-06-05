@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { DiagState, GradingMode, LogLine } from "../lib/mock";
+import { CORE_API_URL, GATEWAY_URL } from "../lib/config";
 import { CloseIcon } from "./icons";
 
 interface DrawerProps {
@@ -8,6 +9,7 @@ interface DrawerProps {
   state: DiagState;
   set: (p: Partial<DiagState>) => void;
   log: LogLine[];
+  sessionId: string | null;
 }
 
 const GRADING_MODES: GradingMode[] = ["real", "preview", "insufficient"];
@@ -18,7 +20,7 @@ const GRADING_MODES: GradingMode[] = ["real", "preview", "insufficient"];
  * controls" let a reviewer preview states (Google enabled/paused, grading
  * result) without any backend — values feed the mock UI only.
  */
-export function DiagnosticsDrawer({ open, onClose, state, set, log }: DrawerProps) {
+export function DiagnosticsDrawer({ open, onClose, state, set, log, sessionId }: DrawerProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -56,6 +58,28 @@ export function DiagnosticsDrawer({ open, onClose, state, set, log }: DrawerProp
               <span className="v" style={{ color: "var(--ink-3)" }}>
                 {state.gradingMode === "real" ? "progressing" : "inferred ok"}
               </span>
+            </div>
+          </div>
+
+          <div>
+            <div className="p-dgroup__title">Session</div>
+            <div className="p-readline">
+              <span className="k">session_id</span>
+              <span className="v" style={{ color: sessionId ? "var(--ok-ink)" : "var(--ink-3)" }}>
+                {sessionId ? sessionId.slice(0, 8) + "…" : "none"}
+              </span>
+            </div>
+            <div className="p-readline">
+              <span className="k">rtc</span>
+              <span className="v" style={{ color: "var(--ink-3)" }}>not connected (deferred)</span>
+            </div>
+            <div className="p-readline">
+              <span className="k">transcript</span>
+              <span className="v" style={{ color: "var(--busy-ink)" }}>mock</span>
+            </div>
+            <div className="p-readline">
+              <span className="k">grading</span>
+              <span className="v" style={{ color: "var(--busy-ink)" }}>mock (deferred)</span>
             </div>
           </div>
 
@@ -108,9 +132,9 @@ export function DiagnosticsDrawer({ open, onClose, state, set, log }: DrawerProp
           <div>
             <div className="p-dgroup__title">Connection</div>
             <span className="p-dlabel">core-api URL</span>
-            <input className="p-input p-input--mono" defaultValue="http://localhost:8000" />
-            <span className="p-dlabel" style={{ marginTop: "10px" }}>gateway URL</span>
-            <input className="p-input p-input--mono" defaultValue="http://localhost:8080" />
+            <input className="p-input p-input--mono" defaultValue={CORE_API_URL} readOnly />
+            <span className="p-dlabel" style={{ marginTop: "10px" }}>gateway URL (used in the realtime phase)</span>
+            <input className="p-input p-input--mono" defaultValue={GATEWAY_URL} readOnly />
             <span className="p-dlabel" style={{ marginTop: "10px" }}>Bearer token (escape hatch)</span>
             <input className="p-input p-input--mono" placeholder="paste token…" />
           </div>
