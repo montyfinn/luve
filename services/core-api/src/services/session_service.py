@@ -12,9 +12,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User
-from src.schemas.session import GradingRead, GradingStatusRead, SessionCreateRequest, SessionRead
+from src.schemas.session import (
+    GradingRead,
+    GradingStatusRead,
+    SessionCreateRequest,
+    SessionListItem,
+    SessionListResponse,
+    SessionRead,
+)
 
 logger = logging.getLogger(__name__)
+
+SESSION_LIST_DEFAULT_LIMIT = 20
+SESSION_LIST_MAX_LIMIT = 100
 
 
 async def create_webrtc_session(
@@ -81,6 +91,64 @@ async def create_webrtc_session(
     await db.commit()
     session_row = row.mappings().one()
     return SessionRead(**session_row)
+
+
+async def list_user_sessions(
+    db: AsyncSession,
+    *,
+    current_user: User,
+    limit: int = SESSION_LIST_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> SessionListResponse:
+    safe_limit = min(max(limit, 1), SESSION_LIST_MAX_LIMIT)
+    safe_offset = max(offset, 0)
+    params = {
+        "user_id": str(current_user.id),
+        "limit": safe_limit,
+        "offset": safe_offset,
+    }
+
+    total_result = await db.execute(
+        text(
+            """
+            SELECT COUNT(*) AS total
+            FROM sessions
+            WHERE user_id = :user_id
+              AND deleted_at IS NULL
+            """
+        ),
+        {"user_id": params["user_id"]},
+    )
+    total = int(total_result.scalar_one())
+
+    rows = await db.execute(
+        text(
+            """
+            SELECT
+                id,
+                lesson_id,
+                status,
+                total_tokens,
+                manual_stops_count,
+                started_at,
+                ended_at
+            FROM sessions
+            WHERE user_id = :user_id
+              AND deleted_at IS NULL
+            ORDER BY started_at DESC, id DESC
+            LIMIT :limit
+            OFFSET :offset
+            """
+        ),
+        params,
+    )
+    items = [SessionListItem(**session_row) for session_row in rows.mappings().all()]
+    return SessionListResponse(
+        items=items,
+        limit=safe_limit,
+        offset=safe_offset,
+        total=total,
+    )
 
 
 async def get_user_session(

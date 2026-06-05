@@ -27,6 +27,25 @@ class SessionRead(BaseModel):
     ended_at: datetime | None = None
 
 
+class SessionListItem(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    id: UUID
+    lesson_id: UUID | None = None
+    status: str
+    total_tokens: int
+    manual_stops_count: int
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionListItem] = Field(default_factory=list)
+    limit: int
+    offset: int
+    total: int
+
+
 class GradingRead(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
