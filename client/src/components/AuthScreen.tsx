@@ -3,29 +3,47 @@ import { BackIcon, CloseIcon } from "./icons";
 
 type Mode = "login" | "register";
 
+export interface AuthCreds {
+  username: string;
+  email: string;
+  password: string;
+}
+
 interface AuthScreenProps {
   mode: Mode;
   setMode: (m: Mode) => void;
   googleEnabled: boolean;
-  onSubmit: (name: string) => void; // mock — navigates to practice
-  onGoogle: () => void; // mock — logs + (if enabled) navigates
+  /** Real auth — throws ApiError on failure; resolves (and App navigates) on success. */
+  onSubmit: (mode: Mode, creds: AuthCreds) => Promise<void>;
+  onGoogle: () => void; // mock only — never calls Google in C4
   onBack: () => void;
 }
 
 /**
- * Auth — STATIC SHELL ONLY. Validation is client-side cosmetic; onSubmit just
- * advances the mock flow. Google is shown enabled/disabled per the diagnostics
- * "Demo controls" toggle (default disabled = the paused live-login reality).
+ * Auth — now wired to real core_api email/password auth via onSubmit.
+ * Validation mirrors the backend (username ≥3, password ≥8). Server errors are
+ * shown inline in the existing design. Google stays mock/disabled (C4 scope).
  */
 export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, onBack }: AuthScreenProps) {
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
   const [uname, setUname] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
-    if (!email.trim() || pwd.length < 1) {
-      setErr("That email or password doesn't match. Try again.");
+  function switchMode(m: Mode) {
+    setMode(m);
+    setErr("");
+  }
+
+  async function submit() {
+    if (busy) return;
+    if (!email.trim()) {
+      setErr("Enter your email address.");
+      return;
+    }
+    if (pwd.length < 8) {
+      setErr("Password must be at least 8 characters.");
       return;
     }
     if (mode === "register" && uname.trim().length < 3) {
@@ -33,7 +51,14 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
       return;
     }
     setErr("");
-    onSubmit(mode === "register" ? uname : "there");
+    setBusy(true);
+    try {
+      await onSubmit(mode, { username: uname.trim(), email: email.trim(), password: pwd });
+      // success: App navigates away; this component unmounts.
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong. Try again.");
+      setBusy(false);
+    }
   }
 
   return (
@@ -43,6 +68,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
           <button
             className="p-linkbtn"
             onClick={onBack}
+            disabled={busy}
             style={{ marginBottom: "12px", marginLeft: "-8px", display: "inline-flex", alignItems: "center", gap: "4px" }}
           >
             <BackIcon size={15} /> Back
@@ -53,7 +79,8 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               role="tab"
               aria-selected={mode === "login"}
               className={"p-tab" + (mode === "login" ? " is-active" : "")}
-              onClick={() => { setMode("login"); setErr(""); }}
+              onClick={() => switchMode("login")}
+              disabled={busy}
             >
               Sign in
             </button>
@@ -61,7 +88,8 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               role="tab"
               aria-selected={mode === "register"}
               className={"p-tab" + (mode === "register" ? " is-active" : "")}
-              onClick={() => { setMode("register"); setErr(""); }}
+              onClick={() => switchMode("register")}
+              disabled={busy}
             >
               Create account
             </button>
@@ -76,6 +104,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
                 value={uname}
                 onChange={(e) => setUname(e.target.value)}
                 placeholder="At least 3 characters"
+                disabled={busy}
               />
             </div>
           )}
@@ -88,6 +117,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               onChange={(e) => setEmail(e.target.value)}
               type="email"
               placeholder="you@example.com"
+              disabled={busy}
             />
           </div>
           <div className="p-field">
@@ -101,6 +131,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               placeholder={mode === "register" ? "At least 8 characters" : "••••••••"}
               aria-describedby={err ? "p-autherr" : undefined}
               onKeyDown={(e) => e.key === "Enter" && submit()}
+              disabled={busy}
             />
             {err && (
               <div className="p-inline-err" id="p-autherr">
@@ -109,13 +140,19 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
             )}
           </div>
 
-          <button className="btn btn--primary btn--full" onClick={submit}>
-            {mode === "login" ? "Sign in" : "Create account"}
+          <button className="btn btn--primary btn--full" onClick={submit} disabled={busy}>
+            {busy
+              ? mode === "login"
+                ? "Signing in…"
+                : "Creating account…"
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
           </button>
 
           <div className="p-divider">or</div>
 
-          <button className="p-google" onClick={onGoogle} disabled={!googleEnabled}>
+          <button className="p-google" onClick={onGoogle} disabled={!googleEnabled || busy}>
             <span className={"p-gmark" + (googleEnabled ? "" : " p-gmark--off")} />
             Continue with Google
           </button>

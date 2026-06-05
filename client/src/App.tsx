@@ -1,30 +1,32 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useViewState } from "./lib/viewState";
 import { TopBar } from "./components/TopBar";
 import { IntroScreen } from "./components/IntroScreen";
-import { AuthScreen } from "./components/AuthScreen";
+import { AuthScreen, type AuthCreds } from "./components/AuthScreen";
 import { PracticeScreen } from "./components/PracticeScreen";
 import { DiagnosticsDrawer } from "./components/DiagnosticsDrawer";
+import { ApiError, fetchMe, login, register, type AuthUser } from "./lib/authApi";
+import { clearSession, loadSession, saveSession } from "./lib/session";
 import type { DiagState, LogLine } from "./lib/mock";
-
-interface User {
-  name: string;
-  initial: string;
-}
 
 type AuthMode = "login" | "register";
 
 /**
- * App shell — top-level view machine (intro -> auth -> practice; no React Router)
- * plus the persistent top bar and the diagnostics drawer. Everything is MOCK:
- * "auth" just sets a local user and advances; no backend/realtime/grading.
+ * App shell — top-level view machine (intro -> auth -> practice; no React Router).
+ * C4: auth is REAL (email/password against core_api). Practice/live/analysis
+ * remain scripted mock; Google stays mock (not wired in this task).
  */
 export function App() {
-  const { view, go } = useViewState();
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [user, setUser] = useState<User | null>(null);
+  // Restore a signed-in session synchronously so we don't flash the intro.
+  const restored = useMemo(() => loadSession(), []);
+  const { view, go } = useViewState(restored ? "practice" : "intro");
 
-  // diagnostics / event-log state (mock)
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [user, setUser] = useState<AuthUser | null>(restored?.user ?? null);
+  // The bearer token is persisted via session.ts (localStorage) for later
+  // authenticated calls (sessions/grading); C4 doesn't need it in React state.
+
+  // diagnostics / event-log state (mock readouts; auth log lines are real)
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [diag, setDiag] = useState<DiagState>({ googleEnabled: false, gradingMode: "real" });
   const [log, setLog] = useState<LogLine[]>([]);
@@ -35,6 +37,39 @@ export function App() {
     setLog((L) => [{ t, m }, ...L].slice(0, 40));
   }, []);
 
+  const signOut = useCallback(() => {
+    clearSession();
+    setUser(null);
+    addLog("signed out");
+    go("intro");
+  }, [addLog, go]);
+
+  // Validate a restored token once on mount. Only sign out on a real 401
+  // (expired/invalid); keep the optimistic session if the server is unreachable.
+  useEffect(() => {
+    if (!restored) return;
+    let alive = true;
+    fetchMe(restored.token)
+      .then((u) => {
+        if (!alive) return;
+        setUser(u);
+        saveSession(restored.token, u);
+        addLog("GET /api/v1/auth/me → 200 (session restored)");
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 401) {
+          addLog("GET /api/v1/auth/me → 401 (session expired)");
+          signOut();
+        } else {
+          addLog("session restore: API unreachable — kept local session");
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [restored, addLog, signOut]);
+
   const goAuth = useCallback(
     (mode: AuthMode) => {
       setAuthMode(mode);
@@ -43,31 +78,28 @@ export function App() {
     [go],
   );
 
-  const handleAuth = useCallback(
-    (name: string) => {
-      const display = name && name !== "there" ? name : "Maria";
-      setUser({ name: display, initial: display[0].toUpperCase() });
-      addLog("POST /api/v1/auth/login → 200; bearer stored  [mock]");
+  // Real email/password auth. Throws ApiError → AuthScreen shows it inline.
+  const handleAuthSubmit = useCallback(
+    async (mode: AuthMode, creds: AuthCreds) => {
+      if (mode === "register") {
+        await register({ username: creds.username, email: creds.email, password: creds.password });
+        addLog("POST /api/v1/auth/register → 201");
+      }
+      const tok = await login({ email: creds.email, password: creds.password });
+      addLog("POST /api/v1/auth/login → 200; bearer stored");
+      const me = await fetchMe(tok);
+      addLog("GET /api/v1/auth/me → 200");
+      saveSession(tok, me);
+      setUser(me);
       go("practice");
     },
     [addLog, go],
   );
 
+  // Google stays mock in C4 — never calls Google endpoints.
   const handleGoogle = useCallback(() => {
-    if (!diag.googleEnabled) {
-      addLog("404 /api/v1/auth/google/start (paused)  [mock]");
-      return;
-    }
-    addLog("302 → accounts.google.com; google_code → exchange → 200  [mock]");
-    setUser({ name: "Maria", initial: "M" });
-    go("practice");
-  }, [diag.googleEnabled, addLog, go]);
-
-  const signOut = useCallback(() => {
-    setUser(null);
-    addLog("signed out  [mock]");
-    go("intro");
-  }, [addLog, go]);
+    addLog("google sign-in is not wired in this build — use email & password");
+  }, [addLog]);
 
   const [settings, setSettings] = useState({ sttOnly: false, muteTts: false });
 
@@ -75,8 +107,8 @@ export function App() {
     <div className="p-app">
       <TopBar
         showSession={view === "practice"}
-        userName={user?.name ?? ""}
-        userInitial={user?.initial ?? ""}
+        userName={user?.username ?? ""}
+        userInitial={(user?.username ?? "?")[0].toUpperCase()}
         onSignOut={signOut}
         onOpenDiagnostics={() => setDrawerOpen(true)}
       />
@@ -87,14 +119,14 @@ export function App() {
           mode={authMode}
           setMode={setAuthMode}
           googleEnabled={diag.googleEnabled}
-          onSubmit={handleAuth}
+          onSubmit={handleAuthSubmit}
           onGoogle={handleGoogle}
           onBack={() => go("intro")}
         />
       )}
       {view === "practice" && user && (
         <PracticeScreen
-          userName={user.name}
+          userName={user.username}
           settings={settings}
           setSettings={setSettings}
           gradingMode={diag.gradingMode}
