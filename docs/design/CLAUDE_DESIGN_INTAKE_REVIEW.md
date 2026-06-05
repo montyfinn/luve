@@ -108,28 +108,53 @@ re-parent — a Phase-2 implementation risk, not a spec defect.
 
 ## 4a. User decisions before implementation
 
-The two gates raised in §4 and §10 have been **decided by the user (2026-06-05)**. They are
-binding on the implementation phase.
+The two gates raised in §4 and §10 were first decided on 2026-06-05 and **revised by the user
+on 2026-06-05 (fidelity-first update)**. The revised decisions below are binding on the
+implementation phase and supersede the earlier "omit cat" stance.
 
-### Decision 1 — Cat mascot / Lottie assets: **OMIT from v1**
+### Decision 1 — Cat mascot / Lottie assets: **KEEP as a controlled optional delight layer for v1**
 
-- **Decision:** Omit the cat mascot from the v1 implementation entirely.
-- **Reason:** It is a decorative, looping animation that conflicts with the clean,
-  professional, learner-first direction; it contradicts the design package's own "what to
-  avoid" guidance (which explicitly bans "looping background animation"); and it adds
-  ~2.3 MB of asset bloat (`cat-*.js` + `cat_*.json`).
-- **Handling:** Keep the cat assets in the design package as **reference only**. Do **not**
-  copy cat assets, cat JS (`cat-boot.js`/`cat-float.js`/`cat-*-data.js`), Lottie JSON
-  (`cat_*.json`), or the ambient/boot mascot behavior into the production frontend. The
-  `#cat-layer` / `#cat-boot` constructs from `luve-tokens.css`/`proto.css` are not ported.
-- **Future:** May be reconsidered later **only** as an optional, explicitly user-approved
-  brand element, gated behind `prefers-reduced-motion`, lazy-loaded, and held to a strict
-  performance budget. Not part of any v1 commit.
+> **Revised (supersedes the earlier "OMIT from v1").** The user explicitly wants to retain
+> the cat effects from the Claude Design direction. Cat effects are **in scope for v1**, but
+> implemented as a constrained, optional delight layer — not a dominant or blocking element.
 
-### Decision 2 — Session History / Past sessions: **DEFER from v1**
+- **Decision:** Keep the cat effects in v1 as a calm, optional delight layer.
+- **Constraints (all mandatory):**
+  - **No mandatory long boot splash** — no `#cat-boot` full-screen gate that delays first paint.
+  - **No blocking loading state** — the cat never sits in front of, or blocks, content/interaction.
+  - **No excessive looping background motion** — ambient motion stays subtle and low-frequency.
+  - **Respects `prefers-reduced-motion`** — animation is replaced by a static state when set.
+  - **Has a static fallback** — a still image/glyph stands in if Lottie fails to load or motion is reduced.
+  - **Never interferes with the primary surfaces** — must not obstruct or distract from the
+    **Start practice** CTA, live-session controls, the transcript, or analysis feedback.
+  - **Performance-budgeted and ideally lazy-loaded** — deferred/async load; counts against a
+    declared size budget.
+  - **No backend changes** — purely frontend.
+- **Asset handling (do NOT copy blindly):** the design package cat assets remain
+  **reference/source** assets. Before any are used, the implementation must explicitly verify
+  **size, licensing, and runtime impact**. If Lottie assets (`cat_*.json` / `cat-*-data.js`,
+  some ~800 KB each, ~2.3 MB combined) are used directly, the implementation must verify asset
+  size and load behavior first — and prefer the smallest viable asset, lazy-loaded, over the
+  full set. The bundled prototype's CDN `lottie-web` is not assumed; the runtime player choice
+  is part of the cat phase audit (§6).
+- **Sanctioned uses for the cat:**
+  - calm ambient companion (subtle, backgrounded, non-blocking),
+  - live-session **listening / thinking** state cue,
+  - empty / **analysis loading** state,
+  - subtle delight moments.
+- **Tone guardrail:** the cat must keep the product feeling calm/premium/coaching. It must
+  **not** make the product feel childish or game-like unless the user explicitly approves that
+  direction.
+
+### Decision 2 — Session History / Past sessions: **DEFER from v1 (unchanged)**
+
+> **Unchanged by the fidelity-first revision.** Even though the user now wants to preserve
+> most of the Claude Design direction, Session History stays excluded from v1 — it is the one
+> deliberate exception, because the backend cannot supply the data. This is a data-availability
+> limit, not a visual-fidelity choice.
 
 - **Decision:** Defer the Session History (§3.13) / Past-sessions feature from the v1
-  implementation.
+  implementation, unless explicitly authorized later.
 - **Reason:** The current backend has **no `GET /sessions` list endpoint** — only
   session create (`POST ""`), session-by-id (`GET /{id}`), and grading surfaces
   (`GET /{id}/grading[/status]`) exist. Building a history list would require inventing data
@@ -141,6 +166,51 @@ binding on the implementation phase.
 - **Future:** Implement only after a backend `GET /sessions` endpoint plus its
   pagination / empty / error semantics are designed and reviewed as a separate authorized
   task.
+
+## 4b. Design fidelity target for implementation
+
+The implementation should **preserve roughly 80–90% of the Claude Design visual direction and
+UX hierarchy** where feasible against the real single-file app. The goal is a faithful
+realization of the design, not a conservative reduction of it — adjustments are the exception,
+justified by backend reality, performance, accessibility, or the surgical-implementation
+constraint.
+
+**Preserve (high fidelity):**
+- learner-first home,
+- TopBar,
+- the primary **Start practice** CTA,
+- live-session workspace (voice indicator + two-tier transcript + always-reachable controls),
+- analysis / coaching structure (scores, summary, corrections, next steps),
+- diagnostics drawer,
+- visual tokens — color / spacing / radius / shadow / type direction (`luve-tokens.css`),
+- bounded motion / microinteraction direction,
+- **cat effects, with the §4a Decision 1 constraints.**
+
+**Do NOT preserve blindly:**
+- React / JSX component structure (app is a vanilla single file),
+- prototype-only code (`proto.css`, `spec.css`, CDN React/Babel runtime),
+- unsupported Session History (§4a Decision 2),
+- any behavior that needs a backend capability that is not present,
+- asset-heavy animation where it harms performance or accessibility (audit + budget first).
+
+The 10–20% of acceptable divergence is reserved for: vanilla-vs-React structural translation,
+backend-data limits, performance/accessibility budgets, and the explicitly-allowed Analysis
+screen refinement (§4c).
+
+## 4c. "Analysis completed · real LLM grading" may be adjusted
+
+The user specifically allows **refinement of the real-LLM-grading analysis screen** (spec
+§3.7) beyond a 1:1 reproduction, provided it stays within the design's spirit:
+
+- Keep the design's **premium / coaching feel**.
+- Make the real-LLM grading display **clear, credible, and uncluttered**.
+- Make **scores, skill feedback, corrections, and next steps easy to scan** (clear hierarchy,
+  generous spacing, confident numerals).
+- The **fake / dev-preview warning** remains visible when relevant (`is_dev_preview` /
+  fake `grader_version`) but **not dominant** on a real result.
+- Do **not** hide `provider` / `grader_version` / `input_quality` metadata entirely — demote
+  it to a **secondary "details" area**, not the learner's headline.
+- No backend change: render only fields the grading API already returns (§9 `GradingRead`).
 
 ## 5. Mapping to current `static/index.html`
 
@@ -222,7 +292,7 @@ Per phase, non-destructive, no full suite:
 |---|---|
 | **Prototype-copy** (dropping `.jsx`/React into a vanilla single-file app) | Treat `.jsx`/`proto.css` as reference only; hand-author vanilla markup/CSS |
 | **Generated CSS bloat** (`proto.css` 25 KB, `spec.css` 12 KB) | Port only needed token vars from `luve-tokens.css`; do not paste prototype CSS |
-| **Cat mascot bloat/perf** (~2.3 MB Lottie + lottie-web CDN) | Omit for v1; if ever added: opt-in, lazy, reduced-motion-gated, self-hosted |
+| **Cat effect bloat/perf** (~2.3 MB Lottie + lottie-web CDN) | Kept for v1 as a constrained delight layer (§4a Dec.1): audit/minimize assets, lazy-load, reduced-motion + static fallback, no boot-splash gate, performance budget; built in the dedicated cat/microinteraction phase (§10·6), not Phase 1 |
 | **Tailwind/class mismatch** (current util + `cc-*` + `styles.css` vs token vars) | Add a token layer; map `cc-*` and `statusThemes` onto the 6-state palette; avoid class collisions |
 | **Broken IDs/functions** on re-parent | Preserve all IDs/handlers (brief Appendix A); re-skin, don't rename; `node --check` each phase |
 | **Auth/session regression** | UI-only; no backend/auth/grading edits; smoke each phase |
@@ -237,25 +307,47 @@ Per phase, non-destructive, no full suite:
 ## 10. Recommended next step
 
 The Claude Design deliverable (the written spec) is **accepted as well-aligned and
-implementation-ready**. Both gates are now resolved (§4a): **cat mascot omitted for v1** and
-**Session History deferred for v1**. The spec's remaining "Open design decisions" (live-layout
+implementation-ready**, and the implementation should aim to **preserve the Claude Design
+direction closely** (§4b, ~80–90% fidelity), including the cat effects under constraints
+(§4a Decision 1). Gate status: **cat effects KEPT (constrained, later phase)**; **Session
+History DEFERRED** (§4a Decision 2). The spec's remaining "Open design decisions" (live-layout
 emphasis, practice-settings visibility, theme, post-session navigation, corrections depth,
 pronunciation placement) are non-blocking and can be tuned during the build.
 
 Proceed to **Phase 1 — layout / IA shell** as a surgical, behavior-preserving commit against
 `static/index.html`, following the documented Design → Code → Review workflow. Phase 1 scope:
 
-- layout / IA shell
+- layout / IA shell, built to **preserve the Claude Design IA/hierarchy closely**
 - TopBar (identity + condensed health + diagnostics entry)
 - learner-first home (with the primary **Start practice** CTA)
 - live-session and analysis view containers
 - diagnostics drawer scaffold (collapsed; controls re-parented in a later phase)
-- **no cat mascot**
+- **no cat effects yet** — base layout stabilizes first; cat lands in the dedicated motion
+  phase below so it can be done safely (it must not be forced into Phase 1)
 - **no session history list**
 - **no backend changes**, no hot-path, no `.env`, preserve all element IDs / JS handles
 
-Subsequent phases follow §7 (diagnostics-drawer wiring → happy-path restyle → live workspace →
-analysis/preview → bounded microinteractions → browser verification).
+Subsequent phases (revised to match §4b/§4c):
+
+1. **Layout / IA shell** (above).
+2. **Diagnostics drawer** — re-parent operator controls into the collapsed drawer.
+3. **Happy-path restyle** — landing / auth / home, high-fidelity to the design tokens.
+4. **Live-session workspace** — voice indicator states + two-tier transcript.
+5. **Analysis restyle**, with a dedicated **5a — "Analysis completed · real LLM grading"
+   subphase** per §4c (premium/coaching feel; scannable scores/skill-feedback/corrections/
+   next-steps; non-dominant dev-preview warning; metadata demoted to secondary details).
+   **5b** covers the preview / insufficient-evidence / failed states.
+6. **Cat effects + bounded microinteractions phase** (after base layout is stable), per
+   §4a Decision 1:
+   - **audit cat asset sizes** (the `cat_*.json` / `cat-*-data.js` are ~800 KB each, ~2.3 MB
+     combined) and pick the smallest viable subset,
+   - add a **reduced-motion fallback** and a **static fallback** for load failure,
+   - **lazy-load / minimize** cat assets (and decide the runtime player; do not assume CDN
+     `lottie-web`),
+   - **browser performance check** (first paint not gated, no jank, budget respected),
+   - apply the rest of the §07 bounded microinteractions with reduced-motion fallbacks.
+7. **Browser verification + cleanup** — static `node --check`, happy-path smoke, mobile,
+   accessibility, regression guard.
 
 ---
 
