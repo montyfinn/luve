@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# Re-include client source/config that the repo-root .gitignore (Python-oriented)
+# would otherwise catch: it ignores `lib/`, `lib64/`, `package-lock.json`, `yarn.lock`.
+!package-lock.json
+!src/lib/
+!src/lib/**
