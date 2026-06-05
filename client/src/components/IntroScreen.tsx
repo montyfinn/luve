@@ -1,49 +1,69 @@
 interface IntroScreenProps {
-  onContinue: () => void;
+  onStart: () => void; // -> auth (register intent)
+  onLogin: () => void; // -> auth (login intent)
 }
 
-const POINTS = [
-  {
-    title: "Speak naturally",
-    body: "Just talk. Your words appear as live subtitles while you speak.",
-  },
-  {
-    title: "Real conversation",
-    body: "A patient AI tutor listens, thinks, and replies out loud.",
-  },
-  {
-    title: "Feedback & coaching",
-    body: "After each session, get a friendly analysis and what to work on next.",
-  },
-];
-
-/** Intro / landing screen — communicates value and guides to the single next action. */
-export function IntroScreen({ onContinue }: IntroScreenProps) {
+/** Landing — two-column hero with editorial headline + "how it works" card. */
+export function IntroScreen({ onStart, onLogin }: IntroScreenProps) {
   return (
-    <main className="screen screen--intro">
-      <section className="hero card">
-        <span className="eyebrow">LUVE · English speaking practice</span>
-        <h1 className="hero__title">Practice speaking English with a patient AI tutor</h1>
-        <p className="hero__lead">
-          Have a real spoken conversation, see what you said transcribed live, and get clear,
-          encouraging feedback after each session.
-        </p>
-        <div className="hero__actions">
-          <button type="button" className="btn btn--primary btn--lg" onClick={onContinue}>
-            Get started
-          </button>
+    <div className="p-view p-main">
+      <div className="p-wrap p-center">
+        <div className="p-hero">
+          <div>
+            <p className="p-eyebrow">Speaking practice, with an AI coach</p>
+            <h1>
+              Practice speaking English, out loud, <em>without the nerves.</em>
+            </h1>
+            <p>
+              Have a real spoken conversation with an AI tutor. When you're done, get calm,
+              specific coaching on your fluency, grammar and vocabulary.
+            </p>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <button className="btn btn--primary" onClick={onStart}>
+                Start practicing
+              </button>
+              <button className="btn btn--ghost" onClick={onLogin}>
+                I already have an account
+              </button>
+            </div>
+            <p className="p-note" style={{ marginTop: "24px" }}>
+              A focused demo build — one practice session at a time.
+            </p>
+          </div>
+          <div className="p-card p-howcard">
+            <p className="p-eyebrow" style={{ marginBottom: "18px" }}>
+              How a session works
+            </p>
+            <div className="p-howstep">
+              <span className="num">1</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>Speak naturally</div>
+                <div style={{ fontSize: "var(--t-sm)", color: "var(--ink-3)" }}>
+                  Your mic streams to the tutor in real time.
+                </div>
+              </div>
+            </div>
+            <div className="p-howstep">
+              <span className="num">2</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>Listen &amp; respond</div>
+                <div style={{ fontSize: "var(--t-sm)", color: "var(--ink-3)" }}>
+                  The tutor replies out loud — a real back-and-forth.
+                </div>
+              </div>
+            </div>
+            <div className="p-howstep">
+              <span className="num">3</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>Get coaching</div>
+                <div style={{ fontSize: "var(--t-sm)", color: "var(--ink-3)" }}>
+                  End the session for scores and specific corrections.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </section>
-
-      <section className="points" aria-label="How it works">
-        {POINTS.map((p, i) => (
-          <article className="point card" key={p.title}>
-            <span className="point__num">{String(i + 1).padStart(2, "0")}</span>
-            <h2 className="point__title">{p.title}</h2>
-            <p className="point__body">{p.body}</p>
-          </article>
-        ))}
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }

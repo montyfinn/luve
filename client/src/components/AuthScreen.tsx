@@ -1,85 +1,131 @@
 import { useState } from "react";
+import { BackIcon, CloseIcon } from "./icons";
+
+type Mode = "login" | "register";
 
 interface AuthScreenProps {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  googleEnabled: boolean;
+  onSubmit: (name: string) => void; // mock — navigates to practice
+  onGoogle: () => void; // mock — logs + (if enabled) navigates
   onBack: () => void;
-  onContinue: () => void;
 }
 
-type Tab = "login" | "register";
-
 /**
- * Auth screen — STATIC SHELL ONLY. No real auth calls in this skeleton.
- * Fields are presentational; "Continue" navigates to the practice screen.
- * Google sign-in is shown as a disabled/not-configured visual state (matches the
- * paused live-login reality; real exchange is wired in a later phase).
+ * Auth — STATIC SHELL ONLY. Validation is client-side cosmetic; onSubmit just
+ * advances the mock flow. Google is shown enabled/disabled per the diagnostics
+ * "Demo controls" toggle (default disabled = the paused live-login reality).
  */
-export function AuthScreen({ onBack, onContinue }: AuthScreenProps) {
-  const [tab, setTab] = useState<Tab>("login");
-  const isRegister = tab === "register";
+export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, onBack }: AuthScreenProps) {
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [uname, setUname] = useState("");
+  const [err, setErr] = useState("");
+
+  function submit() {
+    if (!email.trim() || pwd.length < 1) {
+      setErr("That email or password doesn't match. Try again.");
+      return;
+    }
+    if (mode === "register" && uname.trim().length < 3) {
+      setErr("Choose a username with at least 3 characters.");
+      return;
+    }
+    setErr("");
+    onSubmit(mode === "register" ? uname : "there");
+  }
 
   return (
-    <main className="screen screen--auth">
-      <section className="card auth-card">
-        <div className="auth-card__head">
-          <div>
-            <h1 className="auth-card__title">{isRegister ? "Create your account" : "Welcome back"}</h1>
-            <p className="auth-card__sub">Sign in to start a speaking session.</p>
+    <div className="p-view p-main">
+      <div className="p-wrap p-center">
+        <div className="p-card p-authcard">
+          <button
+            className="p-linkbtn"
+            onClick={onBack}
+            style={{ marginBottom: "12px", marginLeft: "-8px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+          >
+            <BackIcon size={15} /> Back
+          </button>
+
+          <div className="p-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={mode === "login"}
+              className={"p-tab" + (mode === "login" ? " is-active" : "")}
+              onClick={() => { setMode("login"); setErr(""); }}
+            >
+              Sign in
+            </button>
+            <button
+              role="tab"
+              aria-selected={mode === "register"}
+              className={"p-tab" + (mode === "register" ? " is-active" : "")}
+              onClick={() => { setMode("register"); setErr(""); }}
+            >
+              Create account
+            </button>
           </div>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onBack}>
-            ← Back
-          </button>
-        </div>
 
-        <div className="tabs" role="tablist" aria-label="Sign in or create account">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={!isRegister}
-            className={`tab ${!isRegister ? "tab--active" : ""}`}
-            onClick={() => setTab("login")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={isRegister}
-            className={`tab ${isRegister ? "tab--active" : ""}`}
-            onClick={() => setTab("register")}
-          >
-            Create account
-          </button>
-        </div>
-
-        {/* Static form — preventDefault; no submission logic in the skeleton. */}
-        <form className="form" onSubmit={(e) => e.preventDefault()}>
-          {isRegister && (
-            <label className="field">
-              <span className="field__label">Username</span>
-              <input className="input" type="text" autoComplete="nickname" placeholder="e.g. alex_lee" />
-            </label>
+          {mode === "register" && (
+            <div className="p-field">
+              <label htmlFor="p-uname">Username</label>
+              <input
+                id="p-uname"
+                className="p-input"
+                value={uname}
+                onChange={(e) => setUname(e.target.value)}
+                placeholder="At least 3 characters"
+              />
+            </div>
           )}
-          <label className="field">
-            <span className="field__label">Email</span>
-            <input className="input" type="email" autoComplete="username" placeholder="you@example.com" />
-          </label>
-          <label className="field">
-            <span className="field__label">Password</span>
-            <input className="input" type="password" autoComplete="current-password" placeholder="••••••••" />
-          </label>
+          <div className="p-field">
+            <label htmlFor="p-email">Email</label>
+            <input
+              id="p-email"
+              className="p-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="p-field">
+            <label htmlFor="p-pwd">Password</label>
+            <input
+              id="p-pwd"
+              className={"p-input" + (err ? " is-error" : "")}
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              type="password"
+              placeholder={mode === "register" ? "At least 8 characters" : "••••••••"}
+              aria-describedby={err ? "p-autherr" : undefined}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
+            {err && (
+              <div className="p-inline-err" id="p-autherr">
+                <CloseIcon size={14} stroke="var(--err)" /> {err}
+              </div>
+            )}
+          </div>
 
-          <button type="button" className="btn btn--primary btn--lg btn--block" onClick={onContinue}>
-            Continue
+          <button className="btn btn--primary btn--full" onClick={submit}>
+            {mode === "login" ? "Sign in" : "Create account"}
           </button>
-        </form>
 
-        <div className="divider"><span>or</span></div>
+          <div className="p-divider">or</div>
 
-        <button type="button" className="btn btn--ghost btn--block" disabled aria-disabled="true">
-          Continue with Google
-        </button>
-        <p className="auth-card__note">Google sign-in is not configured yet.</p>
-      </section>
-    </main>
+          <button className="p-google" onClick={onGoogle} disabled={!googleEnabled}>
+            <span className={"p-gmark" + (googleEnabled ? "" : " p-gmark--off")} />
+            Continue with Google
+          </button>
+          {!googleEnabled && (
+            <p className="p-note">
+              Google sign-in isn't set up on this build yet — use your email and password.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

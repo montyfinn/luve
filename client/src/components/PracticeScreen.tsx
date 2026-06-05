@@ -1,87 +1,181 @@
-import { DiagnosticsPanel } from "./DiagnosticsPanel";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Home } from "./practice/Home";
+import { Live, type Turn } from "./practice/Live";
+import { Ended } from "./practice/Ended";
+import { Analysis } from "./practice/Analysis";
+import {
+  AI_LINES,
+  BEATS,
+  YOU_LINES,
+  buildCurrentSession,
+  type GradingMode,
+  type Phase,
+  type SessionResult,
+} from "../lib/mock";
 
-interface PracticeScreenProps {
-  onSignOut: () => void;
+interface Settings {
+  sttOnly: boolean;
+  muteTts: boolean;
 }
 
+interface PracticeScreenProps {
+  userName: string;
+  settings: Settings;
+  setSettings: (s: Settings) => void;
+  gradingMode: GradingMode; // from diagnostics "Demo controls"
+  addLog: (m: string) => void;
+}
+
+type Stage = "home" | "live" | "ended" | "analysis";
+type AnalysisStatus = "loading" | "ready" | "insufficient";
+
 /**
- * Practice / conversation shell — STATIC PLACEHOLDERS ONLY. No realtime, mic,
- * transcript, or grading wiring in this skeleton. Sections are laid out so later
- * phases can fill them in: primary action, live status, transcript, analysis,
- * and a collapsible diagnostics panel.
+ * Conversation shell — the third "page". Manages an internal stage machine
+ * (home -> live -> ended -> analysis) driven entirely by SCRIPTED MOCK BEATS.
+ * No microphone, WebRTC, or grading API — the "API" strings are log-only.
  */
-export function PracticeScreen({ onSignOut }: PracticeScreenProps) {
-  return (
-    <main className="screen screen--practice">
-      <header className="topbar">
-        <div className="topbar__brand">
-          <span className="topbar__logo">LUVE</span>
-          <span className="topbar__divider">·</span>
-          <span className="topbar__title">Speaking Practice</span>
-        </div>
-        <div className="topbar__actions">
-          <span className="chip chip--idle">Idle</span>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
+export function PracticeScreen({ userName, settings, setSettings, gradingMode, addLog }: PracticeScreenProps) {
+  const [stage, setStage] = useState<Stage>("home");
+  const [phase, setPhase] = useState<Phase>("connecting");
+  const [transcript, setTranscript] = useState<Turn[]>([]);
+  const [partial, setPartial] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("loading");
+  const [session, setSession] = useState<SessionResult | null>(null);
 
-      {/* Primary action — the one obvious next step. */}
-      <section className="card hero hero--practice">
-        <div className="hero__text">
-          <h1 className="hero__title hero__title--sm">Ready to practise?</h1>
-          <p className="hero__lead">
-            Start a live session and speak with your AI tutor. Your words appear below, and a
-            friendly analysis follows when you finish.
-          </p>
-        </div>
-        <button type="button" className="btn btn--primary btn--lg" disabled aria-disabled="true">
-          Start practice
-        </button>
-      </section>
+  const timers = useRef<number[]>([]);
+  const after = useCallback((ms: number, fn: () => void) => {
+    const t = window.setTimeout(fn, ms);
+    timers.current.push(t);
+    return t;
+  }, []);
+  const clearTimers = useCallback(() => {
+    timers.current.forEach((t) => clearTimeout(t));
+    timers.current = [];
+  }, []);
 
-      <div className="practice-grid">
-        {/* Live transcript placeholder (two tiers). */}
-        <section className="card section">
-          <div className="section__head">
-            <h2 className="section__title">Live transcript</h2>
-            <span className="section__hint">Appears while you speak</span>
-          </div>
-          <div className="transcript">
-            <div className="transcript__block">
-              <p className="transcript__label">Final</p>
-              <div className="transcript__final empty-state">Your finalized speech will show here.</div>
-            </div>
-            <div className="transcript__block">
-              <p className="transcript__label">Partial</p>
-              <div className="transcript__partial empty-state">Live hypothesis…</div>
-            </div>
-          </div>
-        </section>
-
-        {/* Analysis / feedback placeholder. */}
-        <section className="card section">
-          <div className="section__head">
-            <h2 className="section__title">Session analysis</h2>
-            <span className="section__hint">After you finish</span>
-          </div>
-          <div className="scorecards">
-            {["Overall", "Fluency", "Grammar", "Vocabulary"].map((label) => (
-              <div className="scorecard" key={label}>
-                <span className="scorecard__label">{label}</span>
-                <span className="scorecard__value">—</span>
-              </div>
-            ))}
-          </div>
-          <p className="empty-state empty-state--block">
-            Your analysis — scores, corrections, and coaching tips — will appear here after a
-            session.
-          </p>
-        </section>
-      </div>
-
-      <DiagnosticsPanel />
-    </main>
+  const runBeat = useCallback(
+    (i: number) => {
+      if (i >= BEATS.length) {
+        setPhase("listening");
+        return;
+      }
+      const b = BEATS[i];
+      if (b.phase === "commit") {
+        setPartial("");
+        setTranscript((T) => [...T, { who: "you", text: YOU_LINES[b.you!] }]);
+        addLog('STT final: "' + YOU_LINES[b.you!].slice(0, 28) + '…"');
+        after(b.dur, () => runBeat(i + 1));
+        return;
+      }
+      setPhase(b.phase);
+      if (b.phase === "aispeaking") {
+        setTranscript((T) => [...T, { who: "ai", text: AI_LINES[b.ai!] }]);
+        addLog("assistant_stream → TTS chunk");
+      }
+      if (b.phase === "thinking") addLog("LLM thinking…");
+      if (b.phase === "speaking") {
+        const words = YOU_LINES[b.you!].split(" ");
+        setPartial("");
+        const step = Math.max(120, Math.floor(b.dur / (words.length + 1)));
+        words.forEach((_, wi) => after(step * (wi + 1), () => setPartial(words.slice(0, wi + 1).join(" "))));
+      }
+      after(b.dur, () => runBeat(i + 1));
+    },
+    [addLog, after],
   );
+
+  const startSession = useCallback(() => {
+    clearTimers();
+    setTranscript([]);
+    setPartial("");
+    setMuted(false);
+    setElapsed(0);
+    setPhase("connecting");
+    setStage("live");
+    addLog("POST /sessions → ready; POST /rtc/offer (SDP)  [mock]");
+    after(1300, () => {
+      addLog("RTC connected  [mock]");
+      runBeat(0);
+    });
+  }, [addLog, after, clearTimers, runBeat]);
+
+  // elapsed timer while live
+  useEffect(() => {
+    if (stage !== "live") return;
+    const iv = window.setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(iv);
+  }, [stage]);
+
+  const handleInterrupt = useCallback(() => {
+    if (phase === "aispeaking" || phase === "thinking") addLog("POST /rtc/cmd BARGE_IN  [mock]");
+  }, [phase, addLog]);
+
+  // spacebar = barge-in while live
+  useEffect(() => {
+    if (stage !== "live") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" && e.target === document.body) {
+        e.preventDefault();
+        handleInterrupt();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stage, handleInterrupt]);
+
+  const handleMute = useCallback(() => {
+    setMuted((m) => {
+      addLog(!m ? "POST /rtc/cmd FLUSH (mute)  [mock]" : "mic unmuted  [mock]");
+      return !m;
+    });
+  }, [addLog]);
+
+  const endSession = useCallback(() => {
+    clearTimers();
+    addLog("POST /rtc/cmd END_SESSION; grading queued  [mock]");
+    setStage("ended");
+    after(1600, () => {
+      setAnalysisStatus("loading");
+      setStage("analysis");
+      addLog("GET /grading/status → processing  [mock]");
+      after(2400, () => {
+        addLog("GET /grading/status → " + gradingMode + "; GET /grading  [mock]");
+        if (gradingMode === "insufficient") {
+          setAnalysisStatus("insufficient");
+        } else {
+          setSession(buildCurrentSession(gradingMode));
+          setAnalysisStatus("ready");
+        }
+      });
+    });
+  }, [addLog, after, clearTimers, gradingMode]);
+
+  const practiceAgain = useCallback(() => setStage("home"), []);
+
+  // clear timers on unmount
+  useEffect(() => () => clearTimers(), [clearTimers]);
+
+  if (stage === "home") {
+    return <Home userName={userName} onStart={startSession} settings={settings} setSettings={setSettings} />;
+  }
+  if (stage === "live") {
+    return (
+      <Live
+        phase={phase}
+        transcript={transcript}
+        partial={partial}
+        muted={muted}
+        elapsed={elapsed}
+        onMute={handleMute}
+        onInterrupt={handleInterrupt}
+        onEnd={endSession}
+      />
+    );
+  }
+  if (stage === "ended") {
+    return <Ended />;
+  }
+  return <Analysis status={analysisStatus} session={session} onAgain={practiceAgain} />;
 }
