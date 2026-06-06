@@ -216,7 +216,7 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
         )}
 
         <div className="p-history-foot">
-          Select a session to open its saved summary. Transcript, scores, and coaching details are coming later.
+          Select a session to open its saved summary and grading status. Transcript replay is coming later.
         </div>
       </div>
     </>

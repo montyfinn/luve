@@ -5,17 +5,21 @@ import { Ended } from "./practice/Ended";
 import { Analysis } from "./practice/Analysis";
 import { RecentSessions } from "./practice/RecentSessions";
 import { createSession, type SessionHistoryItem } from "../lib/sessionApi";
+import {
+  getSessionGradingResult,
+  getSessionGradingStatus,
+  type SessionGradingResult,
+  type SessionGradingStatus,
+} from "../lib/gradingApi";
 import { loadToken } from "../lib/session";
 import { createRealtimeSession, type GatewayEvent, type RealtimeSession } from "../lib/realtime";
 import { deriveTimingView, type RealtimeTimingView, type RealtimeTimings } from "../lib/realtimeTimeline";
 import {
+  type GradingMode,
+  type Phase,
   AI_LINES,
   BEATS,
   YOU_LINES,
-  buildCurrentSession,
-  type GradingMode,
-  type Phase,
-  type SessionResult,
 } from "../lib/mock";
 
 /** Flip to false to fall back to the scripted mock live flow (kept as a safety net). */
@@ -41,19 +45,18 @@ interface PracticeScreenProps {
 }
 
 type Stage = "home" | "live" | "ended" | "analysis";
-type AnalysisStatus = "loading" | "ready" | "insufficient" | "history";
+type AnalysisStatus = "loading" | "pending" | "ready" | "insufficient" | "failed" | "unavailable" | "history";
+type LoadGradingOptions = { poll?: boolean; preserveHistory?: boolean };
 
 /**
- * Conversation shell — the third "page". Session CREATION is now REAL
- * (POST /api/v1/sessions with the bearer token); once created, the live
- * conversation, transcript, and grading remain SCRIPTED MOCK. No microphone,
- * WebRTC, or /rtc calls here.
+ * Conversation shell — the third "page". Session creation, realtime connect,
+ * transcript mapping, and grading status/result reads are real; the scripted
+ * mock path remains only as a local safety fallback behind USE_REALTIME.
  */
 export function PracticeScreen({
   userName,
   settings,
   setSettings,
-  gradingMode,
   addLog,
   onSessionCreated,
   historyOpenSignal,
@@ -66,11 +69,14 @@ export function PracticeScreen({
   const [muted, setMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("loading");
-  const [session, setSession] = useState<SessionResult | null>(null);
+  const [gradingResult, setGradingResult] = useState<SessionGradingResult | null>(null);
+  const [gradingStatus, setGradingStatus] = useState<SessionGradingStatus | null>(null);
+  const [gradingError, setGradingError] = useState<string | null>(null);
   const [historySession, setHistorySession] = useState<SessionHistoryItem | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const lastHistorySignal = useRef(historyOpenSignal);
+  const gradingRequestRef = useRef(0);
 
   // real session-create UX
   const [starting, setStarting] = useState(false);
@@ -121,16 +127,82 @@ export function PracticeScreen({
     openHistory();
   }, [historyOpenSignal, openHistory]);
 
+  const loadGrading = useCallback(
+    async (sessionId: string, options: LoadGradingOptions = {}) => {
+      const requestId = ++gradingRequestRef.current;
+      const delays = options.poll ? [0, 1600, 2400, 3600, 5200] : [0];
+
+      if (!options.preserveHistory) setHistorySession(null);
+      setGradingResult(null);
+      setGradingStatus(null);
+      setGradingError(null);
+      setAnalysisStatus("loading");
+
+      for (let i = 0; i < delays.length; i += 1) {
+        const delay = delays[i];
+        if (delay > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, delay));
+          if (requestId !== gradingRequestRef.current) return;
+        }
+
+        try {
+          const status = await getSessionGradingStatus(sessionId);
+          if (requestId !== gradingRequestRef.current) return;
+          if (status.session_id !== sessionId) {
+            throw new Error("Grading status did not match the selected session.");
+          }
+          setGradingStatus(status);
+          addLog(`GET /grading/status → ${status.status}`);
+
+          if (status.status === "graded") {
+            const result = await getSessionGradingResult(sessionId);
+            if (requestId !== gradingRequestRef.current) return;
+            if (result.session_id !== sessionId) {
+              throw new Error("Grading result did not match the selected session.");
+            }
+            setGradingResult(result);
+            setAnalysisStatus("ready");
+            addLog("GET /grading → graded");
+            return;
+          }
+
+          if (status.status === "insufficient_evidence") {
+            setAnalysisStatus("insufficient");
+            return;
+          }
+
+          if (status.status === "failed") {
+            setAnalysisStatus("failed");
+            setGradingError(status.error_code ? `Grading failed: ${status.error_code}` : "Grading failed.");
+            return;
+          }
+
+          setAnalysisStatus("pending");
+        } catch (e) {
+          if (requestId !== gradingRequestRef.current) return;
+          setAnalysisStatus("unavailable");
+          setGradingError(e instanceof Error ? e.message : "Couldn't load grading.");
+          addLog("GET /grading/status → unavailable");
+          return;
+        }
+      }
+    },
+    [addLog],
+  );
+
   const handleHistorySelect = useCallback(
     (selected: SessionHistoryItem) => {
       setHistorySession(selected);
-      setSession(null);
+      setGradingResult(null);
+      setGradingStatus(null);
+      setGradingError(null);
       setAnalysisStatus("history");
       setStage("analysis");
       setHistoryOpen(false);
-      addLog(`selected session history summary (${selected.id.slice(0, 8)}...)`);
+      addLog(`selected session history (${selected.id.slice(0, 8)}...)`);
+      void loadGrading(selected.id, { preserveHistory: true });
     },
-    [addLog],
+    [addLog, loadGrading],
   );
 
   const runBeat = useCallback(
@@ -262,7 +334,9 @@ export function PracticeScreen({
     onSessionCreated(created.id);
     setActiveSessionId(created.id);
     setHistorySession(null);
-    setSession(null);
+    setGradingResult(null);
+    setGradingStatus(null);
+    setGradingError(null);
     addLog(`POST /api/v1/sessions → 201 (id=${created.id.slice(0, 8)}…, status=${created.status})`);
 
     clearTimers();
@@ -375,40 +449,40 @@ export function PracticeScreen({
   }, [addLog]);
 
   const endSession = useCallback(() => {
+    const sessionId = activeSessionId;
     void realtimeRef.current?.disconnect("user_stop");
     realtimeRef.current = null;
     setAssistantDraft("");
     timingsRef.current.sessionEndedAt = Date.now();
     clearTimers();
-    addLog("END_SESSION; grading queued  [mock grading]");
+    addLog("END_SESSION; grading status queued");
     setStage("ended");
-    after(1600, () => {
-      setAnalysisStatus("loading");
+    after(900, () => {
       setStage("analysis");
-      addLog("GET /grading/status → processing  [mock]");
-      after(2400, () => {
-        addLog("GET /grading/status → " + gradingMode + "; GET /grading  [mock]");
-        setHistorySession(null);
-        if (gradingMode === "insufficient") {
-          setAnalysisStatus("insufficient");
-        } else {
-          setSession(buildCurrentSession(gradingMode));
-          setAnalysisStatus("ready");
-        }
-      });
+      if (sessionId) {
+        void loadGrading(sessionId, { poll: true });
+      } else {
+        setAnalysisStatus("unavailable");
+        setGradingError("No session id was available for grading.");
+      }
     });
-  }, [addLog, after, clearTimers, gradingMode, setAssistantDraft]);
+  }, [activeSessionId, addLog, after, clearTimers, loadGrading, setAssistantDraft]);
 
   const practiceAgain = useCallback(() => {
+    gradingRequestRef.current += 1;
     onSessionCreated(null);
     setActiveSessionId(null);
     setHistorySession(null);
+    setGradingResult(null);
+    setGradingStatus(null);
+    setGradingError(null);
     setStage("home");
   }, [onSessionCreated]);
 
   // clear timers + tear down any live realtime session on unmount
   useEffect(
     () => () => {
+      gradingRequestRef.current += 1;
       void realtimeRef.current?.disconnect("unmount");
       realtimeRef.current = null;
       assistantPartialRef.current = "";
@@ -416,6 +490,11 @@ export function PracticeScreen({
     },
     [clearTimers],
   );
+
+  const analysisSessionId = historySession?.id ?? activeSessionId;
+  const refreshAnalysisGrading = analysisSessionId
+    ? () => void loadGrading(analysisSessionId, { preserveHistory: Boolean(historySession) })
+    : undefined;
 
   if (stage === "home") {
     return (
@@ -463,10 +542,13 @@ export function PracticeScreen({
     <>
       <Analysis
         status={analysisStatus}
-        session={session}
+        grading={gradingResult}
+        gradingStatus={gradingStatus}
+        gradingError={gradingError}
         historySession={historySession}
         onAgain={practiceAgain}
         onHistory={openHistory}
+        onRefreshGrading={refreshAnalysisGrading}
       />
       <RecentSessions
         open={historyOpen}
