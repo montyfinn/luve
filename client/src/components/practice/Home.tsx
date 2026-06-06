@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CatCompanion } from "../CatCompanion";
 import { RecentSessions } from "./RecentSessions";
 
 interface Settings {
@@ -31,6 +32,9 @@ export function Home({
     <div className="p-view p-main">
       <div className="p-wrap p-center">
         <div className="p-home">
+          <div className="p-homecat">
+            <CatCompanion variant="idle" size={72} />
+          </div>
           <div
             className="p-eyebrow"
             style={{ color: "var(--ink-3)", letterSpacing: ".04em", textTransform: "none", fontSize: "var(--t-sm)" }}

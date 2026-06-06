@@ -337,3 +337,60 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* ============================================================
+   CatCompanion — decorative, hand-built SVG cat (no Lottie, no deps,
+   no remote asset). Motion is CSS-only; the global prefers-reduced-motion
+   rule above already neutralizes it, and the explicit block below makes
+   that intent unmistakable.
+   ============================================================ */
+.cat { display: inline-block; line-height: 0; flex: none; }
+.cat svg { display: block; overflow: visible; }
+
+/* theme-driven fills (in CSS so the SVG picks up the warm LUVE palette) */
+.cat__body, .cat__face, .cat__ear { fill: var(--brand-tint); stroke: var(--clay); stroke-width: 2.5; stroke-linejoin: round; }
+.cat__ear-inner { fill: var(--clay-tint); }
+.cat__tail { fill: none; stroke: var(--clay); stroke-width: 5; stroke-linecap: round; }
+.cat__eye { fill: var(--ink); }
+.cat__eye--closed { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; }
+.cat__nose { fill: var(--clay); }
+.cat__mouth { fill: none; stroke: var(--clay); stroke-width: 1.3; stroke-linecap: round; }
+.cat__whisker { fill: none; stroke: var(--ink-4); stroke-width: 1; stroke-linecap: round; opacity: .55; }
+.cat__z { fill: var(--ink-4); font: 600 9px var(--font-ui); }
+
+/* pivots so parts rotate/scale naturally */
+.cat__tail { transform-box: fill-box; transform-origin: 0% 100%; }
+.cat__ear { transform-box: fill-box; transform-origin: 50% 100%; }
+.cat__body-grp { transform-box: fill-box; transform-origin: 50% 100%; }
+.cat__head { transform-box: fill-box; transform-origin: 50% 90%; }
+
+/* idle — gentle float + slow tail sway */
+.cat--idle { animation: catFloat 4.6s var(--ease-out) infinite; }
+.cat--idle .cat__tail { animation: catTail 3.4s ease-in-out infinite; }
+
+/* curious — perked head bob + occasional ear twitch */
+.cat--curious .cat__head { animation: catBob 3s ease-in-out infinite; }
+.cat--curious .cat__ear--l { animation: catEar 4s ease-in-out infinite; }
+.cat--curious .cat__tail { animation: catTail 2.8s ease-in-out infinite; }
+
+/* sleepy — soft breathing + drifting z's, no float */
+.cat--sleepy .cat__body-grp { animation: catBreathe 3.8s ease-in-out infinite; }
+.cat--sleepy .cat__z--1 { animation: catZ 3.2s ease-in-out infinite; }
+.cat--sleepy .cat__z--2 { animation: catZ 3.2s ease-in-out .9s infinite; }
+
+@keyframes catFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes catTail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-11deg); } }
+@keyframes catBob { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-1.5px) rotate(-3deg); } }
+@keyframes catEar { 0%, 88%, 100% { transform: rotate(0deg); } 94% { transform: rotate(-7deg); } }
+@keyframes catBreathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.05); } }
+@keyframes catZ { 0% { opacity: 0; transform: translate(0, 0) scale(.7); } 25% { opacity: .85; } 100% { opacity: 0; transform: translate(5px, -12px) scale(1.05); } }
+
+/* explicit reduced-motion intent (reinforces the global rule above) */
+@media (prefers-reduced-motion: reduce) {
+  .cat, .cat * { animation: none !important; }
+}
+
+/* placement helpers — decorative, never over a CTA */
+.p-homecat { display: flex; justify-content: center; margin-bottom: 2px; }
+.p-authcat { display: flex; justify-content: center; margin: -2px 0 8px; }
+.p-recent__empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }

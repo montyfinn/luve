@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../lib/authApi";
 import { listSessions, type SessionHistoryItem } from "../../lib/sessionApi";
+import { CatCompanion } from "../CatCompanion";
 
 type LoadState = "loading" | "empty" | "error" | "loaded";
 
@@ -88,7 +89,12 @@ export function RecentSessions({ onLog }: RecentSessionsProps) {
         </div>
       )}
 
-      {state === "empty" && <div className="p-recent__state">No recent sessions yet.</div>}
+      {state === "empty" && (
+        <div className="p-recent__state p-recent__empty">
+          <CatCompanion variant="sleepy" size={64} />
+          <span>No recent sessions yet.</span>
+        </div>
+      )}
 
       {state === "error" && (
         <div className="p-recent__state p-recent__state--err" role="alert">
