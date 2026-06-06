@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ClaudeCat } from "./ClaudeCat";
 import { GearIcon } from "./icons";
 
 interface TopBarProps {
@@ -11,6 +13,13 @@ interface TopBarProps {
 
 /** Persistent top bar (brand + health chip + user + diagnostics entry). */
 export function TopBar({ showSession, userName, userInitial, onSignOut, onOpenDiagnostics }: TopBarProps) {
+  const [signOutHelp, setSignOutHelp] = useState(false);
+
+  const handleSignOut = () => {
+    setSignOutHelp(false);
+    onSignOut();
+  };
+
   return (
     <div className="p-top">
       <div className="p-brand">
@@ -30,9 +39,18 @@ export function TopBar({ showSession, userName, userInitial, onSignOut, onOpenDi
           </div>
         )}
         {showSession && (
-          <button className="p-linkbtn" onClick={onSignOut}>
-            Sign out
-          </button>
+          <span
+            className="p-signout-wrap"
+            onMouseEnter={() => setSignOutHelp(true)}
+            onMouseLeave={() => setSignOutHelp(false)}
+            onFocus={() => setSignOutHelp(true)}
+            onBlur={() => setSignOutHelp(false)}
+          >
+            <button className="p-linkbtn" onClick={handleSignOut}>
+              Sign out
+            </button>
+            {signOutHelp && <ClaudeCat width={74} height={74} className="p-signout-cat" />}
+          </span>
         )}
         <button className="p-iconbtn" aria-label="Developer diagnostics" onClick={onOpenDiagnostics}>
           <GearIcon size={17} />

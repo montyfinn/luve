@@ -10,8 +10,8 @@
    so every `.p-*` rule inherits the warm direction.
 
    Fonts: system stacks only (no CDN) — a system serif stands in for
-   the editorial display face. Cat/Lottie effects are deferred to the
-   later motion phase (not in this port).
+   the editorial display face. Only selected cat/Lottie effects are
+   restored, with lazy loading and SVG fallback.
    ============================================================ */
 
 :root {
@@ -109,6 +109,13 @@ body {
 .p-iconbtn:hover { background: var(--paper-2); border-color: var(--hairline-2); }
 .p-linkbtn { background: none; border: none; color: var(--ink-3); font-family: var(--font-ui); font-size: var(--t-sm); cursor: pointer; padding: 6px 8px; border-radius: 7px; }
 .p-linkbtn:hover { color: var(--ink); background: var(--paper-2); }
+.p-signout-wrap { position: relative; display: inline-flex; align-items: center; }
+.p-signout-cat {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  margin-top: 2px; pointer-events: none; z-index: 100;
+  animation: pPopFade .22s var(--ease-out) both;
+}
+@keyframes pPopFade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---------- Layout container ---------- */
 .p-main { flex: 1; display: flex; flex-direction: column; }
@@ -346,6 +353,27 @@ body {
    ============================================================ */
 .cat { display: inline-block; line-height: 0; flex: none; }
 .cat svg { display: block; overflow: visible; }
+.lottie-box { display: inline-block; line-height: 0; flex: none; }
+.lottie-box svg { display: block; width: 100% !important; height: 100% !important; }
+
+/* Authentic selected Claude Design ambience: fixed behind app content. */
+.cat-space-layer {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none; overflow: hidden;
+}
+.cat-space-cat {
+  position: absolute; left: 0; top: 0; opacity: 0;
+  transition: opacity .9s var(--ease);
+  will-change: transform, opacity;
+}
+.cat-space-cat svg { display: block; width: 100% !important; height: 100% !important; }
+.cat-space-fallback {
+  position: absolute;
+  left: clamp(18px, 5vw, 72px);
+  bottom: clamp(74px, 12vh, 136px);
+  opacity: .42;
+  filter: drop-shadow(0 8px 16px rgba(28,26,23,.08));
+}
 
 /* theme-driven fills (in CSS so the SVG picks up the warm LUVE palette) */
 .cat__body, .cat__face, .cat__ear { fill: var(--brand-tint); stroke: var(--clay); stroke-width: 2.5; stroke-linejoin: round; }

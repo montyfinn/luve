@@ -5,6 +5,7 @@ import { IntroScreen } from "./components/IntroScreen";
 import { AuthScreen, type AuthCreds } from "./components/AuthScreen";
 import { PracticeScreen } from "./components/PracticeScreen";
 import { DiagnosticsDrawer } from "./components/DiagnosticsDrawer";
+import { CatSpaceAmbience } from "./components/ClaudeCat";
 import { ApiError, fetchMe, login, register, type AuthUser } from "./lib/authApi";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import type { DiagState, LogLine } from "./lib/mock";
@@ -107,6 +108,7 @@ export function App() {
 
   return (
     <div className="p-app">
+      <CatSpaceAmbience />
       <TopBar
         showSession={view === "practice"}
         userName={user?.username ?? ""}
