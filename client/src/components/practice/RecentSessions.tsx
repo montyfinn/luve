@@ -32,16 +32,8 @@ function formatStatus(value: string): string {
   return value.replace(/[_-]+/g, " ");
 }
 
-function compactNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: value >= 1000 ? "compact" : "standard" }).format(value);
-}
-
 function sessionSubtitle(session: SessionHistoryItem): string {
-  const parts = [
-    formatStatus(session.status),
-    `${compactNumber(session.total_tokens)} tokens`,
-    `${session.manual_stops_count} manual stops`,
-  ];
+  const parts = [formatStatus(session.status)];
   if (session.ended_at) parts.push(`Ended ${formatSessionTime(session.ended_at)}`);
   return parts.join(" · ");
 }
