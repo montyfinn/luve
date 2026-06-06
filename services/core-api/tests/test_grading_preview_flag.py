@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.services.session_service import _is_dev_preview_grading
+from src.services.session_service import _get_min_student_words, _is_dev_preview_grading
 
 
 @pytest.mark.parametrize(
@@ -37,3 +37,10 @@ def test_is_dev_preview_grading_marks_real_llm_grade_as_non_preview(
     grader_version: str,
 ) -> None:
     assert _is_dev_preview_grading(provider, grader_version) is False
+
+
+def test_grading_status_default_min_student_words_allows_beginner_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GRADING_MIN_STUDENT_WORDS", raising=False)
+    assert _get_min_student_words() == 15

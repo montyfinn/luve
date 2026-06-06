@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_MIN_STUDENT_WORDS = 25
+DEFAULT_MIN_STUDENT_WORDS = 15
 HARD_EXCLUDE_STT_REASONS = frozenset(
     {
         "verification_language_mismatch",

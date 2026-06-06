@@ -20,7 +20,7 @@ from src.outbox_repository import (
     mark_session_event_published,
     mark_session_event_retry_or_failed,
 )
-from src.session_eligibility import evaluate_grading_eligibility
+from src.session_eligibility import DEFAULT_MIN_STUDENT_WORDS, evaluate_grading_eligibility
 
 
 logger = logging.getLogger(__name__)
@@ -43,12 +43,16 @@ def _get_fake_fallback_enabled() -> bool:
 
 
 def _get_min_student_words() -> int:
-    raw = os.getenv("GRADING_MIN_STUDENT_WORDS", "25")
+    raw = os.getenv("GRADING_MIN_STUDENT_WORDS", str(DEFAULT_MIN_STUDENT_WORDS))
     try:
         parsed = int(raw)
     except (TypeError, ValueError):
-        logger.warning("grading.invalid_min_student_words value=%r using_default=25", raw)
-        return 25
+        logger.warning(
+            "grading.invalid_min_student_words value=%r using_default=%s",
+            raw,
+            DEFAULT_MIN_STUDENT_WORDS,
+        )
+        return DEFAULT_MIN_STUDENT_WORDS
     return max(parsed, 0)
 
 

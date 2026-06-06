@@ -257,6 +257,15 @@ def test_evaluate_above_threshold():
     assert result.student_word_count == 30
 
 
+def test_evaluate_default_allows_beginner_twenty_word_session():
+    words = " ".join(f"w{i}" for i in range(20))
+    raw = [{"type": "USER_TURN", "payload": {"text": words}}]
+    result = evaluate_grading_eligibility(raw)
+    assert result.eligible is True
+    assert result.reason == "eligible"
+    assert result.student_word_count == 20
+
+
 def test_evaluate_min_words_zero_allows_short_session():
     raw = [{"type": "USER_TURN", "payload": {"text": "hi"}}]
     result = evaluate_grading_eligibility(raw, min_student_words=0)
@@ -396,7 +405,7 @@ def test_legacy_turn_without_stt_metadata_counts_as_reliable():
 
 
 def test_default_min_student_words_constant():
-    assert DEFAULT_MIN_STUDENT_WORDS == 25
+    assert DEFAULT_MIN_STUDENT_WORDS == 15
 
 
 def test_evaluate_returns_grading_eligibility_dataclass():

@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 SESSION_LIST_DEFAULT_LIMIT = 20
 SESSION_LIST_MAX_LIMIT = 100
+GRADING_STATUS_DEFAULT_MIN_STUDENT_WORDS = 15
 
 
 async def create_webrtc_session(
@@ -326,9 +327,9 @@ def _compute_student_word_count(raw_backup_json: Any) -> int | None:
 
 def _get_min_student_words() -> int:
     try:
-        return int(os.getenv("GRADING_MIN_STUDENT_WORDS", "25"))
+        return int(os.getenv("GRADING_MIN_STUDENT_WORDS", str(GRADING_STATUS_DEFAULT_MIN_STUDENT_WORDS)))
     except (ValueError, TypeError):
-        return 25
+        return GRADING_STATUS_DEFAULT_MIN_STUDENT_WORDS
 
 
 async def get_session_grading_status(
