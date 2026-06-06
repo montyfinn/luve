@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RecentSessions } from "./RecentSessions";
 
 interface Settings {
   sttOnly: boolean;
@@ -12,10 +13,19 @@ interface HomeProps {
   startError?: string | null;
   settings: Settings;
   setSettings: (s: Settings) => void;
+  onHistoryLog?: (message: string) => void;
 }
 
 /** Authenticated home — primary "Start practice" + a quiet practice-settings disclosure. */
-export function Home({ userName, onStart, starting = false, startError = null, settings, setSettings }: HomeProps) {
+export function Home({
+  userName,
+  onStart,
+  starting = false,
+  startError = null,
+  settings,
+  setSettings,
+  onHistoryLog,
+}: HomeProps) {
   const [open, setOpen] = useState(false);
   return (
     <div className="p-view p-main">
@@ -74,6 +84,8 @@ export function Home({ userName, onStart, starting = false, startError = null, s
               </div>
             )}
           </div>
+
+          <RecentSessions onLog={onHistoryLog} />
         </div>
       </div>
     </div>

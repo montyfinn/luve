@@ -198,6 +198,22 @@ body {
 .p-switch.on { background: var(--brand); }
 .p-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform var(--dur-fast) var(--ease); box-shadow: var(--shadow-sm); }
 .p-switch.on::after { transform: translateX(18px); }
+.p-recent { width: min(100%, 520px); margin: 28px auto 0; padding-top: 20px; border-top: 1px solid var(--hairline); text-align: left; }
+.p-recent__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.p-recent__head h3 { margin: 0; font-size: var(--t-body); font-weight: 800; color: var(--ink); }
+.p-recent__head p { margin: 3px 0 0; max-width: none; color: var(--ink-3); font-size: var(--t-xs); line-height: 1.4; }
+.p-recent__loading { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px; }
+.p-recent__loading .p-skel--line:last-child { margin-bottom: 0; width: 64%; }
+.p-recent__state { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; color: var(--ink-3); font-size: var(--t-sm); line-height: 1.5; padding: 14px; }
+.p-recent__state--err { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--err-ink); background: var(--err-tint); border-color: transparent; }
+.p-recent__list { display: flex; flex-direction: column; gap: 8px; }
+.p-recent__item { width: 100%; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); color: var(--ink); cursor: pointer; font-family: var(--font-ui); padding: 12px 14px; text-align: left; transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
+.p-recent__item:hover { background: var(--surface-2); border-color: var(--hairline-2); }
+.p-recent__item:active { transform: translateY(1px); }
+.p-recent__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.p-recent__when { color: var(--ink); font-size: var(--t-sm); font-weight: 800; overflow-wrap: anywhere; }
+.p-recent__meta { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; color: var(--ink-3); font-size: var(--t-xs); line-height: 1.4; }
+.p-recent__notice { margin-top: 10px; color: var(--ink-3); font-size: var(--t-xs); line-height: 1.5; }
 
 /* ---------- Live session ---------- */
 .p-live { max-width: 680px; margin: 0 auto; width: 100%; }

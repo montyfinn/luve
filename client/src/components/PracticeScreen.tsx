@@ -196,6 +196,7 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
         startError={startError}
         settings={settings}
         setSettings={setSettings}
+        onHistoryLog={addLog}
       />
     );
   }
