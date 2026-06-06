@@ -137,7 +137,9 @@ services:
   # KHU VỰC 1: CORE API (FastAPI, port 8000)
   core_api:
     build:
-      context: ./services/core-api
+      # Repo root so the image build can also compile the Vite client (client/).
+      context: .
+      dockerfile: services/core-api/Dockerfile
     image: luve-core-api:local
     container_name: luve_core_api
     restart: unless-stopped

@@ -12,6 +12,9 @@ from src.core.cors import get_cors_allow_origins
 from src.core.db import engine
 
 _STATIC_DIR = Path(__file__).parent / "static"
+# Built Vite SPA, copied into the image at /app/client_dist by the Dockerfile.
+# Absent in local venv runs, so the mount below is guarded by an existence check.
+_CLIENT_DIR = Path(__file__).resolve().parent.parent / "client_dist"
 
 app = FastAPI(
     title="L.U.V.E Core API",
@@ -29,6 +32,13 @@ app.add_middleware(
 app.add_middleware(WebSocketHandshakeTimingMiddleware)
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+# New Vite client UI, served at /app. Additive — the legacy /control-center
+# fallback is unchanged. StaticFiles(html=True) serves index.html for /app and
+# /app/ (so a browser refresh works) and the hashed bundles under /app/assets/*.
+# Guarded so local venv runs without a built client still boot.
+if (_CLIENT_DIR / "index.html").is_file():
+    app.mount("/app", StaticFiles(directory=_CLIENT_DIR, html=True), name="app")
 
 # Kết nối các "tuyến đường" đã xây dựng ở Phase 2
 app.include_router(auth.router, prefix="/api/v1")

@@ -29,8 +29,19 @@ RUN apt-get update \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.lock ./requirements.lock
+COPY services/core-api/requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock
+
+# ---- Client build: compile the Vite SPA served at /app ----
+# The build context is the repo ROOT (docker-compose.yml: core_api.build.context: .),
+# so the client/ source is reachable here. dist/ is produced in-image — it is
+# never committed and developers never prebuild it manually.
+FROM node:20-slim AS client-build
+WORKDIR /client
+COPY client/package.json client/package-lock.json ./
+RUN npm ci
+COPY client/ ./
+RUN npm run build
 
 # ---- Runtime: slim image with only the venv + app source ----
 FROM python:3.10-slim AS runtime
@@ -49,9 +60,14 @@ COPY --from=builder /opt/venv /opt/venv
 RUN mkdir -p /cache/huggingface
 
 # Only the files needed to run the API and the TEN gateway.
-COPY src ./src
-COPY run_ten.py ./run_ten.py
-COPY graph.json ./graph.json
+# (Build context is the repo root, so these paths are service-relative.)
+COPY services/core-api/src ./src
+COPY services/core-api/run_ten.py ./run_ten.py
+COPY services/core-api/graph.json ./graph.json
+
+# Built Vite SPA, served by the Core API at /app (see src/main.py). Absent in
+# local venv runs, where main.py guards the mount before serving.
+COPY --from=client-build /client/dist ./client_dist
 
 # Default process is the Core API. Override the command to run the gateway:
 #   docker run ... python run_ten.py

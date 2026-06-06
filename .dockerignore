@@ -1,0 +1,44 @@
+# Build context is the repo root (core_api image build, so the Vite client can
+# be compiled in-image). Keep the context lean: nothing excluded here is needed
+# to build the image, and some of it (venv, node_modules, .git) is huge or secret.
+# The Dockerfile COPYs only services/core-api/{requirements.lock,src,run_ten.py,
+# graph.json} and client/ (minus the entries below).
+
+# Python local envs / caches
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Node deps & build output (client deps are installed in-image via `npm ci`)
+**/node_modules/
+**/dist/
+
+# Secrets & local-only env / overrides
+.env
+**/.env
+**/.env.*
+docker-compose.gpu.local.yml
+
+# VCS / tooling / editor noise
+.git/
+.gitignore
+.dockerignore
+.codegraph/
+.cursor/
+.understand-anything/
+.playwright-mcp/
+
+# Docs / design assets / local logs — not needed to build the image
+docs/
+**/*.log
+services/core-api/ten.out
+services/core-api/output/
+services/core-api/testdata/
+**/tests/
+services/core-api/scripts/
+
+# The grading-worker is a separate image; not part of the core_api build
+services/grading-worker/
