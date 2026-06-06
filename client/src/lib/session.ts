@@ -22,6 +22,42 @@ export function loadToken(): string | null {
   }
 }
 
+function decodeBase64UrlJson(value: string): unknown {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = (4 - (normalized.length % 4)) % 4;
+  return JSON.parse(atob(normalized + "=".repeat(padding)));
+}
+
+/** JWT exp claim in milliseconds since epoch, or null if the token is absent/malformed. */
+export function getTokenExpiryMs(token: string | null = loadToken()): number | null {
+  if (!token) return null;
+  const [, payload] = token.split(".");
+  if (!payload) return null;
+
+  try {
+    const claims = decodeBase64UrlJson(payload) as { exp?: unknown };
+    return typeof claims.exp === "number" && Number.isFinite(claims.exp) ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Milliseconds until JWT expiry. Accepts injected token/now for smoke tests. */
+export function getMsUntilExpiry(token: string | null = loadToken(), nowMs = Date.now()): number | null {
+  const expiryMs = getTokenExpiryMs(token);
+  return expiryMs == null ? null : expiryMs - nowMs;
+}
+
+/** True when the stored JWT exists and expires within thresholdMs. */
+export function isTokenExpiringSoon(
+  thresholdMs: number,
+  token: string | null = loadToken(),
+  nowMs = Date.now(),
+): boolean {
+  const remainingMs = getMsUntilExpiry(token, nowMs);
+  return remainingMs != null && remainingMs <= thresholdMs;
+}
+
 export function loadSession(): StoredSession | null {
   try {
     const token = localStorage.getItem(TOKEN_KEY);

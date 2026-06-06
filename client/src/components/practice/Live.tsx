@@ -20,6 +20,7 @@ interface LiveProps {
   elapsed: number;
   /** Safe realtime error message (mic/gateway/engine); null when none. */
   error?: string | null;
+  authExpiryWarning?: "soon" | "urgent" | null;
   onMute: () => void;
   onInterrupt: () => void;
   onEnd: () => void;
@@ -36,6 +37,7 @@ export function Live({
   muted,
   elapsed,
   error,
+  authExpiryWarning = null,
   onMute,
   onInterrupt,
   onEnd,
@@ -69,6 +71,19 @@ export function Live({
               End session
             </button>
           </div>
+
+          {authExpiryWarning && (
+            <div
+              className={`p-live-auth p-live-auth--${authExpiryWarning}`}
+              role="alert"
+              aria-live={authExpiryWarning === "urgent" ? "assertive" : "polite"}
+            >
+              <span>Your sign-in session is ending soon. End now to save and grade this practice.</span>
+              <button className="btn btn--primary" onClick={onEnd}>
+                End and grade now
+              </button>
+            </div>
+          )}
 
           {phase === "connecting" ? (
             // cat/Lottie connecting animation deferred to motion phase — CSS spinner stand-in

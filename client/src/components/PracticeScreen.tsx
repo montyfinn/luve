@@ -4,6 +4,7 @@ import { Live, type Turn } from "./practice/Live";
 import { Ended } from "./practice/Ended";
 import { Analysis } from "./practice/Analysis";
 import { RecentSessions } from "./practice/RecentSessions";
+import { ApiError } from "../lib/authApi";
 import { createSession, type SessionHistoryItem } from "../lib/sessionApi";
 import {
   getSessionGradingResult,
@@ -11,7 +12,7 @@ import {
   type SessionGradingResult,
   type SessionGradingStatus,
 } from "../lib/gradingApi";
-import { loadToken } from "../lib/session";
+import { getMsUntilExpiry, isTokenExpiringSoon, loadToken } from "../lib/session";
 import { createRealtimeSession, type GatewayEvent, type RealtimeSession } from "../lib/realtime";
 import { deriveTimingView, type RealtimeTimingView, type RealtimeTimings } from "../lib/realtimeTimeline";
 import {
@@ -24,6 +25,8 @@ import {
 
 /** Flip to false to fall back to the scripted mock live flow (kept as a safety net). */
 const USE_REALTIME = true;
+const AUTH_EXPIRY_WARNING_MS = 2 * 60 * 1000;
+const AUTH_EXPIRY_URGENT_MS = 30 * 1000;
 
 interface Settings {
   sttOnly: boolean;
@@ -85,6 +88,7 @@ export function PracticeScreen({
   // realtime (C7c): the live WebRTC session + any in-session error banner
   const realtimeRef = useRef<RealtimeSession | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [authExpiryWarning, setAuthExpiryWarning] = useState<"soon" | "urgent" | null>(null);
 
   // C7d: streaming assistant draft + lightweight client-side timing view
   const [assistantPartial, setAssistantPartial] = useState("");
@@ -180,6 +184,12 @@ export function PracticeScreen({
           setAnalysisStatus("pending");
         } catch (e) {
           if (requestId !== gradingRequestRef.current) return;
+          if (e instanceof ApiError && e.status === 401) {
+            setAnalysisStatus("unavailable");
+            setGradingError("Your sign-in session expired. Sign in again, then reopen this session from Past sessions.");
+            addLog("GET /grading/status → 401");
+            return;
+          }
           setAnalysisStatus("unavailable");
           setGradingError(e instanceof Error ? e.message : "Couldn't load grading.");
           addLog("GET /grading/status → unavailable");
@@ -419,6 +429,26 @@ export function PracticeScreen({
     return () => clearInterval(iv);
   }, [stage]);
 
+  useEffect(() => {
+    if (stage !== "live") {
+      setAuthExpiryWarning(null);
+      return;
+    }
+
+    const updateWarning = () => {
+      if (!isTokenExpiringSoon(AUTH_EXPIRY_WARNING_MS)) {
+        setAuthExpiryWarning(null);
+        return;
+      }
+      const remainingMs = getMsUntilExpiry();
+      setAuthExpiryWarning(remainingMs != null && remainingMs <= AUTH_EXPIRY_URGENT_MS ? "urgent" : "soon");
+    };
+
+    updateWarning();
+    const iv = window.setInterval(updateWarning, 5000);
+    return () => window.clearInterval(iv);
+  }, [stage]);
+
   const handleInterrupt = useCallback(() => {
     if (phase === "aispeaking" || phase === "thinking") {
       void realtimeRef.current?.sendCommand({ cmd: "BARGE_IN", source: "button" });
@@ -529,6 +559,7 @@ export function PracticeScreen({
         muted={muted}
         elapsed={elapsed}
         error={liveError}
+        authExpiryWarning={authExpiryWarning}
         onMute={handleMute}
         onInterrupt={handleInterrupt}
         onEnd={endSession}

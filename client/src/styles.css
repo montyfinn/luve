@@ -257,6 +257,10 @@ body {
 /* ---------- Live session ---------- */
 .p-live { max-width: 680px; margin: 0 auto; width: 100%; }
 .p-live__bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; gap: 12px; flex-wrap: wrap; }
+.p-live-auth { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border: 1px solid var(--hairline); border-radius: 14px; padding: 12px 14px; margin: -12px 0 22px; background: var(--clay-tint); color: #6b4426; box-shadow: var(--shadow-sm); }
+.p-live-auth--urgent { background: var(--err-tint); color: var(--err-ink); }
+.p-live-auth span { font-size: var(--t-sm); line-height: 1.45; }
+.p-live-auth .btn { flex: 0 0 auto; }
 .p-connecting { width: 100%; display: flex; justify-content: center; align-items: center; margin: 8px 0 18px; }
 .p-orb { position: relative; width: 150px; height: 150px; display: grid; place-items: center; margin: 8px auto 18px; }
 .p-orb__ring { position: absolute; inset: 0; border-radius: 50%; background: var(--brand-tint); }
