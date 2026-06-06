@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ClaudeCat } from "./ClaudeCat";
-import { GearIcon } from "./icons";
+import { GearIcon, HistoryIcon } from "./icons";
 
 interface TopBarProps {
   /** show health + user + sign out (true once "signed in", i.e. on the practice view) */
@@ -8,11 +8,21 @@ interface TopBarProps {
   userName: string;
   userInitial: string;
   onSignOut: () => void;
+  showHistory?: boolean;
+  onOpenHistory?: () => void;
   onOpenDiagnostics: () => void;
 }
 
 /** Persistent top bar (brand + health chip + user + diagnostics entry). */
-export function TopBar({ showSession, userName, userInitial, onSignOut, onOpenDiagnostics }: TopBarProps) {
+export function TopBar({
+  showSession,
+  userName,
+  userInitial,
+  onSignOut,
+  showHistory = false,
+  onOpenHistory,
+  onOpenDiagnostics,
+}: TopBarProps) {
   const [signOutHelp, setSignOutHelp] = useState(false);
 
   const handleSignOut = () => {
@@ -51,6 +61,11 @@ export function TopBar({ showSession, userName, userInitial, onSignOut, onOpenDi
             </button>
             {signOutHelp && <ClaudeCat width={74} height={74} className="p-signout-cat" />}
           </span>
+        )}
+        {showSession && showHistory && onOpenHistory && (
+          <button className="p-iconbtn" aria-label="Past sessions" onClick={onOpenHistory}>
+            <HistoryIcon size={17} />
+          </button>
         )}
         <button className="p-iconbtn" aria-label="Developer diagnostics" onClick={onOpenDiagnostics}>
           <GearIcon size={17} />

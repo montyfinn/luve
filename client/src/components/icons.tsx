@@ -43,6 +43,12 @@ export const GearIcon = (p: P) => (
     <path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1l2.1-2.1M17 7l2.1-2.1" />
   </Icon>
 );
+export const HistoryIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);
 export const CloseIcon = (p: P) => (
   <Icon {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

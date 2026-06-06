@@ -32,6 +32,8 @@ export function App() {
   const [diag, setDiag] = useState<DiagState>({ googleEnabled: false, gradingMode: "real" });
   const [log, setLog] = useState<LogLine[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null); // real session_id once created
+  const [historyAvailable, setHistoryAvailable] = useState(false);
+  const [historyOpenSignal, setHistoryOpenSignal] = useState(0);
 
   const setDiagPart = useCallback((p: Partial<DiagState>) => setDiag((d) => ({ ...d, ...p })), []);
   const addLog = useCallback((m: string) => {
@@ -43,6 +45,7 @@ export function App() {
     clearSession();
     setUser(null);
     setSessionId(null);
+    setHistoryAvailable(false);
     addLog("signed out");
     go("intro");
   }, [addLog, go]);
@@ -105,6 +108,7 @@ export function App() {
   }, [addLog]);
 
   const [settings, setSettings] = useState({ sttOnly: false, muteTts: false });
+  const openHistory = useCallback(() => setHistoryOpenSignal((signal) => signal + 1), []);
 
   return (
     <div className="p-app">
@@ -114,6 +118,8 @@ export function App() {
         userName={user?.username ?? ""}
         userInitial={(user?.username ?? "?")[0].toUpperCase()}
         onSignOut={signOut}
+        showHistory={view === "practice" && historyAvailable}
+        onOpenHistory={openHistory}
         onOpenDiagnostics={() => setDrawerOpen(true)}
       />
 
@@ -136,6 +142,8 @@ export function App() {
           gradingMode={diag.gradingMode}
           addLog={addLog}
           onSessionCreated={setSessionId}
+          historyOpenSignal={historyOpenSignal}
+          onHistoryAvailabilityChange={setHistoryAvailable}
         />
       )}
 

@@ -3,7 +3,8 @@ import { Home } from "./practice/Home";
 import { Live, type Turn } from "./practice/Live";
 import { Ended } from "./practice/Ended";
 import { Analysis } from "./practice/Analysis";
-import { createSession } from "../lib/sessionApi";
+import { RecentSessions } from "./practice/RecentSessions";
+import { createSession, type SessionHistoryItem } from "../lib/sessionApi";
 import {
   AI_LINES,
   BEATS,
@@ -27,10 +28,14 @@ interface PracticeScreenProps {
   addLog: (m: string) => void;
   /** lifts the real session_id to App (for the diagnostics drawer) */
   onSessionCreated: (sessionId: string | null) => void;
+  /** monotonically increasing signal from the top-bar History button */
+  historyOpenSignal: number;
+  /** lets the app show the top-bar History button only on supported stages */
+  onHistoryAvailabilityChange: (available: boolean) => void;
 }
 
 type Stage = "home" | "live" | "ended" | "analysis";
-type AnalysisStatus = "loading" | "ready" | "insufficient";
+type AnalysisStatus = "loading" | "ready" | "insufficient" | "history";
 
 /**
  * Conversation shell — the third "page". Session CREATION is now REAL
@@ -38,7 +43,16 @@ type AnalysisStatus = "loading" | "ready" | "insufficient";
  * conversation, transcript, and grading remain SCRIPTED MOCK. No microphone,
  * WebRTC, or /rtc calls here.
  */
-export function PracticeScreen({ userName, settings, setSettings, gradingMode, addLog, onSessionCreated }: PracticeScreenProps) {
+export function PracticeScreen({
+  userName,
+  settings,
+  setSettings,
+  gradingMode,
+  addLog,
+  onSessionCreated,
+  historyOpenSignal,
+  onHistoryAvailabilityChange,
+}: PracticeScreenProps) {
   const [stage, setStage] = useState<Stage>("home");
   const [phase, setPhase] = useState<Phase>("connecting");
   const [transcript, setTranscript] = useState<Turn[]>([]);
@@ -47,6 +61,10 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
   const [elapsed, setElapsed] = useState(0);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("loading");
   const [session, setSession] = useState<SessionResult | null>(null);
+  const [historySession, setHistorySession] = useState<SessionHistoryItem | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const lastHistorySignal = useRef(historyOpenSignal);
 
   // real session-create UX
   const [starting, setStarting] = useState(false);
@@ -62,6 +80,37 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
     timers.current.forEach((t) => clearTimeout(t));
     timers.current = [];
   }, []);
+
+  const historyAvailable = stage === "home" || stage === "analysis";
+
+  useEffect(() => {
+    onHistoryAvailabilityChange(historyAvailable);
+    if (!historyAvailable) setHistoryOpen(false);
+    return () => onHistoryAvailabilityChange(false);
+  }, [historyAvailable, onHistoryAvailabilityChange]);
+
+  const openHistory = useCallback(() => {
+    if (!historyAvailable) return;
+    setHistoryOpen(true);
+  }, [historyAvailable]);
+
+  useEffect(() => {
+    if (historyOpenSignal === lastHistorySignal.current) return;
+    lastHistorySignal.current = historyOpenSignal;
+    openHistory();
+  }, [historyOpenSignal, openHistory]);
+
+  const handleHistorySelect = useCallback(
+    (selected: SessionHistoryItem) => {
+      setHistorySession(selected);
+      setSession(null);
+      setAnalysisStatus("history");
+      setStage("analysis");
+      setHistoryOpen(false);
+      addLog(`selected session history summary (${selected.id.slice(0, 8)}...)`);
+    },
+    [addLog],
+  );
 
   const runBeat = useCallback(
     (i: number) => {
@@ -110,6 +159,9 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
     }
 
     onSessionCreated(created.id);
+    setActiveSessionId(created.id);
+    setHistorySession(null);
+    setSession(null);
     addLog(`POST /api/v1/sessions → 201 (id=${created.id.slice(0, 8)}…, status=${created.status})`);
 
     // From here on it's a mock: no /rtc/offer, no microphone.
@@ -169,6 +221,7 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
       addLog("GET /grading/status → processing  [mock]");
       after(2400, () => {
         addLog("GET /grading/status → " + gradingMode + "; GET /grading  [mock]");
+        setHistorySession(null);
         if (gradingMode === "insufficient") {
           setAnalysisStatus("insufficient");
         } else {
@@ -181,6 +234,8 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
 
   const practiceAgain = useCallback(() => {
     onSessionCreated(null);
+    setActiveSessionId(null);
+    setHistorySession(null);
     setStage("home");
   }, [onSessionCreated]);
 
@@ -189,15 +244,24 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
 
   if (stage === "home") {
     return (
-      <Home
-        userName={userName}
-        onStart={startSession}
-        starting={starting}
-        startError={startError}
-        settings={settings}
-        setSettings={setSettings}
-        onHistoryLog={addLog}
-      />
+      <>
+        <Home
+          userName={userName}
+          onStart={startSession}
+          starting={starting}
+          startError={startError}
+          settings={settings}
+          setSettings={setSettings}
+        />
+        <RecentSessions
+          open={historyOpen}
+          currentId={activeSessionId}
+          selectedId={historySession?.id ?? null}
+          onClose={() => setHistoryOpen(false)}
+          onSelect={handleHistorySelect}
+          onLog={addLog}
+        />
+      </>
     );
   }
   if (stage === "live") {
@@ -217,5 +281,23 @@ export function PracticeScreen({ userName, settings, setSettings, gradingMode, a
   if (stage === "ended") {
     return <Ended />;
   }
-  return <Analysis status={analysisStatus} session={session} onAgain={practiceAgain} />;
+  return (
+    <>
+      <Analysis
+        status={analysisStatus}
+        session={session}
+        historySession={historySession}
+        onAgain={practiceAgain}
+        onHistory={openHistory}
+      />
+      <RecentSessions
+        open={historyOpen}
+        currentId={activeSessionId}
+        selectedId={historySession?.id ?? null}
+        onClose={() => setHistoryOpen(false)}
+        onSelect={handleHistorySelect}
+        onLog={addLog}
+      />
+    </>
+  );
 }

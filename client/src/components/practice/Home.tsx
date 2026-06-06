@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { CatCompanion } from "../CatCompanion";
-import { RecentSessions } from "./RecentSessions";
 
 interface Settings {
   sttOnly: boolean;
@@ -14,7 +13,6 @@ interface HomeProps {
   startError?: string | null;
   settings: Settings;
   setSettings: (s: Settings) => void;
-  onHistoryLog?: (message: string) => void;
 }
 
 /** Authenticated home — primary "Start practice" + a quiet practice-settings disclosure. */
@@ -25,7 +23,6 @@ export function Home({
   startError = null,
   settings,
   setSettings,
-  onHistoryLog,
 }: HomeProps) {
   const [open, setOpen] = useState(false);
   return (
@@ -88,8 +85,6 @@ export function Home({
               </div>
             )}
           </div>
-
-          <RecentSessions onLog={onHistoryLog} />
         </div>
       </div>
     </div>
