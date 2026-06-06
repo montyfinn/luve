@@ -279,6 +279,7 @@ body {
 .p-statewrap { text-align: center; }
 .p-statelabel { font-family: var(--font-display); font-size: 1.55rem; color: var(--brand-ink); transition: color var(--dur); }
 .p-statehelp { font-size: var(--t-sm); color: var(--ink-3); margin-top: 6px; }
+.p-speech-hint { width: fit-content; max-width: 100%; margin: 12px auto 0; border: 1px solid var(--hairline); border-radius: 999px; padding: 8px 13px; background: var(--brand-tint); color: var(--brand-ink); font-size: var(--t-sm); line-height: 1.45; text-align: center; }
 .p-think { display: inline-flex; gap: 5px; align-items: center; }
 .p-think i { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: block; animation: pThink 1.4s ease-in-out infinite; }
 .p-think i:nth-child(2) { animation-delay: .2s; } .p-think i:nth-child(3) { animation-delay: .4s; }

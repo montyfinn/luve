@@ -93,6 +93,7 @@ export interface SttResultEvent extends BaseEvent {
 /** STT outputs that were dropped/ignored upstream — no transcript text surfaced. */
 export interface SttDroppedEvent extends BaseEvent {
   event: "stt_result_suppressed" | "stt_vad_ignored" | "stt_only_final";
+  reason?: string;
 }
 
 export interface AssistantStreamEvent extends BaseEvent {
@@ -270,7 +271,7 @@ export function parseGatewayEvent(input: unknown): GatewayEvent {
     case "stt_result_suppressed":
     case "stt_vad_ignored":
     case "stt_only_final":
-      return { event: rawType, session_id };
+      return { event: rawType, session_id, reason: optString(data.reason) };
     case "ten_started":
     case "stt_ready":
     case "session_ended":

@@ -20,6 +20,7 @@ interface LiveProps {
   elapsed: number;
   /** Safe realtime error message (mic/gateway/engine); null when none. */
   error?: string | null;
+  speechHint?: string | null;
   authExpiryWarning?: "soon" | "urgent" | null;
   onMute: () => void;
   onInterrupt: () => void;
@@ -37,6 +38,7 @@ export function Live({
   muted,
   elapsed,
   error,
+  speechHint = null,
   authExpiryWarning = null,
   onMute,
   onInterrupt,
@@ -126,6 +128,12 @@ export function Live({
           {error && (
             <p className="p-note" style={{ color: "var(--err-ink)", textAlign: "center" }} role="alert">
               {error}
+            </p>
+          )}
+
+          {speechHint && (
+            <p className="p-speech-hint" role="status" aria-live="polite">
+              {speechHint}
             </p>
           )}
 

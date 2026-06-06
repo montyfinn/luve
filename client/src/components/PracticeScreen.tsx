@@ -27,6 +27,7 @@ import {
 const USE_REALTIME = true;
 const AUTH_EXPIRY_WARNING_MS = 2 * 60 * 1000;
 const AUTH_EXPIRY_URGENT_MS = 30 * 1000;
+const SHORT_SPEECH_HINT = "I didn’t catch enough speech — try a slightly longer sentence.";
 
 interface Settings {
   sttOnly: boolean;
@@ -88,6 +89,8 @@ export function PracticeScreen({
   // realtime (C7c): the live WebRTC session + any in-session error banner
   const realtimeRef = useRef<RealtimeSession | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [speechHint, setSpeechHint] = useState<string | null>(null);
+  const speechHintTimer = useRef<number | null>(null);
   const [authExpiryWarning, setAuthExpiryWarning] = useState<"soon" | "urgent" | null>(null);
 
   // C7d: streaming assistant draft + lightweight client-side timing view
@@ -110,6 +113,21 @@ export function PracticeScreen({
   const clearTimers = useCallback(() => {
     timers.current.forEach((t) => clearTimeout(t));
     timers.current = [];
+  }, []);
+  const clearSpeechHint = useCallback(() => {
+    if (speechHintTimer.current != null) {
+      window.clearTimeout(speechHintTimer.current);
+      speechHintTimer.current = null;
+    }
+    setSpeechHint(null);
+  }, []);
+  const showShortSpeechHint = useCallback(() => {
+    if (speechHintTimer.current != null) window.clearTimeout(speechHintTimer.current);
+    setSpeechHint(SHORT_SPEECH_HINT);
+    speechHintTimer.current = window.setTimeout(() => {
+      speechHintTimer.current = null;
+      setSpeechHint(null);
+    }, 7000);
   }, []);
 
   const historyAvailable = stage === "home" || stage === "analysis";
@@ -256,6 +274,7 @@ export function PracticeScreen({
         case "subtitle":
         case "stt_result":
           if (ev.is_final) {
+            clearSpeechHint();
             if (ev.text) setTranscript((T) => [...T, { who: "you", text: ev.text }]);
             setPartial("");
             // new turn: record user-final time, reset the per-turn assistant marks
@@ -264,10 +283,12 @@ export function PracticeScreen({
             timingsRef.current.assistantFinalAt = undefined;
             refreshTiming();
           } else {
+            if (ev.text) clearSpeechHint();
             setPartial(ev.text);
           }
           break;
         case "assistant_stream":
+          clearSpeechHint();
           if (timingsRef.current.assistantFirstTokenAt == null) {
             timingsRef.current.assistantFirstTokenAt = now;
             refreshTiming();
@@ -276,6 +297,7 @@ export function PracticeScreen({
           setPhase("aispeaking");
           break;
         case "assistant_final": {
+          clearSpeechHint();
           const text = ev.responseText || assistantPartialRef.current;
           if (text) setTranscript((T) => [...T, { who: "ai", text }]);
           setAssistantDraft("");
@@ -284,6 +306,10 @@ export function PracticeScreen({
           setPhase("listening");
           break;
         }
+        case "stt_vad_ignored":
+        case "stt_result_suppressed":
+          showShortSpeechHint();
+          break;
         case "assistant_audio_aborted":
         case "assistant_generation_aborted": {
           // keep whatever streamed so far visible, then stop the draft
@@ -314,14 +340,14 @@ export function PracticeScreen({
           refreshTiming();
           break;
         default:
-          // stt_result_suppressed / stt_vad_ignored / stt_only_final / flush_ack /
-          // barge_in_ack / assistant_audio(_meta) / connected / connecting / unknown
+          // stt_only_final / flush_ack / barge_in_ack / assistant_audio(_meta) /
+          // connected / connecting / unknown
           // → diagnostics log only; transcript unchanged.
           break;
       }
       addLog(`json_out:${ev.event}`);
     },
-    [addLog, refreshTiming, setAssistantDraft],
+    [addLog, clearSpeechHint, refreshTiming, setAssistantDraft, showShortSpeechHint],
   );
 
   // REAL session create + REAL realtime connect (mock kept behind USE_REALTIME).
@@ -353,6 +379,7 @@ export function PracticeScreen({
     setTranscript([]);
     setPartial("");
     setAssistantDraft("");
+    clearSpeechHint();
     setMuted(false);
     setElapsed(0);
     setLiveError(null);
@@ -415,6 +442,7 @@ export function PracticeScreen({
     onSessionCreated,
     addLog,
     after,
+    clearSpeechHint,
     clearTimers,
     runBeat,
     applyRealtimeEvent,
@@ -485,6 +513,7 @@ export function PracticeScreen({
     setAssistantDraft("");
     timingsRef.current.sessionEndedAt = Date.now();
     clearTimers();
+    clearSpeechHint();
     addLog("END_SESSION; grading status queued");
     setStage("ended");
     after(900, () => {
@@ -506,8 +535,9 @@ export function PracticeScreen({
     setGradingResult(null);
     setGradingStatus(null);
     setGradingError(null);
+    clearSpeechHint();
     setStage("home");
-  }, [onSessionCreated]);
+  }, [clearSpeechHint, onSessionCreated]);
 
   // clear timers + tear down any live realtime session on unmount
   useEffect(
@@ -516,9 +546,10 @@ export function PracticeScreen({
       void realtimeRef.current?.disconnect("unmount");
       realtimeRef.current = null;
       assistantPartialRef.current = "";
+      clearSpeechHint();
       clearTimers();
     },
-    [clearTimers],
+    [clearSpeechHint, clearTimers],
   );
 
   const analysisSessionId = historySession?.id ?? activeSessionId;
@@ -559,6 +590,7 @@ export function PracticeScreen({
         muted={muted}
         elapsed={elapsed}
         error={liveError}
+        speechHint={speechHint}
         authExpiryWarning={authExpiryWarning}
         onMute={handleMute}
         onInterrupt={handleInterrupt}
