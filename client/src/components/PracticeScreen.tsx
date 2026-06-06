@@ -28,6 +28,23 @@ const USE_REALTIME = true;
 const AUTH_EXPIRY_WARNING_MS = 2 * 60 * 1000;
 const AUTH_EXPIRY_URGENT_MS = 30 * 1000;
 const SHORT_SPEECH_HINT = "I didn’t catch enough speech — try a slightly longer sentence.";
+const ENGLISH_ONLY_HINT = "Please answer in English.";
+const UNSUPPORTED_SPEECH_HINT = "I couldn’t use that response — try again.";
+
+const ENGLISH_ONLY_SUPPRESSION_REASONS = new Set([
+  "mixed_non_english",
+  "non_english_verification_failed",
+  "verification_language_mismatch",
+  "no_english_evidence",
+]);
+
+const SHORT_SPEECH_SUPPRESSION_REASONS = new Set([
+  "too_short_for_final",
+  "low_speech_duration",
+  "too_few_words",
+  "empty_transcript",
+  "incomplete_short_fragment",
+]);
 
 interface Settings {
   sttOnly: boolean;
@@ -51,6 +68,16 @@ interface PracticeScreenProps {
 type Stage = "home" | "live" | "ended" | "analysis";
 type AnalysisStatus = "loading" | "pending" | "ready" | "insufficient" | "failed" | "unavailable" | "history";
 type LoadGradingOptions = { poll?: boolean; preserveHistory?: boolean };
+
+function hintForDroppedSpeech(ev: GatewayEvent): string {
+  if (ev.event === "stt_vad_ignored") return SHORT_SPEECH_HINT;
+  if (ev.event !== "stt_result_suppressed") return UNSUPPORTED_SPEECH_HINT;
+
+  const reason = ev.reason ?? "";
+  if (ENGLISH_ONLY_SUPPRESSION_REASONS.has(reason)) return ENGLISH_ONLY_HINT;
+  if (SHORT_SPEECH_SUPPRESSION_REASONS.has(reason)) return SHORT_SPEECH_HINT;
+  return UNSUPPORTED_SPEECH_HINT;
+}
 
 /**
  * Conversation shell — the third "page". Session creation, realtime connect,
@@ -121,9 +148,9 @@ export function PracticeScreen({
     }
     setSpeechHint(null);
   }, []);
-  const showShortSpeechHint = useCallback(() => {
+  const showSpeechHint = useCallback((message: string) => {
     if (speechHintTimer.current != null) window.clearTimeout(speechHintTimer.current);
-    setSpeechHint(SHORT_SPEECH_HINT);
+    setSpeechHint(message);
     speechHintTimer.current = window.setTimeout(() => {
       speechHintTimer.current = null;
       setSpeechHint(null);
@@ -308,7 +335,7 @@ export function PracticeScreen({
         }
         case "stt_vad_ignored":
         case "stt_result_suppressed":
-          showShortSpeechHint();
+          showSpeechHint(hintForDroppedSpeech(ev));
           break;
         case "assistant_audio_aborted":
         case "assistant_generation_aborted": {
@@ -347,7 +374,7 @@ export function PracticeScreen({
       }
       addLog(`json_out:${ev.event}`);
     },
-    [addLog, clearSpeechHint, refreshTiming, setAssistantDraft, showShortSpeechHint],
+    [addLog, clearSpeechHint, refreshTiming, setAssistantDraft, showSpeechHint],
   );
 
   // REAL session create + REAL realtime connect (mock kept behind USE_REALTIME).
