@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { PHASE_META, type Phase } from "../../lib/mock";
+import { hasTimings, type RealtimeTimingView } from "../../lib/realtimeTimeline";
 import { MicIcon, MicOffIcon, InterruptIcon, PowerIcon } from "../icons";
 
 export interface Turn {
@@ -11,6 +12,10 @@ interface LiveProps {
   phase: Phase;
   transcript: Turn[];
   partial: string;
+  /** Streaming assistant text (assistant_stream deltas) before assistant_final. */
+  assistantPartial?: string;
+  /** Compact client-side realtime timings; null when none yet. */
+  timing?: RealtimeTimingView | null;
   muted: boolean;
   elapsed: number;
   /** Safe realtime error message (mic/gateway/engine); null when none. */
@@ -22,12 +27,24 @@ interface LiveProps {
 
 /** Live conversation shell. Orb carries state; transcript builds turn-by-turn.
  *  All driven by scripted mock beats — no real mic/WebRTC here. */
-export function Live({ phase, transcript, partial, muted, elapsed, error, onMute, onInterrupt, onEnd }: LiveProps) {
+export function Live({
+  phase,
+  transcript,
+  partial,
+  assistantPartial = "",
+  timing = null,
+  muted,
+  elapsed,
+  error,
+  onMute,
+  onInterrupt,
+  onEnd,
+}: LiveProps) {
   const meta = PHASE_META[phase] ?? PHASE_META.listening;
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [transcript, partial]);
+  }, [transcript, partial, assistantPartial]);
 
   const orbClass =
     "p-orb " + (muted && phase !== "thinking" && phase !== "aispeaking" ? "muted " : "") + meta.orb;
@@ -97,9 +114,17 @@ export function Live({ phase, transcript, partial, muted, elapsed, error, onMute
             </p>
           )}
 
+          {timing && hasTimings(timing) && (
+            <div className="p-timing" aria-label="Realtime timings">
+              {timing.readyMs != null && <span>ready {timing.readyMs} ms</span>}
+              {timing.firstTokenMs != null && <span>first token {timing.firstTokenMs} ms</span>}
+              {timing.responseMs != null && <span>response {timing.responseMs} ms</span>}
+            </div>
+          )}
+
           <div className="p-card p-transcript" ref={scrollRef}>
             <div className="p-transcript__label">Transcript</div>
-            {transcript.length === 0 && !partial && (
+            {transcript.length === 0 && !partial && !assistantPartial && (
               <div className="p-empty">Your conversation will appear here as you speak…</div>
             )}
             {transcript.map((t, i) => (
@@ -108,6 +133,14 @@ export function Live({ phase, transcript, partial, muted, elapsed, error, onMute
                 <div className="p-turn__text">{t.text}</div>
               </div>
             ))}
+            {assistantPartial && (
+              <div className="p-turn">
+                <span className="p-turn__who ai">AI</span>
+                <div className="p-turn__text">
+                  <span className="partial">{assistantPartial}…</span>
+                </div>
+              </div>
+            )}
             {partial && (
               <div className="p-turn">
                 <span className="p-turn__who you">You</span>

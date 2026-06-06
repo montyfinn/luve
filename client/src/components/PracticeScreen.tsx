@@ -7,6 +7,7 @@ import { RecentSessions } from "./practice/RecentSessions";
 import { createSession, type SessionHistoryItem } from "../lib/sessionApi";
 import { loadToken } from "../lib/session";
 import { createRealtimeSession, type GatewayEvent, type RealtimeSession } from "../lib/realtime";
+import { deriveTimingView, type RealtimeTimingView, type RealtimeTimings } from "../lib/realtimeTimeline";
 import {
   AI_LINES,
   BEATS,
@@ -78,6 +79,17 @@ export function PracticeScreen({
   // realtime (C7c): the live WebRTC session + any in-session error banner
   const realtimeRef = useRef<RealtimeSession | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+
+  // C7d: streaming assistant draft + lightweight client-side timing view
+  const [assistantPartial, setAssistantPartial] = useState("");
+  const assistantPartialRef = useRef("");
+  const setAssistantDraft = useCallback((next: string) => {
+    assistantPartialRef.current = next;
+    setAssistantPartial(next);
+  }, []);
+  const timingsRef = useRef<RealtimeTimings>({});
+  const [timingView, setTimingView] = useState<RealtimeTimingView | null>(null);
+  const refreshTiming = useCallback(() => setTimingView(deriveTimingView({ ...timingsRef.current })), []);
 
   const timers = useRef<number[]>([]);
   const after = useCallback((ms: number, fn: () => void) => {
@@ -152,36 +164,82 @@ export function PracticeScreen({
     [addLog, after],
   );
 
-  // Minimal C7c event → UI mapping (rich transcript/feedback mapping is C7d).
-  // Logs the event TYPE only — never transcript text or audio.
+  // C7d event → transcript/status/timing mapping. Logs the event TYPE only —
+  // never full transcript text or audio. Unknown/diagnostic events fall through
+  // to the log and leave the transcript untouched (UI stays usable).
   const applyRealtimeEvent = useCallback(
     (ev: GatewayEvent) => {
+      const now = Date.now();
       switch (ev.event) {
         case "subtitle":
         case "stt_result":
           if (ev.is_final) {
             if (ev.text) setTranscript((T) => [...T, { who: "you", text: ev.text }]);
             setPartial("");
+            // new turn: record user-final time, reset the per-turn assistant marks
+            timingsRef.current.lastUserFinalAt = now;
+            timingsRef.current.assistantFirstTokenAt = undefined;
+            timingsRef.current.assistantFinalAt = undefined;
+            refreshTiming();
           } else {
             setPartial(ev.text);
           }
           break;
         case "assistant_stream":
+          if (timingsRef.current.assistantFirstTokenAt == null) {
+            timingsRef.current.assistantFirstTokenAt = now;
+            refreshTiming();
+          }
+          setAssistantDraft(assistantPartialRef.current + ev.delta);
           setPhase("aispeaking");
           break;
-        case "assistant_final":
-          if (ev.responseText) setTranscript((T) => [...T, { who: "ai", text: ev.responseText }]);
+        case "assistant_final": {
+          const text = ev.responseText || assistantPartialRef.current;
+          if (text) setTranscript((T) => [...T, { who: "ai", text }]);
+          setAssistantDraft("");
+          timingsRef.current.assistantFinalAt = now;
+          refreshTiming();
           setPhase("listening");
           break;
+        }
+        case "assistant_audio_aborted":
+        case "assistant_generation_aborted": {
+          // keep whatever streamed so far visible, then stop the draft
+          const text = assistantPartialRef.current;
+          if (text) setTranscript((T) => [...T, { who: "ai", text }]);
+          setAssistantDraft("");
+          setPhase("listening");
+          break;
+        }
         case "ten_started":
           setPhase("connecting");
           break;
+        case "stt_ready":
+          if (timingsRef.current.sttReadyAt == null) {
+            timingsRef.current.sttReadyAt = now;
+            refreshTiming();
+          }
+          setPhase("listening");
+          break;
+        case "stt_ready_error":
+          setLiveError("Speech engine failed to start. End the session and try again.");
+          break;
+        case "llm_error":
+          setLiveError(ev.message);
+          break;
+        case "session_ended":
+          timingsRef.current.sessionEndedAt = now;
+          refreshTiming();
+          break;
         default:
+          // stt_result_suppressed / stt_vad_ignored / stt_only_final / flush_ack /
+          // barge_in_ack / assistant_audio(_meta) / connected / connecting / unknown
+          // → diagnostics log only; transcript unchanged.
           break;
       }
       addLog(`json_out:${ev.event}`);
     },
-    [addLog],
+    [addLog, refreshTiming, setAssistantDraft],
   );
 
   // REAL session create + REAL realtime connect (mock kept behind USE_REALTIME).
@@ -189,6 +247,8 @@ export function PracticeScreen({
     if (starting) return;
     setStarting(true);
     setStartError(null);
+    timingsRef.current = { startClickAt: Date.now() };
+    setTimingView(null);
 
     let created;
     try {
@@ -208,12 +268,14 @@ export function PracticeScreen({
     clearTimers();
     setTranscript([]);
     setPartial("");
+    setAssistantDraft("");
     setMuted(false);
     setElapsed(0);
     setLiveError(null);
     setPhase("connecting");
     setStage("live");
     setStarting(false);
+    timingsRef.current.sessionCreatedAt = Date.now();
 
     if (!USE_REALTIME) {
       addLog("RTC offer + transcript are mock in this build");
@@ -239,7 +301,13 @@ export function PracticeScreen({
       handlers: {
         onStateChange: (s) => {
           if (s === "connecting") setPhase("connecting");
-          else if (s === "live") setPhase("listening");
+          else if (s === "live") {
+            setPhase("listening");
+            if (timingsRef.current.sttReadyAt == null) {
+              timingsRef.current.sttReadyAt = Date.now();
+              refreshTiming();
+            }
+          }
         },
         onEvent: applyRealtimeEvent,
         onError: setLiveError,
@@ -250,12 +318,25 @@ export function PracticeScreen({
 
     try {
       await session.connect();
+      timingsRef.current.offerAnsweredAt = Date.now();
+      refreshTiming();
     } catch {
       // onError already surfaced a friendly message; return to home.
       realtimeRef.current = null;
       setStage("home");
     }
-  }, [starting, settings, onSessionCreated, addLog, after, clearTimers, runBeat, applyRealtimeEvent]);
+  }, [
+    starting,
+    settings,
+    onSessionCreated,
+    addLog,
+    after,
+    clearTimers,
+    runBeat,
+    applyRealtimeEvent,
+    refreshTiming,
+    setAssistantDraft,
+  ]);
 
   // elapsed timer while live
   useEffect(() => {
@@ -296,6 +377,8 @@ export function PracticeScreen({
   const endSession = useCallback(() => {
     void realtimeRef.current?.disconnect("user_stop");
     realtimeRef.current = null;
+    setAssistantDraft("");
+    timingsRef.current.sessionEndedAt = Date.now();
     clearTimers();
     addLog("END_SESSION; grading queued  [mock grading]");
     setStage("ended");
@@ -314,7 +397,7 @@ export function PracticeScreen({
         }
       });
     });
-  }, [addLog, after, clearTimers, gradingMode]);
+  }, [addLog, after, clearTimers, gradingMode, setAssistantDraft]);
 
   const practiceAgain = useCallback(() => {
     onSessionCreated(null);
@@ -328,6 +411,7 @@ export function PracticeScreen({
     () => () => {
       void realtimeRef.current?.disconnect("unmount");
       realtimeRef.current = null;
+      assistantPartialRef.current = "";
       clearTimers();
     },
     [clearTimers],
@@ -361,6 +445,8 @@ export function PracticeScreen({
         phase={phase}
         transcript={transcript}
         partial={partial}
+        assistantPartial={assistantPartial}
+        timing={timingView}
         muted={muted}
         elapsed={elapsed}
         error={liveError}

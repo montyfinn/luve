@@ -461,3 +461,10 @@ body {
 /* placement helpers — decorative, never over a CTA */
 .p-homecat { display: flex; justify-content: center; margin-bottom: 2px; }
 .p-authcat { display: flex; justify-content: center; margin: -2px 0 8px; }
+
+/* C7d: compact, secondary realtime timing strip (diagnostic, never prominent) */
+.p-timing {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+  margin: 8px 0 0; font-family: var(--font-mono); font-size: var(--t-xs); color: var(--ink-4);
+}
+.p-timing span { white-space: nowrap; }
