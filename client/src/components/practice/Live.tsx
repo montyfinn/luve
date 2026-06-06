@@ -13,6 +13,8 @@ interface LiveProps {
   partial: string;
   muted: boolean;
   elapsed: number;
+  /** Safe realtime error message (mic/gateway/engine); null when none. */
+  error?: string | null;
   onMute: () => void;
   onInterrupt: () => void;
   onEnd: () => void;
@@ -20,7 +22,7 @@ interface LiveProps {
 
 /** Live conversation shell. Orb carries state; transcript builds turn-by-turn.
  *  All driven by scripted mock beats — no real mic/WebRTC here. */
-export function Live({ phase, transcript, partial, muted, elapsed, onMute, onInterrupt, onEnd }: LiveProps) {
+export function Live({ phase, transcript, partial, muted, elapsed, error, onMute, onInterrupt, onEnd }: LiveProps) {
   const meta = PHASE_META[phase] ?? PHASE_META.listening;
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -88,6 +90,12 @@ export function Live({ phase, transcript, partial, muted, elapsed, onMute, onInt
             <div className="p-statelabel">{mutedLabel ? "Microphone muted" : meta.label}</div>
             <div className="p-statehelp">{meta.help}</div>
           </div>
+
+          {error && (
+            <p className="p-note" style={{ color: "var(--err-ink)", textAlign: "center" }} role="alert">
+              {error}
+            </p>
+          )}
 
           <div className="p-card p-transcript" ref={scrollRef}>
             <div className="p-transcript__label">Transcript</div>

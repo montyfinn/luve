@@ -13,7 +13,9 @@
  * they are referenced by the C7c implementation, not contacted here.
  */
 
-// --- Gateway endpoints / channel (used by the C7c+ implementation) ---
+import { GATEWAY_URL } from "./config";
+
+// --- Gateway endpoints / channel ---
 export const RTC_OFFER_PATH = "/rtc/offer";
 export const RTC_ICE_PATH = "/rtc/ice";
 export const RTC_CMD_PATH = "/rtc/cmd";
@@ -298,31 +300,359 @@ export interface RealtimeSessionHandlers {
 }
 
 export interface RealtimeSession {
-  /** Create session (if needed) → mic → offer/answer → control channel → live. */
+  /** mic → offer/answer → ICE → control channel → live (session already created). */
   connect(): Promise<void>;
   /** Idempotent teardown; sends END_SESSION when live. See the cleanup contract. */
   disconnect(reason?: string): Promise<void> | void;
   /** START / FLUSH / BARGE_IN / END_SESSION — datachannel-first, HTTP fallback. */
   sendCommand(command: RealtimeCommand): Promise<void>;
+  /** Toggle mic transmission; FLUSH is sent when muting (finalizes the utterance). */
+  setMicMuted(muted: boolean): void;
   getState(): RealtimeLifecycleState;
 }
 
+export interface RealtimeSessionOptions {
+  /** Real session_id from POST /api/v1/sessions (created before connect). */
+  sessionId: string;
+  sttOnly: boolean;
+  ttsEnabled: boolean;
+  /** Bearer token for gateway calls. */
+  token: string;
+  /** Defaults to GATEWAY_URL. */
+  gatewayUrl?: string;
+  handlers?: RealtimeSessionHandlers;
+}
+
+const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    channelCount: 1,
+    sampleRate: 16000,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+  video: false,
+};
+const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+const WARMUP_TIMEOUT_MS = 12000;
+
+/** Map a getUserMedia error to safe, user-facing copy (never logs device detail). */
+export function describeMicError(error: unknown): string {
+  const name =
+    error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name ?? "")
+      : "";
+  if (name === "NotAllowedError" || name === "SecurityError")
+    return "Microphone permission denied. Allow mic access and try again.";
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") return "No microphone found.";
+  if (name === "NotReadableError" || name === "TrackStartError")
+    return "Microphone is busy or unavailable.";
+  return "Could not access the microphone.";
+}
+
 /**
- * Placeholder factory — the real WebRTC implementation lands in C7c.
- * It performs NO media/network work; calling connect()/sendCommand() rejects so
- * accidental early wiring fails loudly rather than silently doing nothing.
+ * Concrete realtime session (C7c). Owns mic + RTCPeerConnection + control
+ * DataChannel + ICE against the ten_gateway. Fulfils the cleanup contract below.
  */
-export function createRealtimeSession(): RealtimeSession {
+export function createRealtimeSession(options: RealtimeSessionOptions): RealtimeSession {
+  const gatewayUrl = (options.gatewayUrl ?? GATEWAY_URL).replace(/\/+$/, "");
+  const handlers = options.handlers ?? {};
+
   let state: RealtimeLifecycleState = "idle";
-  const notImplemented = () => Promise.reject(new Error("RealtimeSession not implemented yet (C7c)"));
-  return {
-    connect: notImplemented,
-    sendCommand: notImplemented,
-    disconnect: () => {
-      state = "idle";
-    },
-    getState: () => state,
-  };
+  let pc: RTCPeerConnection | null = null;
+  let micStream: MediaStream | null = null;
+  let controlChannel: RTCDataChannel | null = null;
+  let remoteAudio: HTMLAudioElement | null = null;
+  let warmupTimer: number | null = null;
+  let unloadHandler: (() => void) | null = null;
+  let acceptIce = false;
+  let attemptId = 0;
+  let micMuted = false;
+
+  function setState(next: RealtimeLifecycleState): void {
+    if (state === next) return;
+    state = next;
+    handlers.onStateChange?.(next);
+  }
+
+  function authHeaders(): Record<string, string> {
+    return { "Content-Type": "application/json", Authorization: `Bearer ${options.token}` };
+  }
+
+  function postJson(path: string, body: unknown): Promise<Response> {
+    return fetch(`${gatewayUrl}${path}`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+  }
+
+  // datachannel-first command send, HTTP /rtc/cmd fallback. Never logs payload text.
+  async function rawSend(command: RealtimeCommand): Promise<void> {
+    const payload = { session_id: options.sessionId, ...command };
+    if (controlChannel && controlChannel.readyState === "open") {
+      controlChannel.send(JSON.stringify(payload));
+      return;
+    }
+    try {
+      await postJson(RTC_CMD_PATH, payload);
+    } catch {
+      handlers.onError?.(`Command ${command.cmd} could not be delivered.`);
+    }
+  }
+
+  function applyEvent(event: GatewayEvent): void {
+    switch (event.event) {
+      case "stt_ready":
+        if (warmupTimer !== null) {
+          clearTimeout(warmupTimer);
+          warmupTimer = null;
+        }
+        micStream?.getAudioTracks().forEach((t) => {
+          t.enabled = !micMuted;
+        });
+        setState("live");
+        break;
+      case "stt_ready_error":
+        handlers.onError?.("Speech engine failed to start. Please end and retry.");
+        setState("error");
+        break;
+      case "session_ended":
+        setState("ended");
+        break;
+      case "llm_error":
+        handlers.onError?.(event.message);
+        break;
+      default:
+        break;
+    }
+  }
+
+  function bindChannel(channel: RTCDataChannel): void {
+    channel.onopen = () => {
+      if (channel.label === CONTROL_CHANNEL_LABEL) {
+        void rawSend({ cmd: "START", stt_only: options.sttOnly, tts_enabled: options.ttsEnabled });
+      }
+    };
+    channel.onmessage = (ev: MessageEvent) => {
+      const consume = (text: string) => {
+        const event = parseGatewayEvent(text);
+        applyEvent(event);
+        handlers.onEvent?.(event);
+      };
+      if (typeof ev.data === "string") consume(ev.data);
+      else if (ev.data instanceof Blob) void ev.data.text().then(consume);
+    };
+  }
+
+  function teardown(): void {
+    acceptIce = false;
+    attemptId += 1;
+    if (warmupTimer !== null) {
+      clearTimeout(warmupTimer);
+      warmupTimer = null;
+    }
+    if (unloadHandler) {
+      window.removeEventListener("pagehide", unloadHandler);
+      window.removeEventListener("beforeunload", unloadHandler);
+      unloadHandler = null;
+    }
+    if (controlChannel) {
+      try {
+        controlChannel.close();
+      } catch {
+        /* ignore */
+      }
+      controlChannel = null;
+    }
+    if (pc) {
+      pc.getSenders().forEach((s) => {
+        try {
+          s.track?.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+      try {
+        pc.close();
+      } catch {
+        /* ignore */
+      }
+      pc = null;
+    }
+    if (micStream) {
+      micStream.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+      micStream = null;
+    }
+    if (remoteAudio) {
+      try {
+        remoteAudio.pause();
+      } catch {
+        /* ignore */
+      }
+      remoteAudio.srcObject = null;
+      remoteAudio = null;
+    }
+  }
+
+  function failConnect(message: string, cause?: unknown): never {
+    handlers.onError?.(message);
+    teardown();
+    setState("error");
+    throw cause instanceof Error ? cause : new Error(message);
+  }
+
+  async function connect(): Promise<void> {
+    if (pc) return; // idempotent guard against double Start
+    attemptId += 1;
+    const myAttempt = attemptId;
+    acceptIce = true;
+    setState("connecting");
+
+    // Microphone — requested ONLY here (i.e. only after an explicit Start click).
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+    } catch (error) {
+      micStream = null;
+      failConnect(describeMicError(error), error);
+    }
+    const stream = micStream as MediaStream;
+
+    const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pc = peer;
+
+    // Mute tracks during DTLS/ICE warmup; re-enabled on stt_ready.
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = false;
+      peer.addTrack(t, stream);
+    });
+
+    peer.ontrack = (ev: RTCTrackEvent) => {
+      const [incoming] = ev.streams;
+      if (!incoming) return;
+      if (!remoteAudio) {
+        remoteAudio = document.createElement("audio");
+        remoteAudio.autoplay = true;
+      }
+      remoteAudio.srcObject = incoming;
+      void remoteAudio.play().catch(() => {
+        /* autoplay may be blocked until interaction; harmless */
+      });
+    };
+
+    peer.onicecandidate = (ev: RTCPeerConnectionIceEvent) => {
+      if (!ev.candidate) return;
+      if (myAttempt !== attemptId || !acceptIce || peer !== pc) return;
+      if (peer.connectionState === "closed" || peer.signalingState === "closed") return;
+      const candidate = ev.candidate.toJSON();
+      void postJson(RTC_ICE_PATH, { session_id: options.sessionId, candidate }).catch(() => {
+        handlers.onError?.("A network candidate could not be sent.");
+      });
+    };
+
+    peer.ondatachannel = (ev: RTCDataChannelEvent) => bindChannel(ev.channel);
+
+    controlChannel = peer.createDataChannel(CONTROL_CHANNEL_LABEL, { ordered: true });
+    bindChannel(controlChannel);
+
+    const offer = await peer.createOffer({ offerToReceiveAudio: true });
+    await peer.setLocalDescription(offer);
+
+    let response: Response;
+    try {
+      response = await postJson(RTC_OFFER_PATH, {
+        type: offer.type,
+        sdp: offer.sdp,
+        session_id: options.sessionId,
+        stt_only: options.sttOnly,
+        tts_enabled: options.ttsEnabled,
+        extension: "luve_core_media_extension",
+        ports: { audio_in: "audio_in", audio_out: "audio_out", json_out: "json_out", log_out: "log_out" },
+      });
+    } catch (error) {
+      failConnect("Couldn't reach the speech gateway.", error);
+    }
+    if (!response.ok) {
+      failConnect(`Speech gateway error (HTTP ${response.status}).`);
+    }
+
+    const envelope = (await response.json()) as {
+      answer?: RTCSessionDescriptionInit;
+      candidates?: RTCIceCandidateInit[];
+      session_id?: string;
+    };
+    if (peer !== pc) return; // torn down while awaiting
+    const answer = (envelope.answer ?? envelope) as RTCSessionDescriptionInit;
+    await peer.setRemoteDescription(answer);
+    if (Array.isArray(envelope.candidates)) {
+      for (const candidate of envelope.candidates) {
+        try {
+          await peer.addIceCandidate(candidate);
+        } catch {
+          /* ignore a single bad candidate */
+        }
+      }
+    }
+
+    warmupTimer = window.setTimeout(() => {
+      if (state === "connecting") handlers.onError?.("Speech engine is still warming up…");
+    }, WARMUP_TIMEOUT_MS);
+
+    // On tab close while active, best-effort END_SESSION + full teardown.
+    unloadHandler = () => {
+      if ((state === "live" || state === "connecting") && options.token) {
+        try {
+          fetch(`${gatewayUrl}${RTC_CMD_PATH}`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ session_id: options.sessionId, cmd: "END_SESSION", source: "page_unload" }),
+            keepalive: true,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      teardown();
+    };
+    window.addEventListener("pagehide", unloadHandler);
+    window.addEventListener("beforeunload", unloadHandler);
+  }
+
+  async function disconnect(reason?: string): Promise<void> {
+    if (state === "idle" || state === "ending" || state === "ended") {
+      teardown(); // clean any residue; idempotent
+      if (state !== "ended") setState("ended");
+      return;
+    }
+    setState("ending");
+    try {
+      await rawSend({ cmd: "END_SESSION", source: reason ?? "user_stop" });
+    } catch {
+      /* best-effort */
+    }
+    teardown();
+    setState("ended");
+  }
+
+  async function sendCommand(command: RealtimeCommand): Promise<void> {
+    await rawSend(command);
+  }
+
+  function setMicMuted(muted: boolean): void {
+    micMuted = muted;
+    micStream?.getAudioTracks().forEach((t) => {
+      t.enabled = !muted;
+    });
+    if (muted) void rawSend({ cmd: "FLUSH" });
+  }
+
+  return { connect, disconnect, sendCommand, setMicMuted, getState: () => state };
 }
 
 // ===========================================================================

@@ -5,6 +5,8 @@ import { Ended } from "./practice/Ended";
 import { Analysis } from "./practice/Analysis";
 import { RecentSessions } from "./practice/RecentSessions";
 import { createSession, type SessionHistoryItem } from "../lib/sessionApi";
+import { loadToken } from "../lib/session";
+import { createRealtimeSession, type GatewayEvent, type RealtimeSession } from "../lib/realtime";
 import {
   AI_LINES,
   BEATS,
@@ -14,6 +16,9 @@ import {
   type Phase,
   type SessionResult,
 } from "../lib/mock";
+
+/** Flip to false to fall back to the scripted mock live flow (kept as a safety net). */
+const USE_REALTIME = true;
 
 interface Settings {
   sttOnly: boolean;
@@ -69,6 +74,10 @@ export function PracticeScreen({
   // real session-create UX
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // realtime (C7c): the live WebRTC session + any in-session error banner
+  const realtimeRef = useRef<RealtimeSession | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   const timers = useRef<number[]>([]);
   const after = useCallback((ms: number, fn: () => void) => {
@@ -143,7 +152,39 @@ export function PracticeScreen({
     [addLog, after],
   );
 
-  // REAL session create, then proceed into the scripted mock live flow.
+  // Minimal C7c event → UI mapping (rich transcript/feedback mapping is C7d).
+  // Logs the event TYPE only — never transcript text or audio.
+  const applyRealtimeEvent = useCallback(
+    (ev: GatewayEvent) => {
+      switch (ev.event) {
+        case "subtitle":
+        case "stt_result":
+          if (ev.is_final) {
+            if (ev.text) setTranscript((T) => [...T, { who: "you", text: ev.text }]);
+            setPartial("");
+          } else {
+            setPartial(ev.text);
+          }
+          break;
+        case "assistant_stream":
+          setPhase("aispeaking");
+          break;
+        case "assistant_final":
+          if (ev.responseText) setTranscript((T) => [...T, { who: "ai", text: ev.responseText }]);
+          setPhase("listening");
+          break;
+        case "ten_started":
+          setPhase("connecting");
+          break;
+        default:
+          break;
+      }
+      addLog(`json_out:${ev.event}`);
+    },
+    [addLog],
+  );
+
+  // REAL session create + REAL realtime connect (mock kept behind USE_REALTIME).
   const startSession = useCallback(async () => {
     if (starting) return;
     setStarting(true);
@@ -164,21 +205,57 @@ export function PracticeScreen({
     setSession(null);
     addLog(`POST /api/v1/sessions → 201 (id=${created.id.slice(0, 8)}…, status=${created.status})`);
 
-    // From here on it's a mock: no /rtc/offer, no microphone.
     clearTimers();
     setTranscript([]);
     setPartial("");
     setMuted(false);
     setElapsed(0);
+    setLiveError(null);
     setPhase("connecting");
     setStage("live");
     setStarting(false);
-    addLog("RTC offer + transcript are mock in this build");
-    after(1300, () => {
-      addLog("mock RTC connected");
-      runBeat(0);
+
+    if (!USE_REALTIME) {
+      addLog("RTC offer + transcript are mock in this build");
+      after(1300, () => {
+        addLog("mock RTC connected");
+        runBeat(0);
+      });
+      return;
+    }
+
+    const token = loadToken();
+    if (!token) {
+      setStartError("Please sign in again before starting a session.");
+      setStage("home");
+      return;
+    }
+
+    const session = createRealtimeSession({
+      sessionId: created.id,
+      sttOnly: settings.sttOnly,
+      ttsEnabled: !settings.sttOnly && !settings.muteTts,
+      token,
+      handlers: {
+        onStateChange: (s) => {
+          if (s === "connecting") setPhase("connecting");
+          else if (s === "live") setPhase("listening");
+        },
+        onEvent: applyRealtimeEvent,
+        onError: setLiveError,
+      },
     });
-  }, [starting, settings, onSessionCreated, addLog, after, clearTimers, runBeat]);
+    realtimeRef.current = session;
+    addLog("POST /rtc/offer → connecting…");
+
+    try {
+      await session.connect();
+    } catch {
+      // onError already surfaced a friendly message; return to home.
+      realtimeRef.current = null;
+      setStage("home");
+    }
+  }, [starting, settings, onSessionCreated, addLog, after, clearTimers, runBeat, applyRealtimeEvent]);
 
   // elapsed timer while live
   useEffect(() => {
@@ -188,7 +265,10 @@ export function PracticeScreen({
   }, [stage]);
 
   const handleInterrupt = useCallback(() => {
-    if (phase === "aispeaking" || phase === "thinking") addLog("BARGE_IN  [mock]");
+    if (phase === "aispeaking" || phase === "thinking") {
+      void realtimeRef.current?.sendCommand({ cmd: "BARGE_IN", source: "button" });
+      addLog("BARGE_IN");
+    }
   }, [phase, addLog]);
 
   // spacebar = barge-in while live
@@ -206,14 +286,18 @@ export function PracticeScreen({
 
   const handleMute = useCallback(() => {
     setMuted((m) => {
-      addLog(!m ? "FLUSH (mute)  [mock]" : "mic unmuted  [mock]");
-      return !m;
+      const next = !m;
+      realtimeRef.current?.setMicMuted(next);
+      addLog(next ? "FLUSH (mute)" : "mic unmuted");
+      return next;
     });
   }, [addLog]);
 
   const endSession = useCallback(() => {
+    void realtimeRef.current?.disconnect("user_stop");
+    realtimeRef.current = null;
     clearTimers();
-    addLog("END_SESSION; grading queued  [mock]");
+    addLog("END_SESSION; grading queued  [mock grading]");
     setStage("ended");
     after(1600, () => {
       setAnalysisStatus("loading");
@@ -239,8 +323,15 @@ export function PracticeScreen({
     setStage("home");
   }, [onSessionCreated]);
 
-  // clear timers on unmount
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  // clear timers + tear down any live realtime session on unmount
+  useEffect(
+    () => () => {
+      void realtimeRef.current?.disconnect("unmount");
+      realtimeRef.current = null;
+      clearTimers();
+    },
+    [clearTimers],
+  );
 
   if (stage === "home") {
     return (
@@ -272,6 +363,7 @@ export function PracticeScreen({
         partial={partial}
         muted={muted}
         elapsed={elapsed}
+        error={liveError}
         onMute={handleMute}
         onInterrupt={handleInterrupt}
         onEnd={endSession}
