@@ -1,5 +1,9 @@
 # Opt-in GPU override for ten_gateway STT (T9). NOT loaded by default.
 #
+# Requires a working NVIDIA driver plus NVIDIA Container Toolkit. Do not use
+# this override on CPU-only machines; the default docker-compose.yml path stays
+# CPU/no-GPU and should run with Docker's normal runc runtime.
+#
 # Default CPU startup is unchanged:
 #     docker compose --profile app up -d
 #

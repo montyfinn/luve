@@ -6,6 +6,12 @@ docker compose --profile app up -d
 # Chạy GPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
 
+# Kiểm tra GPU override trước khi chạy
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app config | grep -n -A5 -B5 'gpus'
+
+# Nếu host không có NVIDIA driver/toolkit ổn định, giữ CPU/default
+nvidia-smi || true
+
 # Chuyển CPU -> GPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build --force-recreate ten_gateway
 
@@ -118,6 +124,15 @@ Lần đầu hoặc sau khi đổi Dockerfile/dependency:
 docker compose --profile app up -d --build
 ```
 
+Đường CPU/default không được yêu cầu GPU cho `ten_gateway`. Nếu từng lỡ chạy
+GPU override trên máy không có NVIDIA driver, recreate gateway bằng config mặc
+định để quay về `Runtime=runc` và `DeviceRequests=null`:
+
+```bash
+docker compose --profile app up -d --no-deps --force-recreate ten_gateway
+docker inspect luve_ten_gateway --format 'Runtime={{.HostConfig.Runtime}} DeviceRequests={{json .HostConfig.DeviceRequests}}'
+```
+
 Nếu image đã build rồi:
 
 ```bash
@@ -132,6 +147,10 @@ docker compose --profile app up -d --force-recreate core_api ten_gateway grading
 # gpu 
 
 cd ~/project/luve
+
+GPU là opt-in, chỉ dùng khi `nvidia-smi` chạy được và host đã cài NVIDIA
+Container Toolkit. Không dùng `docker-compose.gpu.local.yml` làm đường mặc
+định; file đó chỉ dành cho thử nghiệm local và không commit.
 
 ```bash #chỉ chạy lần đầu 
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build

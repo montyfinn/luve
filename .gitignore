@@ -71,6 +71,7 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+docker-compose.gpu.local.yml
 
 # Logs
 logs/
