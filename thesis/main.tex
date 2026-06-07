@@ -1188,11 +1188,79 @@ system as a controlled demo, and the corresponding limitations are analyzed
 further in Chapter~5.
 
 \section{Testing}
-% [PLACEHOLDER] Describe real testing (per-service pytest, smoke tests).
-% Honest note: the full test suite has intermittently hung in some
-% environments; there is no CI gate yet.
-% TODO-TABLE [VI]: Bảng 4.3 - Kiểm thử/smoke test. Nội dung cần có: hạng mục kiểm thử,
-% lệnh/cách chạy, kết quả thực tế. CHỈ điền kết quả thật, không bịa.
+
+The verification activities described in this section are appropriate to a
+controlled-demo, research prototype rather than to production-grade quality
+assurance. Their purpose is to check whether the implemented system flows behave
+as designed --- recognition, tutor replies, session persistence, the grading
+hand-off, and result retrieval --- and not to measure educational impact or to
+certify production readiness. The discussion therefore emphasizes
+\emph{verification} and \emph{smoke testing}, and it distinguishes checks that
+have been used during development from checks that are recommended as a
+pre-demo verification checklist.
+
+\textbf{Static and build verification.} During development, static and build
+checks were used to catch integration regressions early. On the backend, Python
+compile and import smoke checks confirm that the application modules load, and
+on the frontend the TypeScript and Vite build steps confirm that the client
+compiles into the static assets served by the Core API. These checks are used
+locally; the project does not operate a continuous-integration pipeline, and no
+automated build-gate results are claimed here.
+
+\textbf{Backend and focused tests.} Backend verification relies on targeted
+tests and inspections of selected behaviors rather than on a single exhaustive
+suite. Focused tests are run per service using each service's \texttt{pytest}
+setup, exercising specific logic such as the grading-worker's handling of a
+completed session and the persistence/outbox path that records the intent to
+grade. These are intentionally narrow checks of particular behaviors; this
+thesis does not report test counts, pass rates, or coverage figures, as such
+figures are not part of the verified baseline.
+
+\textbf{Runtime smoke testing and pre-demo verification checklist.} Because LUVE
+is exercised as a live demo, the most informative verification is at the runtime
+level. The following sequence is used as a pre-demo verification checklist
+rather than as a source of quantitative results. First, the controlled local
+stack is started through the Docker Compose app profile, and service readiness
+is checked: the Core API readiness endpoint confirms database reachability and
+the gateway readiness endpoint confirms that the real-time gateway has
+initialized. PostgreSQL and RabbitMQ availability is confirmed, since both are
+required for the end-to-end flow. A browser-based real-time speaking session is
+then initiated through the TEN/WebRTC gateway, and the STT output is checked to
+confirm that recognized speech is processed while the relevant STT recognition
+log lines retain only metadata, with the raw transcript text redacted as
+established by the privacy patch. A session is then completed, and the
+\texttt{session.completed} hand-off is checked together with the
+\texttt{session\_outbox} behavior. Finally, the saved sessions and any grading
+results are retrieved through the Core API to confirm that the review path
+works. Where these steps have not been executed in a given environment, they
+remain a recommended checklist rather than a recorded test result.
+
+% TODO-TABLE [VI]: Cần lập bảng kiểm thử/xác minh, gồm hạng mục, cách kiểm tra, kết quả mong đợi, trạng thái, giới hạn/caveat.
+
+\textbf{Negative and failure-path verification.} Beyond the happy path, a few
+failure behaviors are important to verify or document. If the inline publish to
+RabbitMQ fails after the database commit, the expected behavior is that a
+warning is logged and the durable \texttt{session\_outbox} row remains, so the
+intent to grade is not lost. Recovery from such a failure depends on the outbox
+relay, which is disabled by default; the recommended posture is to document that
+recovery is manual unless the relay is explicitly enabled. It should also be
+acknowledged that the readiness and health checks are shallow --- the Core API
+check covers database reachability and the gateway check covers startup state,
+but RabbitMQ is not fully covered by a readiness probe. Consistent with the
+delivery design, no exactly-once guarantee is asserted by these checks.
+
+\textbf{Limitations of testing.} The verification described here has clear
+limits, which should be read together with the system limitations in Chapter~5.
+There is no production-grade continuous-integration pipeline and no automated
+test gate. No load or stress testing has been performed, and horizontal scaling
+has not been validated, consistent with the single-node, controlled-demo scope.
+No user study or learning-effectiveness measurement has been conducted, and no
+true acoustic or phoneme-level pronunciation validation has been performed, in
+line with the system's clarity-estimate treatment of pronunciation. Stable
+multilingual recognition has likewise not been validated, since the demo mode is
+English-focused. Finally, the full test suite has intermittently hung in some
+environments and is therefore not relied upon as a whole; focused per-service
+checks are preferred instead.
 
 \section{Chapter Summary}
 % [PLACEHOLDER]
