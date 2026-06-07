@@ -1002,7 +1002,90 @@ the scale of a single session per node.
 % TODO-TABLE [VI]: Cần lập bảng hiện thực các module chính, gồm module, file/service chính, trách nhiệm, ghi chú giới hạn.
 
 \subsection{Data Processing}
-% [PLACEHOLDER] STT -> analysis -> session saving -> grading.
+
+This section follows the data as it moves through LUVE's implemented runtime
+pipeline, from the learner's spoken input to the stored grading result and its
+later retrieval. The description traces the transformations performed at each
+stage and the module responsible for them, staying within the controlled-demo
+baseline \texttt{main@6a61bc8}.
+
+\textbf{Real-time audio-to-text processing.} Data enters the pipeline as audio
+captured in the browser. The TEN/WebRTC gateway receives the real-time audio
+and control flow and forwards the audio to the STT module. In the stable demo
+configuration, recognition runs with the \texttt{small.en} model in
+\texttt{forced\_en} mode and second-pass verification disabled, so the
+recognition path is English-focused and stable multilingual recognition is not
+claimed. The STT module produces recognized text together with
+confidence/uncertainty-style metadata where available. These signals are
+recognition-level indicators and are not an acoustic or phoneme-level
+pronunciation analysis. For privacy, after the PR~\#1 patch the raw recognized
+transcript text is not written to the STT recognition log lines; those lines
+retain metadata such as text length and confidence values instead.
+
+\textbf{Real-time reply processing.} The recognized text is passed into the
+real-time LLM tutor path, which transforms it into a conversational reply.
+At this stage the tutor produces conversational replies only; full
+grading/scoring is not performed on the real-time path. When tutor audio is
+enabled, the reply is returned to the learner through the TTS/WebRTC output
+path. The data handled here is therefore transient conversational state rather
+than any persisted assessment.
+
+\textbf{Session event processing.} While a session is active, its events are
+collected during the interaction. The session record exists in PostgreSQL, but
+the real-time event log and transcript evidence are accumulated in memory during
+the interaction and are persisted or updated at session completion rather than
+continuously. A consequence of this design is that if the real-time process
+crashes before completion, the in-memory event log or transcript evidence may be
+lost even though the broader session record can already exist. At completion,
+the system persists the session state and, in the same step, creates the
+\texttt{session\_outbox} intent that represents the work to be graded.
+
+\textbf{Completion, outbox, and queue processing.} The transition from a
+completed session to the grading pipeline is the central data hand-off.
+\texttt{session\_outbox} is a PostgreSQL table, not a queue service. At
+completion the session state and the outbox intent are committed together in a
+single database transaction, after which an inline publish of the
+\texttt{session.completed} work item to RabbitMQ is attempted. If the publish
+fails, a warning is logged and the durable outbox row remains so the work is not
+lost. The relay that would re-deliver pending outbox rows is disabled by
+default, so recovery from a failed publish is manual unless the relay is
+explicitly enabled. As a result, delivery of the work item is oriented toward
+at-least-once behavior with idempotent, session-level deduplication, rather than
+exactly-once delivery.
+
+\textbf{Asynchronous grading data processing.} Off the real-time path, the
+grading-worker consumes the \texttt{session.completed} work item. It reads the
+completed session and its transcript evidence and transforms that evidence into
+a grading outcome. On success it writes a \texttt{grading\_results} row; when
+grading cannot proceed or is intentionally skipped, it writes a
+\texttt{grading\_skip\_log} row instead. Two grading modes are distinguished: an
+offline development-preview (``fake'') grader, which is the default, and an
+optional real LLM-based grader enabled by configuration. Among the reported
+skills, the pronunciation value is interpreted as a clarity estimate derived
+from STT confidence and uncertainty, not a phoneme-level or acoustic
+pronunciation score.
+
+\textbf{Saved-session retrieval.} After completion, and after grading when
+available, the data is read back on demand. The client retrieves saved sessions
+and their grading results through
+the Core API and renders them for review. Because grading is asynchronous, the
+displayed result reflects the backend state of a session: at the design level
+the interface can show pending or processing grading, an available graded
+result, an insufficient-evidence or skipped outcome, and a failed or
+unavailable analysis, to the extent these states are represented by the
+backend. The ``cat companion'' interface (PR~\#2) is not part of the baseline
+and is not used as the basis for this retrieval view.
+
+% TODO-TABLE [VI]: Cần lập bảng luồng xử lý dữ liệu chính, gồm nguồn dữ liệu, bước xử lý, module xử lý, dữ liệu đầu ra, giới hạn/caveat.
+
+\textbf{Limitations.} Several properties bound how this data pipeline should be
+interpreted. The STT stage is English-focused in the stable demo mode. Schema
+evolution relies on numbered manual SQL migrations, with no production-grade
+automatic migration runner, so the persisted-data layout depends on those
+migrations having been applied. Delivery of grading work is at-least-once and
+not exactly-once, horizontal scaling is not claimed, and the baseline excludes
+the PR~\#2 cat companion UI. These limitations are consistent with the
+controlled-demo, research-prototype scope and are revisited in Chapter~5.
 
 \section{Achieved Results}
 \subsection{Program Execution Results}
