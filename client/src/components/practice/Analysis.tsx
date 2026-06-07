@@ -41,10 +41,6 @@ function formatStatus(value: string): string {
   return value.replace(/[_-]+/g, " ");
 }
 
-function compactNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: value >= 1000 ? "compact" : "standard" }).format(value);
-}
-
 function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="p-history-metric">
@@ -66,8 +62,6 @@ function HistorySummaryBanner({ session }: { session?: SessionHistoryItem | null
       </div>
       <div className="p-history-metrics p-history-metrics--mini">
         <SummaryMetric label="Ended" value={formatSessionTime(session.ended_at)} />
-        <SummaryMetric label="Tokens" value={compactNumber(session.total_tokens)} />
-        <SummaryMetric label="Stops" value={String(session.manual_stops_count)} />
       </div>
     </div>
   );
@@ -282,8 +276,6 @@ export function Analysis({
             <div className="p-history-metrics">
               <SummaryMetric label="Started" value={formatSessionTime(historySession.started_at)} />
               <SummaryMetric label="Ended" value={formatSessionTime(historySession.ended_at)} />
-              <SummaryMetric label="Tokens" value={compactNumber(historySession.total_tokens)} />
-              <SummaryMetric label="Manual stops" value={String(historySession.manual_stops_count)} />
             </div>
 
             <div className="p-analysis__grid">
@@ -324,10 +316,6 @@ export function Analysis({
                   started_at: {historySession.started_at}
                   <br />
                   ended_at: {historySession.ended_at ?? "not recorded"}
-                  <br />
-                  total_tokens: {historySession.total_tokens}
-                  <br />
-                  manual_stops_count: {historySession.manual_stops_count}
                 </div>
               )}
             </div>
