@@ -789,7 +789,36 @@ acoustic/phoneme-level pronunciation scoring. These limitations are revisited
 in Chapter~5.
 
 \section{Chapter Summary}
-% [PLACEHOLDER]
+
+This chapter presented the system design of LUVE across four views. The
+system architecture (Section~3.3.1) organizes the system as cooperating
+components --- a browser client, the Core API, the TEN/WebRTC real-time
+gateway, the STT component, the real-time LLM tutor that produces
+conversational replies, a PostgreSQL database, a RabbitMQ message queue, and
+the grading-worker --- which communicate only over HTTP and RabbitMQ. The
+database design (Section~3.3.2) organizes durable state around six tables ---
+\texttt{users}, \texttt{lessons}, \texttt{sessions}, \texttt{grading\_results},
+\texttt{grading\_skip\_log}, and \texttt{session\_outbox} --- where the outbox
+table is the durable bridge between session completion and asynchronous
+grading. The interface design (Section~3.3.3) treats the frontend as a
+presentation and orchestration layer over the Core API and the real-time
+gateway, rather than a holder of application logic. The processing-flow design
+(Section~3.3.4) ties these together: the real-time speaking flow runs on the
+conversation path, durable session state is persisted at completion, the
+\texttt{session.completed} event is committed to \texttt{session\_outbox} and
+published to RabbitMQ, and grading runs asynchronously off the hot path.
+
+These design decisions are bounded by explicit limitations that frame the scope
+of the work. LUVE is a controlled-demo, research-prototype system and is not
+production-ready. The stable demo STT mode is \texttt{forced\_en} with the
+\texttt{small.en} model and second-pass verification disabled. The reported
+pronunciation value is a clarity estimate derived from speech-recognition
+confidence and uncertainty, not acoustic or phoneme-level scoring.
+\texttt{session\_outbox} is a durable PostgreSQL bridge whose relay is disabled
+by default, so recovery from a failed publish is manual unless the relay is
+enabled; message delivery is at-least-once with idempotent grading rather than
+exactly-once. Horizontal scaling is not claimed. These limitations are
+revisited in Chapter~5.
 
 % ------------------- CHAPTER 4 ------------------------------------
 \chapter{IMPLEMENTATION AND RESULTS}
