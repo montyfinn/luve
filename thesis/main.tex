@@ -1263,7 +1263,38 @@ environments and is therefore not relied upon as a whole; focused per-service
 checks are preferred instead.
 
 \section{Chapter Summary}
-% [PLACEHOLDER]
+
+This chapter described how the LUVE design is implemented and verified. The
+development environment (Section~4.1) is a local, demonstration-oriented setup
+coordinated by the Docker Compose app profile, bringing up the Core API, the
+TEN/WebRTC gateway, the grading-worker, PostgreSQL, and RabbitMQ; the backend is
+written in Python with FastAPI, the client is a React/Vite/TypeScript
+single-page application, and speech recognition runs in the stable demo mode
+(\texttt{small.en} with \texttt{forced\_en} and second-pass verification
+disabled). The implementation process (Section~4.2) mapped these concepts to the
+repository: the client is built into static assets served by the Core API, the
+Core API exposes the REST surface, the TEN/WebRTC gateway serves the real-time
+path, the STT and real-time LLM tutor modules handle recognition and
+conversational replies, and PostgreSQL, RabbitMQ, the \texttt{session\_outbox}
+table, and the grading-worker carry session persistence and asynchronous
+grading. The achieved results (Section~4.3) were presented as implemented,
+demo-visible capabilities --- the real-time speaking flow and the
+saved-session/grading flow --- together with the scoped PR~\#1 STT recognition
+log redaction and the outbox durability mechanism, and were framed
+qualitatively rather than as measured performance. The verification work
+(Section~4.4) comprised build and static checks, targeted backend checks, a
+runtime smoke and pre-demo checklist, and failure-path checks, alongside an
+explicit account of testing limits.
+
+Throughout, the work is bounded by the controlled-demo, research-prototype scope
+and is not production-ready. No production-grade continuous integration or
+quality-assurance process is claimed, and no learning-effectiveness, user-study,
+benchmark, latency, throughput, or coverage results are reported. Stable
+multilingual recognition and acoustic or phoneme-level pronunciation scoring are
+not validated, no exactly-once delivery is claimed --- the outbox relay is
+disabled by default, so recovery is manual unless it is explicitly enabled ---
+and horizontal scaling is not validated. These limitations are analyzed further
+in Chapter~5.
 
 % ------------------- CHAPTER 5 ------------------------------------
 \chapter{CONCLUSION AND FUTURE WORK}
