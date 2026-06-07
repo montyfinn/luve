@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ClaudeCat } from "./ClaudeCat";
+import { CatSleepLuveLogo, ClaudeCat } from "./ClaudeCat";
 import { GearIcon, HistoryIcon } from "./icons";
 
 interface TopBarProps {
@@ -32,8 +32,11 @@ export function TopBar({
 
   return (
     <div className="p-top">
-      <div className="p-brand">
-        L<b>U</b>VE
+      <div className="p-brand" aria-label="LUVE">
+        <CatSleepLuveLogo width={158} height={158} className="p-brand-cat" />
+        <span className="p-brand-word" aria-hidden="true">
+          L<b>U</b>VE
+        </span>
       </div>
       <div className="p-top__right">
         {showSession && (

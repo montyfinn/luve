@@ -35,6 +35,16 @@ async function loadCatSpace() {
   return data.default as LottieData;
 }
 
+async function loadCatFront() {
+  const data = await import("../assets/cats/cat_front.json");
+  return data.default as LottieData;
+}
+
+async function loadCatSleepLuve() {
+  const data = await import("../assets/cats/cat_sleepluve.json");
+  return data.default as LottieData;
+}
+
 async function loadLottiePlayer(): Promise<LottiePlayer> {
   const lottie = await import("lottie-web/build/player/lottie_light");
   return lottie.default;
@@ -91,6 +101,114 @@ export function ClaudeCat({ width = 74, height = 74, className }: ClaudeCatProps
     <span
       ref={ref}
       className={`lottie-box claude-cat claude-cat--help${className ? ` ${className}` : ""}`}
+      style={{ width, height }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function CatFront({ width = 82, height = 82, className }: ClaudeCatProps) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const reduced = useReducedMotion();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (failed || !ref.current) return;
+
+    let alive = true;
+    let anim: AnimationItem | null = null;
+
+    async function mountCat() {
+      try {
+        const [lottie, animationData] = await Promise.all([loadLottiePlayer(), loadCatFront()]);
+        if (!alive || !ref.current) return;
+        anim = lottie.loadAnimation({
+          container: ref.current,
+          renderer: "svg",
+          loop: !reduced,
+          autoplay: !reduced,
+          animationData,
+          rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
+        });
+        if (reduced) {
+          anim.goToAndStop(0, true);
+        }
+      } catch {
+        if (alive) setFailed(true);
+      }
+    }
+
+    void mountCat();
+
+    return () => {
+      alive = false;
+      anim?.destroy();
+      if (ref.current) ref.current.innerHTML = "";
+    };
+  }, [failed, reduced]);
+
+  if (failed) {
+    return <CatCompanion variant="curious" size={Math.min(width, height)} className={className} />;
+  }
+
+  return (
+    <span
+      ref={ref}
+      className={`lottie-box cat-front${className ? ` ${className}` : ""}`}
+      style={{ width, height }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function CatSleepLuveLogo({ width = 82, height = 82, className }: ClaudeCatProps) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const reduced = useReducedMotion();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (failed || !ref.current) return;
+
+    let alive = true;
+    let anim: AnimationItem | null = null;
+
+    async function mountCat() {
+      try {
+        const [lottie, animationData] = await Promise.all([loadLottiePlayer(), loadCatSleepLuve()]);
+        if (!alive || !ref.current) return;
+        anim = lottie.loadAnimation({
+          container: ref.current,
+          renderer: "svg",
+          loop: !reduced,
+          autoplay: !reduced,
+          animationData,
+          rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
+        });
+        if (reduced) {
+          anim.goToAndStop(0, true);
+        }
+      } catch {
+        if (alive) setFailed(true);
+      }
+    }
+
+    void mountCat();
+
+    return () => {
+      alive = false;
+      anim?.destroy();
+      if (ref.current) ref.current.innerHTML = "";
+    };
+  }, [failed, reduced]);
+
+  if (failed) {
+    return <CatCompanion variant="sleepy" size={Math.min(width, height)} className={className} />;
+  }
+
+  return (
+    <span
+      ref={ref}
+      className={`lottie-box cat-sleepluve${className ? ` ${className}` : ""}`}
       style={{ width, height }}
       aria-hidden="true"
     />

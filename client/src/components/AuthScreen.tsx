@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CatCompanion } from "./CatCompanion";
+import { CatFront } from "./ClaudeCat";
 import { BackIcon, CloseIcon } from "./icons";
 
 type Mode = "login" | "register";
@@ -76,7 +76,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
           </button>
 
           <div className="p-authcat">
-            <CatCompanion variant="curious" size={54} />
+            <CatFront width={128} height={128} />
           </div>
 
           <div className="p-tabs" role="tablist">
