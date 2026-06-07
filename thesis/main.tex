@@ -824,14 +824,69 @@ revisited in Chapter~5.
 \chapter{IMPLEMENTATION AND RESULTS}
 
 \section{Development Environment}
-% [PLACEHOLDER] Docker Compose monorepo; Python/FastAPI; PostgreSQL; RabbitMQ;
-% Vite/React/TypeScript client. Frozen baseline: main@6a61bc8.
-% TODO-TABLE [VI]: Bảng 4.1 - Công nghệ và môi trường phát triển. Nội dung cần có:
-% thành phần (ngôn ngữ, framework, CSDL, message broker, STT, client, container),
-% tên/phiên bản, vai trò.
+
+This section describes the development and runtime environment used to build
+and operate LUVE. The implementation discussed throughout this chapter
+corresponds to the frozen baseline \texttt{main@6a61bc8}. Consistent with the
+scope established earlier, this environment targets a controlled-demo,
+research-prototype deployment and is not production-ready; it is intended to be
+run locally for demonstration rather than operated as a hosted service.
+
+\textbf{Technology stack.} LUVE is organized as a Docker Compose monorepo whose
+app profile can run the infrastructure services, Core API, TEN/WebRTC gateway,
+and grading-worker as containers, and the services communicate only over HTTP
+and RabbitMQ. The backend is implemented in Python using the FastAPI
+framework. The \texttt{core-api} codebase runs two FastAPI applications: the
+Core API, which exposes the REST endpoints for authentication, current-user
+lookup, and session management, and the TEN/WebRTC real-time gateway, which
+handles the live audio and control path. Speech recognition is provided by the
+\texttt{faster-whisper} implementation of Whisper; in the stable demo
+configuration it uses the \texttt{small.en} model in \texttt{forced\_en} mode
+with second-pass verification disabled, which makes the recognition path
+English-focused. The real-time LLM tutor produces conversational replies during
+a session, while grading is performed separately by the grading-worker; the
+grading mode is configurable, defaulting to an offline development-preview
+grader and optionally using a real LLM-based grader. Durable state is stored in
+a PostgreSQL database, and RabbitMQ serves as the asynchronous message broker
+between session completion and grading. The frontend client is a single-page
+application built with React, Vite, and TypeScript. The frontend is built as
+static assets and served by the Core API container rather than deployed as a
+separate frontend service. The default Docker Compose configuration runs the
+stack on CPU; an opt-in GPU configuration for the STT gateway is also available
+where suitable hardware is present.
+% TODO-CITE: faster-whisper / Whisper (Radford et al.).
+% TODO-CITE: Docker / Docker Compose, FastAPI, React, Vite, PostgreSQL, RabbitMQ as appropriate.
+
+% TODO-TABLE [VI]: Cần lập bảng môi trường phát triển và công nghệ sử dụng, gồm thành phần, công nghệ, vai trò trong hệ thống, ghi chú demo.
 % TODO-TABLE [VI]: Bảng 4.2 - Cấu hình demo STT/grading. Nội dung cần có:
 % STT model=small.en, mode=forced_en, second-pass=tắt; GRADING_PROVIDER=fake (mặc định),
 % GRADING_FAKE_FALLBACK=tắt, OUTBOX_RELAY_ENABLED=false. Bám đúng LUVE_FACTS.md.
+
+To avoid asserting unverified details, specific dependency version numbers are
+not stated here; each component is described by its role in the system rather
+than by an exact release, and a consolidated summary is provided in the
+development-environment table referenced above.
+
+\textbf{Runtime assumptions.} The environment assumes a local or demonstration
+deployment in which the required services are brought up before a session is
+run. In particular, PostgreSQL and RabbitMQ must be available: PostgreSQL holds
+the durable session and grading state, and RabbitMQ carries the
+\texttt{session.completed} events to the grading-worker, so a demonstration
+cannot complete the end-to-end flow if either is absent. The speech-recognition
+demo mode is English-focused, as described above, and stable multilingual
+recognition is not assumed. Schema changes rely on numbered manual SQL
+migration files with manual verification; there is no production-grade
+automatic migration runner, so a pre-existing database volume may require
+manual confirmation that the relevant migrations have been applied. The
+real-time path is operated at the scale of a single session per node, and the
+environment makes no horizontal-scaling claim. These assumptions are consistent
+with the controlled-demo scope of the prototype and bound how the results in
+the remainder of this chapter should be interpreted.
+
+\textbf{Note on figures.} Any screenshots or environment captures used to
+illustrate this chapter should be taken from the baseline \texttt{main@6a61bc8}.
+The ``cat companion'' interface introduced in PR~\#2 is not merged into
+\texttt{main} and must not be used as the basis for baseline figures.
 
 \section{Implementation Process}
 \subsection{Core Module Implementation}
