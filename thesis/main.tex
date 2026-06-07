@@ -1088,25 +1088,104 @@ the PR~\#2 cat companion UI. These limitations are consistent with the
 controlled-demo, research-prototype scope and are revisited in Chapter~5.
 
 \section{Achieved Results}
+
+This section reports what the implemented LUVE baseline (\texttt{main@6a61bc8})
+achieves at the system level. The results are stated as implemented
+capabilities and demo-visible behavior rather than as measured performance:
+the system is a controlled-demo, research prototype, so no learning-effectiveness,
+benchmark, or user-study outcomes are claimed.
+
 \subsection{Program Execution Results}
-% [PLACEHOLDER] End-to-end demo; screenshots.
-% TODO-FIGURE [VI]: fig/demo_session — ảnh chụp một phiên luyện nói (chạy thật).
+
+\textbf{End-to-end controlled-demo capability.} The primary result is that LUVE
+runs end to end as a controlled demo. The baseline integrates the frontend
+client, Core API, TEN/WebRTC gateway, STT module, real-time LLM tutor,
+PostgreSQL, RabbitMQ, and grading-worker into a coordinated demo deployment. The
+client-facing and control boundaries use HTTP and WebRTC, persistence uses
+PostgreSQL, and asynchronous grading work crosses RabbitMQ. In
+practice the demo is operated through the Docker Compose app profile, which
+brings the services up together; the Core API and the gateway expose readiness
+endpoints that can be used to confirm the stack is up before a session is run.
+The achieved outcome is the working integration of these components for
+demonstration, not a production-ready deployment, and it is presented as
+demo-visible behavior rather than measured throughput or latency.
+
+\textbf{Real-time speaking-practice capability.} A browser-based real-time
+speaking session is implemented through the TEN/WebRTC gateway, which carries
+the audio and control flow of the session. Recognition runs in the stable demo
+mode --- the \texttt{small.en} model in \texttt{forced\_en} mode with
+second-pass verification disabled --- so the path is English-focused; stable
+multilingual recognition is not claimed. During the session the real-time LLM
+tutor generates conversational replies for the interaction. A further
+demo-visible behavior is access control on the session: the gateway's
+session-control routes enforce a session-ownership check, so only the owner of a
+session can drive it, although the gateway's health and diagnostic endpoints
+remain a hardening caveat rather than a fully protected surface. The achieved
+behavior is conversational practice with live recognition and tutor replies; the
+system does not perform acoustic or phoneme-level pronunciation scoring.
+
+% TODO-FIGURE [VI]: Cần chụp màn hình kết quả demo phiên luyện nói từ baseline main@6a61bc8, không dùng PR #2 cat companion UI.
 \begin{figure}[H]
   \centering
   % \includegraphics[width=\textwidth]{fig/demo_session.png}
   \caption{Demo result: a real-time practice session.}
   \label{fig:demo-session}
 \end{figure}
-% TODO-FIGURE [VI]: fig/demo_grading — bảng điểm phiên đã lưu (chạy thật).
+
+\textbf{Saved-session and grading capability.} Completed sessions can be
+persisted and reviewed afterwards. At completion the system creates a durable
+\texttt{session\_outbox} intent for the \texttt{session.completed} work item and
+then attempts to publish that item to RabbitMQ for the grading stage. When
+grading succeeds, the grading-worker writes a
+\texttt{grading\_results} row; when grading cannot proceed or is skipped, it
+records a \texttt{grading\_skip\_log} row instead, so unavailable cases remain
+observable. Two grading modes are available: the default is an offline
+development-preview (``fake'') grader, and a real LLM-based grader can optionally
+be enabled by configuration. Among the reported skills, the pronunciation value
+is a clarity estimate derived from STT confidence and uncertainty, not a
+phoneme-level or acoustic pronunciation score.
+
+% TODO-FIGURE [VI]: Cần chụp màn hình kết quả saved-session/grading từ baseline main@6a61bc8, thể hiện trạng thái grading nếu có.
 \begin{figure}[H]
   \centering
   % \includegraphics[width=\textwidth]{fig/demo_grading.png}
   \caption{Demo result: grading panel for a saved session.}
   \label{fig:demo-grading}
 \end{figure}
+
+\textbf{Reliability and privacy-related improvements.} The baseline includes
+concrete reliability and privacy improvements. The PR~\#1 privacy patch redacts
+raw STT transcript text from the relevant recognition log lines, which retain
+metadata such as text length and confidence values instead. For reliability,
+the \texttt{session\_outbox} table preserves the durable intent to grade a
+completed session even if the inline publish to RabbitMQ fails; in that case a
+warning is logged and the outbox row remains for later recovery. The relay that
+would re-deliver pending rows is disabled by default, so recovery is manual
+unless it is explicitly enabled. These mechanisms are at-least-once-oriented
+with idempotent, session-level deduplication; they do not provide exactly-once
+delivery.
+
+\textbf{Implementation boundaries still visible.} The achieved results are
+bounded by visible implementation limits. The system is single-node and
+controlled-demo oriented, and no horizontal-scaling claim is made. Schema
+changes depend on numbered manual SQL migrations, as there is no production-grade
+automatic migration runner. Health, readiness, and observability remain limited.
+Finally, the ``cat companion'' interface (PR~\#2) is not part of the baseline and
+is excluded from these results.
+
+% TODO-TABLE [VI]: Cần lập bảng kết quả đạt được ở mức hệ thống: chức năng, module liên quan, bằng chứng demo, giới hạn/caveat.
+
 \subsection{Result Evaluation}
-% [PLACEHOLDER] Do NOT fabricate evaluation figures. Report only actually
-% measured results.
+
+The results above are evaluated qualitatively, as implemented capabilities and
+demo-visible behavior, rather than through quantitative measurement. No
+benchmark scores, recognition-accuracy figures, grading-quality metrics, or
+user-study outcomes are reported, because such evidence is not part of the
+baseline; the offline development-preview grader in particular produces
+demonstrative output rather than a measured assessment. Accordingly, the
+achievement claimed in this chapter is the working integration of the designed
+system as a controlled demo, and the corresponding limitations are analyzed
+further in Chapter~5.
 
 \section{Testing}
 % [PLACEHOLDER] Describe real testing (per-service pytest, smoke tests).
