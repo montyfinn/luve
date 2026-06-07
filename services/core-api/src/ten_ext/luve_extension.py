@@ -1258,7 +1258,11 @@ class LUVEExtension(ten.Extension):
                     self._previous_stt_text = analysis.raw_text.strip()
 
                 logger.info(
-                    f"TEN STT Output (final={job.is_final}): '{analysis.raw_text}'"
+                    "TEN STT output processed final=%s text_len=%d avg_logprob=%s no_speech_prob=%s",
+                    job.is_final,
+                    len(analysis.raw_text),
+                    analysis.avg_logprob,
+                    analysis.no_speech_prob,
                 )
                 stt_log(
                     "ten.stt.job_finished is_final=%s trigger=%s inference_ms=%.2f total_ms=%.2f",
@@ -3204,7 +3208,14 @@ class LUVEExtension(ten.Extension):
                     "Phase 1: SUCCESS - Blackbox logs saved to DB for session %s",
                     session_id,
                 )
-                await publish_session_completed(session_id)
+                published = await publish_session_completed(session_id)
+                if not published:
+                    logger.warning(
+                        "session.completed inline publish failed session_id=%s — "
+                        "completion committed and durable session_outbox row persisted; "
+                        "use the outbox relay/manual recovery to deliver grading",
+                        session_id,
+                    )
         except Exception:
             logger.exception("Phase 1: FAILED - Could not save logs to DB")
 

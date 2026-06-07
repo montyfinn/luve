@@ -332,7 +332,13 @@ class StreamCoordinator:
                 condition_on_previous_text=False,
             )
 
-            logger.info(f"STT Output (final={job.is_final}): '{analysis.raw_text}'")
+            logger.info(
+                "STT output processed final=%s text_len=%d avg_logprob=%s no_speech_prob=%s",
+                job.is_final,
+                len(analysis.raw_text),
+                analysis.avg_logprob,
+                analysis.no_speech_prob,
+            )
             analysis.raw_text = sanitize_transcript(analysis.raw_text)
             if job.is_final and analysis.raw_text.strip():
                 self._previous_stt_text = analysis.raw_text.strip()
