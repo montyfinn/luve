@@ -889,8 +889,118 @@ The ``cat companion'' interface introduced in PR~\#2 is not merged into
 \texttt{main} and must not be used as the basis for baseline figures.
 
 \section{Implementation Process}
-\subsection{Core Module Implementation}
-% [PLACEHOLDER] core-api (REST + gateway), grading-worker.
+\subsection{Main Module Implementation}
+
+This section describes how the main modules of LUVE are implemented and how
+they cooperate to make the system run end to end. The description is at the
+system level: it focuses on each module's responsibility and its boundaries
+with the others rather than on line-level code. All modules correspond to the
+frozen baseline \texttt{main@6a61bc8}.
+
+\textbf{Client module.} In the repository, this module is the Vite client under
+\texttt{client/}, with package metadata in \texttt{client/package.json}; during
+the Core API image build, the frontend is compiled and copied into the Core API
+runtime image as static assets. The client is a single-page application built
+with React, Vite, and TypeScript. Instead of being deployed as a separate
+frontend service, it is built into static assets and served by the Core API
+runtime. Its responsibilities are confined to the presentation layer: it
+provides the authentication entry point, the controls to start and manage a
+practice session, the real-time interaction surface during a speaking session,
+and the review of saved sessions and their grading results. The unmerged ``cat
+companion'' interface (PR~\#2) is not part of the baseline client and is not
+treated as an implemented module here.
+
+\textbf{Core API module.} The Core API is implemented in Python with the
+FastAPI framework. The implementation anchor is
+\texttt{services/core-api/src/main.py}, and the corresponding Docker Compose
+service is \texttt{core\_api}. It exposes the system's REST surface, handling
+authentication, current-user lookup, session management, and retrieval of
+saved-session results for display in the client; it also serves the static
+frontend assets described above. The Core API is the entry point for
+client-facing operations that are not on the real-time audio path. With respect
+to privacy, for the STT recognition path the PR~\#1 privacy patch redacts raw
+recognized transcript text from the relevant recognition log lines; those log
+lines retain metadata such as text length and confidence values instead. The
+module's REST responsibilities are deliberately scoped to the endpoints above
+and do not constitute a broad user-management subsystem.
+
+\textbf{TEN/WebRTC gateway module.} The real-time gateway is a second FastAPI
+application that runs from the same \texttt{core-api} codebase but serves the
+live conversation path exclusively. The implementation anchor is
+\texttt{services/core-api/run\_ten.py}; in Docker Compose it runs as the
+\texttt{ten\_gateway} service. It performs WebRTC negotiation and carries the
+audio and control messages of a speaking session, maintaining the state of the
+active real-time session. The gateway is the point at which the real-time flow
+is connected to the STT module and the LLM tutor reply path: it routes the
+learner's audio to recognition and returns the tutor's conversational responses.
+Its session-control routes --- \texttt{/rtc/offer}, \texttt{/rtc/ice}, and
+\texttt{/rtc/cmd} --- are protected by a session-ownership check; not every
+gateway endpoint is protected, however: the health and diagnostic endpoints
+expose only operational metadata and remain a security-hardening caveat rather
+than a fully protected surface.
+
+\textbf{STT module.} Speech recognition is implemented with the
+\texttt{faster-whisper} implementation of Whisper. In the stable demo
+configuration it uses the \texttt{small.en} model in \texttt{forced\_en} mode
+with second-pass verification disabled, so the recognition path is
+English-focused; stable multilingual recognition is not claimed. The module
+produces the recognized transcript together with confidence and uncertainty
+signals that later inform grading. These signals are recognition-level
+indicators only; the module does not perform acoustic or phoneme-level
+pronunciation scoring.
+
+\textbf{Real-time LLM tutor module.} The tutor module passes the recognized
+text to a large language model to generate conversational replies during the
+live interaction. Its role is strictly conversational: it keeps the exchange
+going and returns context-appropriate responses, but it does not produce full
+grading or scoring. This responsibility boundary is important to the design:
+instead of performing grading in the real-time gateway, the baseline delegates
+scoring to the worker after session completion, so the real-time tutor and the
+grading-worker are distinct modules and all grading/scoring is deferred to the
+asynchronous grading stage rather than computed on the real-time path.
+
+\textbf{Persistence and queue module.} Durable state is held in a PostgreSQL
+database, which stores the six baseline tables: \texttt{users}, \texttt{lessons},
+\texttt{sessions}, \texttt{grading\_results}, \texttt{grading\_skip\_log}, and
+\texttt{session\_outbox}. RabbitMQ is the asynchronous message broker that
+carries the \texttt{session.completed} work to the grading stage. The
+\texttt{session\_outbox} table is the bridge between the two: at session
+completion the session state and the outbox row are committed together in one
+database transaction, after which the event is published to RabbitMQ. This
+outbox write is an implementation choice to reduce the dual-write failure risk
+between committing session state in PostgreSQL and publishing the RabbitMQ work
+item. Because the durable intent to grade is captured atomically with the
+session, failed delivery can be recovered from the outbox; in the baseline,
+however, the relay is disabled by default, so recovery is manual unless the
+relay is explicitly enabled. The mechanism is oriented toward at-least-once
+delivery with idempotent, session-level deduplication rather than exactly-once
+delivery.
+
+\textbf{Grading-worker module.} The grading-worker is a separate consumer
+process that listens for \texttt{session.completed} work. The implementation
+anchor is \texttt{services/grading-worker/src/worker.py}; in Docker Compose it
+runs as \texttt{grading\_worker}. For each completed session it reads the
+session and its transcript evidence and produces an outcome: on success it
+writes a \texttt{grading\_results} row, and when grading cannot proceed or is
+intentionally skipped it records a \texttt{grading\_skip\_log} entry instead. The worker supports two grading modes --- an offline
+development-preview (``fake'') grader, which is the default, and an optional
+real LLM-based grader enabled by configuration. Among the reported skills, the
+pronunciation value is a clarity estimate derived from speech-recognition
+confidence and uncertainty, not an acoustic or phoneme-level pronunciation
+score.
+
+\textbf{Runtime and deployment integration.} The modules above are coordinated
+for local and demonstration use through the Docker Compose app profile, which
+brings up the infrastructure services, the Core API, the TEN/WebRTC gateway,
+and the grading-worker. The default configuration runs on CPU, with an opt-in
+GPU configuration available for the STT gateway where suitable hardware is
+present, as described in Section~4.1. Consistent with the prototype scope, this
+integration targets a controlled-demo deployment: it is not production-ready,
+and no horizontal-scaling claim is made --- the real-time path is operated at
+the scale of a single session per node.
+
+% TODO-TABLE [VI]: Cần lập bảng hiện thực các module chính, gồm module, file/service chính, trách nhiệm, ghi chú giới hạn.
+
 \subsection{Data Processing}
 % [PLACEHOLDER] STT -> analysis -> session saving -> grading.
 
