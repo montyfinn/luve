@@ -380,9 +380,12 @@ needed to motivate the design decisions presented in Chapter~3.
 
 \section{Overview of Real-Time Speaking Practice Systems}
 
-A real-time speaking-practice system is, in software terms, a pipeline that
-turns a learner's spoken input into an interactive response and a reviewable
-record. Technically, such a system must capture audio in the browser, transport
+Automated, computer-assisted speaking-practice systems that let a learner hold a
+dialogue with a computer have been studied as dialogue-based computer-assisted
+language learning~\cite{bibauwDialogueCALL2019}. A real-time speaking-practice
+system is, in software terms, a pipeline that turns a learner's spoken input into
+an interactive response and a reviewable record. Technically, such a system must
+capture audio in the browser, transport
 it to a server with low latency, convert the speech into text, generate a
 dialogue response from that text, and persist the session so that it can be
 reviewed and analyzed afterwards. Each of these stages is a distinct concern
@@ -395,7 +398,6 @@ LUVE follows this general shape; the remainder of this chapter introduces the
 specific technologies it uses for each concern. This thesis treats such systems
 purely as software artifacts and makes no claim about their effect on learning
 outcomes.
-% TODO-CITE: real-time speech interaction / computer-assisted speaking practice background.
 
 \section{Web-Based Real-Time Communication}
 
