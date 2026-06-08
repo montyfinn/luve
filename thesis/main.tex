@@ -90,6 +90,14 @@
   pdfauthor={[PLACEHOLDER: Student full name]}
 }
 
+% ---------- Breakable inline code/path -------------------------------
+% Long monospace identifiers and file paths can overflow the margin
+% because \texttt{} forbids line breaks. \codepath renders the same
+% typewriter style via \nolinkurl, which permits breaks at . / _ etc.
+% Same visual style, same content; layout only. Use literal underscores
+% inside \codepath{...} (no backslash-escaping needed).
+\newcommand{\codepath}[1]{\nolinkurl{#1}}
+
 % ---------- Code listing style --------------------------------------
 \lstset{
   basicstyle=\ttfamily\small,
@@ -298,8 +306,10 @@ The subject of the thesis is the LUVE software system itself --- its
 architecture, its constituent components (the frontend client, the Core API, the
 TEN/WebRTC gateway, the STT module, the real-time LLM tutor, PostgreSQL,
 RabbitMQ, the \texttt{session\_outbox} table, and the grading-worker), and the
-data and control flows that connect them. The single reference point for every
-claim in this thesis is the frozen source-code baseline \texttt{main@6a61bc8}.
+data and control flows that connect them. The single reference point for
+backend, architecture, and implementation claims in this thesis is the frozen
+source-code baseline \texttt{main@6a61bc8}; current UI screenshots are treated
+separately as presentation evidence.
 
 \subsection{Research Scope}
 
@@ -316,9 +326,10 @@ and an optional real LLM-based grader enabled by configuration. On the
 reliability side, the outbox relay is treated as disabled by default, so recovery
 from a failed publish is manual unless the relay is explicitly enabled, and the
 hand-off is at-least-once-oriented rather than exactly-once. Horizontal scaling is
-not within scope and is not validated. Finally, the unmerged ``cat companion''
-interface (PR~\#2) is not part of the baseline and is excluded from the scope of
-this thesis.
+not within scope and is not validated. Finally, the cat-companion user interface
+is not used to redefine the frozen backend/system-design baseline; where current
+UI screenshots are included, they are treated only as presentation evidence from
+the current demo client.
 
 \section{Research Methodology}
 
@@ -634,8 +645,8 @@ is English-focused in the stable demo mode, so stable multilingual recognition i
 not claimed; the pronunciation value is a clarity estimate from
 speech-recognition confidence and uncertainty rather than acoustic or
 phoneme-level scoring; and horizontal scaling is not validated. Finally, the
-unmerged ``cat companion'' interface (PR~\#2) is excluded from the baseline and
-is not treated as an implemented requirement.
+cat-companion interface is not treated as a baseline system requirement; current
+UI screenshots, where included, illustrate the presentation layer only.
 
 \section{System Design}
 \subsection{System Architecture}
@@ -681,9 +692,9 @@ comprises the following main components:
   \item \textbf{Client application.} This is the browser-based interface
   where the learner starts a practice session, speaks into the microphone,
   and receives the virtual tutor's replies as well as the grading results
-  of saved sessions. Note that the ``cat companion'' interface (PR~\#2) has
-  not been merged into \texttt{main} and is therefore not considered part of
-  the baseline architecture in this thesis.
+  of saved sessions. The cat-companion presentation used in the current demo UI
+  is treated as interface evidence only and does not redefine the baseline
+  architecture in this thesis.
 
   \item \textbf{Core API.} A FastAPI service (file \texttt{main.py}, port
   8000) responsible for REST functions such as authentication, current-user
@@ -726,7 +737,7 @@ comprises the following main components:
   the grading process.
 
   \item \textbf{Grading service (grading-worker).} A consumer process that
-  listens on the \texttt{luve.session.completed} queue. It performs grading
+  listens on the \codepath{luve.session.completed} queue. It performs grading
   for the completed session and writes the results back to the database for
   later display.
 \end{itemize}
@@ -739,7 +750,7 @@ comprises the following main components:
     \toprule
     \textbf{Component} & \textbf{Responsibility} & \textbf{Boundary / note} \\
     \midrule
-    Frontend client & Presentation and orchestration; authentication entry, session control, real-time interaction surface, saved-session review & Served as static assets by the Core API (HTTP); not the PR~\#2 cat-companion UI \\
+    Frontend client & Presentation and orchestration; authentication entry, session control, real-time interaction surface, saved-session review & Served as static assets by the Core API (HTTP); current UI screenshots are presentation evidence only \\
     Core API & REST surface: authentication, current-user lookup, session management, saved-result retrieval; serves the static frontend & HTTP; entry point for non-real-time operations \\
     TEN/WebRTC gateway & Real-time conversation path: WebRTC negotiation, audio/control flow, links STT and tutor reply & WebRTC; capped at single session per node \\
     STT component & Converts learner audio to recognized text with confidence/uncertainty signals & Stable demo mode \texttt{small.en}/\texttt{forced\_en}; not phoneme/acoustic scoring \\
@@ -898,7 +909,7 @@ authenticated users; at the schema level, \texttt{sessions.user\_id}
 references \texttt{users.id}, while the implementation remains tolerant of
 nullable session ownership in some records. Each completed \texttt{sessions}
 record is associated with the grading artefacts it produces:
-\texttt{grading\_results.session\_id} and \texttt{grading\_skip\_log.session\_id}
+\codepath{grading_results.session_id} and \codepath{grading_skip_log.session_id}
 are each unique per session in their respective tables. A
 \texttt{grading\_results} row holds the scores for a graded session, while a
 \texttt{grading\_skip\_log} row can record cases where grading is skipped or
@@ -968,9 +979,9 @@ management, and saved-session review, and the real-time gateway for the
 WebRTC audio and control flow of a live session. The interface does not
 implement application logic of its own beyond presentation and orchestration;
 it exposes system capabilities by calling the backend contracts and rendering
-their responses. This section describes the baseline client (\texttt{main@6a61bc8})
-at the design level; the unmerged ``cat companion'' interface (PR~\#2) is not
-part of the baseline and is not treated as an implemented feature here.
+their responses. The design discussion remains anchored to the baseline client
+contracts in \texttt{main@6a61bc8}; the screenshots in this section show the
+current demo UI and are used only to illustrate presentation states.
 
 \textbf{Authentication and session ownership.} The interface distinguishes an
 unauthenticated state from an authenticated one. Unauthenticated users are
@@ -983,12 +994,19 @@ control routes are likewise guarded by the same ownership check on the gateway.
 The interface therefore mirrors, at the presentation layer, the access
 boundaries that the backend enforces.
 
-% TODO-FIGURE [VI]: Cần chụp màn hình giao diện đăng nhập/khởi tạo phiên học từ baseline main, không dùng PR #2 cat companion UI.
+% TODO-FIGURE [VI]: Ảnh current demo UI cho điểm vào xác thực; không dùng ảnh này để đổi baseline backend/system.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_login.png}
-  \caption{Authentication entry point of the baseline LUVE client.}
+  \caption{Authentication entry point in the updated LUVE client.}
   \label{fig:ui-login}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{fig/ui_register_form.png}
+  \caption{Registration form in the updated LUVE client.}
+  \label{fig:ui-register-form}
 \end{figure}
 
 \textbf{Practice and real-time interface.} The practice screen is where the
@@ -1002,11 +1020,11 @@ exchange is legible as it happens. Consistent with the system design, the
 real-time interface presents conversational tutor replies only; grading is not
 shown here because it is produced asynchronously after the session ends.
 
-% TODO-FIGURE [VI]: Cần chụp màn hình giao diện luyện nói thời gian thực từ baseline main.
+% TODO-FIGURE [VI]: Ảnh current demo UI cho màn hình bắt đầu luyện nói.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_practice.png}
-  \caption{Authenticated practice start screen of the baseline LUVE client.}
+  \caption{Authenticated practice start screen in the updated LUVE client.}
   \label{fig:ui-practice}
 \end{figure}
 
@@ -1025,11 +1043,11 @@ presenting it as a true phoneme score. The default grading mode in the baseline
 is an offline development-preview grader, so displayed scores must be understood
 as demonstrative output rather than a real production assessment.
 
-% TODO-FIGURE [VI]: Cần chụp màn hình giao diện saved session / grading result từ baseline main.
+% TODO-FIGURE [VI]: Ảnh current demo UI cho danh sách saved sessions / trạng thái analysis.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_saved_session.png}
-  \caption{Saved-session history panel showing a completed baseline demo session.}
+  \caption{Saved-session history view in the updated LUVE client.}
   \label{fig:ui-saved-session}
 \end{figure}
 
@@ -1041,10 +1059,10 @@ and an unavailable state when analysis cannot be shown (for example, when
 grading was skipped). These states keep the asynchronous boundary visible to
 the learner instead of presenting an empty or misleading view.
 
-\textbf{Scope limitation.} The interface described here is the baseline client
-only. The ``cat companion'' interface and the associated mobile-layout
-refinements introduced in PR~\#2 are not merged into \texttt{main} and are
-therefore outside the scope of the implemented system discussed in this thesis.
+\textbf{Scope limitation.} The system-design baseline remains the controlled-demo
+architecture described above. The updated UI screenshots illustrate the current
+demo presentation layer only; they are not used as evidence that all current
+backend or prompt changes have been revalidated as part of the thesis baseline.
 
 \subsection{Algorithm and Processing Flow Design}
 
@@ -1204,9 +1222,10 @@ revisited in Chapter~5.
 \section{Development Environment}
 
 This section describes the development and runtime environment used to build
-and operate LUVE. The implementation discussed throughout this chapter
-corresponds to the frozen baseline \texttt{main@6a61bc8}. Consistent with the
-scope established earlier, this environment targets a controlled-demo,
+and operate LUVE. The backend and runtime implementation discussed throughout
+this chapter corresponds to the frozen baseline \texttt{main@6a61bc8}, while
+current UI screenshots are labelled as presentation evidence. Consistent with
+the scope established earlier, this environment targets a controlled-demo,
 research-prototype deployment and is not production-ready; it is intended to be
 run locally for demonstration rather than operated as a hosted service.
 
@@ -1300,10 +1319,10 @@ environment makes no horizontal-scaling claim. These assumptions are consistent
 with the controlled-demo scope of the prototype and bound how the results in
 the remainder of this chapter should be interpreted.
 
-\textbf{Note on figures.} Any screenshots or environment captures used to
-illustrate this chapter should be taken from the baseline \texttt{main@6a61bc8}.
-The ``cat companion'' interface introduced in PR~\#2 is not merged into
-\texttt{main} and must not be used as the basis for baseline figures.
+\textbf{Note on figures.} Backend and runtime claims in this chapter remain tied
+to the baseline \texttt{main@6a61bc8}. UI screenshots may show the current demo
+client and should be interpreted as presentation evidence rather than as a full
+rewrite of the system-design baseline.
 
 \section{Implementation Process}
 \subsection{Main Module Implementation}
@@ -1329,7 +1348,7 @@ treated as an implemented module here.
 
 \textbf{Core API module.} The Core API is implemented in Python with the
 FastAPI framework. The implementation anchor is
-\texttt{services/core-api/src/main.py}, and the corresponding Docker Compose
+\codepath{services/core-api/src/main.py}, and the corresponding Docker Compose
 service is \texttt{core\_api}. It exposes the system's REST surface, handling
 authentication, current-user lookup, session management, and retrieval of
 saved-session results for display in the client; it also serves the static
@@ -1344,7 +1363,7 @@ and do not constitute a broad user-management subsystem.
 \textbf{TEN/WebRTC gateway module.} The real-time gateway is a second FastAPI
 application that runs from the same \texttt{core-api} codebase but serves the
 live conversation path exclusively. The implementation anchor is
-\texttt{services/core-api/run\_ten.py}; in Docker Compose it runs as the
+\codepath{services/core-api/run_ten.py}; in Docker Compose it runs as the
 \texttt{ten\_gateway} service. It performs WebRTC negotiation and carries the
 audio and control messages of a speaking session, maintaining the state of the
 active real-time session. The gateway is the point at which the real-time flow
@@ -1377,14 +1396,14 @@ grading-worker are distinct modules and all grading/scoring is deferred to the
 asynchronous grading stage rather than computed on the real-time path.
 
 \textbf{Persistence and queue module.} Durable state is held in a PostgreSQL
-database, which stores the six baseline tables: \texttt{users}, \texttt{lessons},
-\texttt{sessions}, \texttt{grading\_results}, \texttt{grading\_skip\_log}, and
-\texttt{session\_outbox}. RabbitMQ is the asynchronous message broker that
-carries the \texttt{session.completed} work to the grading stage. The
-\texttt{session\_outbox} table is the bridge between the two: at session
+database, which stores the six baseline tables: \codepath{users}, \codepath{lessons},
+\codepath{sessions}, \codepath{grading_results}, \codepath{grading_skip_log}, and
+\codepath{session_outbox}. RabbitMQ is the asynchronous message broker that
+carries the \codepath{session.completed} work to the grading stage. The
+\codepath{session_outbox} table is the bridge between the two: at session
 completion the session state and the outbox row are committed together in one
 database transaction, after which an inline publish of the
-\texttt{session.completed} work item to RabbitMQ is attempted. This
+\codepath{session.completed} work item to RabbitMQ is attempted. This
 outbox write is an implementation choice to reduce the dual-write failure risk
 between committing session state in PostgreSQL and publishing the RabbitMQ work
 item. Because the durable intent to grade is captured atomically with the
@@ -1396,7 +1415,7 @@ delivery.
 
 \textbf{Grading-worker module.} The grading-worker is a separate consumer
 process that listens for \texttt{session.completed} work. The implementation
-anchor is \texttt{services/grading-worker/src/worker.py}; in Docker Compose it
+anchor is \codepath{services/grading-worker/src/worker.py}; in Docker Compose it
 runs as \texttt{grading\_worker}. For each completed session it reads the
 session and its transcript evidence and produces an outcome: on success it
 writes a \texttt{grading\_results} row, and when grading cannot proceed or is
@@ -1425,10 +1444,10 @@ the scale of a single session per node.
     \toprule
     \textbf{Module} & \textbf{Implementation anchor} & \textbf{Responsibility / note} \\
     \midrule
-    Client & \texttt{client/}, \texttt{client/package.json} & Vite client built into static assets served by the Core API; excludes PR~\#2 cat-companion UI \\
-    Core API & \texttt{services/core-api/src/main.py} (Compose: \texttt{core\_api}) & REST surface and static-asset serving \\
-    TEN/WebRTC gateway & \texttt{services/core-api/run\_ten.py} (Compose: \texttt{ten\_gateway}) & Real-time path; control routes owner-scoped, health/diagnostic endpoints a hardening caveat \\
-    Grading-worker & \texttt{services/grading-worker/src/worker.py} (Compose: \texttt{grading\_worker}) & Consumes completed-session work; writes \texttt{grading\_results} or \texttt{grading\_skip\_log} \\
+    Client & \texttt{client/}, \texttt{client/package.json} & Vite client built into static assets served by the Core API; current UI screenshots are presentation evidence only \\
+    Core API & \codepath{services/core-api/src/main.py} (Compose: \texttt{core\_api}) & REST surface and static-asset serving \\
+    TEN/WebRTC gateway & \codepath{services/core-api/run_ten.py} (Compose: \texttt{ten\_gateway}) & Real-time path; control routes owner-scoped, health/diagnostic endpoints a hardening caveat \\
+    Grading-worker & \codepath{services/grading-worker/src/worker.py} (Compose: \texttt{grading\_worker}) & Consumes completed-session work; writes \texttt{grading\_results} or \texttt{grading\_skip\_log} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -1505,8 +1524,8 @@ displayed result reflects the backend state of a session: at the design level
 the interface can show pending or processing grading, an available graded
 result, an insufficient-evidence or skipped outcome, and a failed or
 unavailable analysis, to the extent these states are represented by the
-backend. The ``cat companion'' interface (PR~\#2) is not part of the baseline
-and is not used as the basis for this retrieval view.
+backend. Current UI screenshots may illustrate this retrieval view, but they are
+not used to redefine the backend data-processing baseline.
 
 \begin{table}[H]
   \centering\small
@@ -1533,17 +1552,21 @@ interpreted. The STT stage is English-focused in the stable demo mode. Schema
 evolution relies on numbered manual SQL migrations, with no production-grade
 automatic migration runner, so the persisted-data layout depends on those
 migrations having been applied. Delivery of grading work is at-least-once and
-not exactly-once, horizontal scaling is not claimed, and the baseline excludes
-the PR~\#2 cat companion UI. These limitations are consistent with the
-controlled-demo, research-prototype scope and are revisited in Chapter~5.
+not exactly-once, horizontal scaling is not claimed, and current UI screenshots
+do not redefine the backend/system-design baseline. These limitations are
+consistent with the controlled-demo, research-prototype scope and are revisited
+in Chapter~5.
 
 \section{Achieved Results}
 
-This section reports what the implemented LUVE baseline (\texttt{main@6a61bc8})
-achieves at the system level. The results are stated as implemented
-capabilities and demo-visible behavior rather than as measured performance:
-the system is a controlled-demo, research prototype, so no learning-effectiveness,
-benchmark, or user-study outcomes are claimed.
+This section reports what the implemented LUVE system achieves at the system
+level. Backend and integration claims remain anchored to the controlled-demo
+baseline \texttt{main@6a61bc8}; the UI screenshots used as visual evidence in
+this draft were recaptured from the current demo client and are treated only as
+presentation evidence. The results are stated as implemented capabilities and
+demo-visible behavior rather than as measured performance: the system is a
+controlled-demo, research prototype, so no learning-effectiveness, benchmark, or
+user-study outcomes are claimed.
 
 \subsection{Program Execution Results}
 
@@ -1574,11 +1597,11 @@ remain a hardening caveat rather than a fully protected surface. The achieved
 behavior is conversational practice with live recognition and tutor replies; the
 system does not perform acoustic or phoneme-level pronunciation scoring.
 
-% TODO-FIGURE [VI]: Cần chụp màn hình kết quả demo phiên luyện nói từ baseline main@6a61bc8, không dùng PR #2 cat companion UI.
+% TODO-FIGURE [VI]: Ảnh current demo UI cho phiên luyện nói thời gian thực.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/demo_session.png}
-  \caption{Connected real-time session screen while the speech engine was still warming up.}
+  \caption{Current demo session screen during real-time speaking practice.}
   \label{fig:demo-session}
 \end{figure}
 
@@ -1595,11 +1618,11 @@ be enabled by configuration. Among the reported skills, the pronunciation value
 is a clarity estimate derived from STT confidence and uncertainty, not a
 phoneme-level or acoustic pronunciation score.
 
-% TODO-FIGURE [VI]: Cần chụp màn hình kết quả saved-session/grading từ baseline main@6a61bc8, thể hiện trạng thái grading nếu có.
+% TODO-FIGURE [VI]: Ảnh current demo UI cho saved-session analysis / grading.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/demo_grading.png}
-  \caption{Post-session grading skip state for a session with insufficient user speech.}
+  \caption{Post-session development-preview grading view for the captured demo session.}
   \label{fig:demo-grading}
 \end{figure}
 
@@ -1620,26 +1643,27 @@ bounded by visible implementation limits. The system is single-node and
 controlled-demo oriented, and no horizontal-scaling claim is made. Schema
 changes depend on numbered manual SQL migrations, as there is no production-grade
 automatic migration runner. Health, readiness, and observability remain limited.
-Finally, the ``cat companion'' interface (PR~\#2) is not part of the baseline and
-is excluded from these results.
+The current UI screenshots illustrate presentation behavior only and do not
+redefine the backend/system-design baseline used for these results.
 
 Table~\ref{tab:achieved-results} summarizes the demo-visible capabilities that
-were directly observed during a captured baseline run, together with their
+are illustrated by the captured current-UI screenshots, together with their
 evidence and caveats.
 
 \begin{table}[H]
   \centering\small
-  \caption{Demo-visible capabilities observed in a captured baseline run.}
+  \caption{Demo-visible capabilities illustrated by captured current-UI screenshots.}
   \label{tab:achieved-results}
   \begin{tabular}{p{3.1cm} p{2.4cm} p{4.3cm} p{4.2cm}}
     \toprule
     \textbf{Observed capability} & \textbf{Evidence} & \textbf{Observed state} & \textbf{Caveat} \\
     \midrule
-    Authentication entry UI & Fig.~\ref{fig:ui-login} & Baseline auth-entry/landing screen rendered & Demo-visible UI only; no auth performance claim \\
-    Practice start / home UI & Fig.~\ref{fig:ui-practice} & Authenticated practice start screen after local registration & Throwaway local account; no learning-effectiveness claim \\
-    Connected session shell & Fig.~\ref{fig:demo-session} & Real-time session reached a connected state & Speech-engine/model warm-up was visible; headless browser had no real microphone, so no real spoken transcript was captured \\
-    Saved-session history & Fig.~\ref{fig:ui-saved-session} & One completed session listed in the history panel & Session had no captured user speech; no scores shown \\
-    Post-session grading-skip handling & Fig.~\ref{fig:demo-grading} & Insufficient-evidence / skipped-grading state shown (``Detected student words: 0'') & Skipped-grading path only; not a successful grading result, and not a real-LLM or fake/dev-preview score output \\
+    Authentication entry UI & Fig.~\ref{fig:ui-login} & Updated unauthenticated auth-entry screen rendered & UI evidence only; no auth performance claim \\
+    Registration form UI & Fig.~\ref{fig:ui-register-form} & Account-creation form displayed in the updated client & UI evidence only; no account-security or auth-success claim \\
+    Practice start / home UI & Fig.~\ref{fig:ui-practice} & Authenticated practice start screen rendered & Demo account context; no learning-effectiveness claim \\
+    Real-time session screen & Fig.~\ref{fig:demo-session} & Connected current demo session with transcript and tutor reply visible & No STT-accuracy, tutor-quality, latency, or throughput claim \\
+    Saved-session history & Fig.~\ref{fig:ui-saved-session} & Saved-session history modal lists completed sessions & UI evidence only; no survey or learning-effectiveness claim \\
+    Post-session grading/analysis view & Fig.~\ref{fig:demo-grading} & Development-preview grading/analysis output with scores and feedback visible & Demonstrative grading output only; not a validated assessment, real-LLM result, benchmark, or production score \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -1707,32 +1731,33 @@ works. Where these steps have not been executed in a given environment, they
 remain a recommended checklist rather than a recorded test result.
 
 Table~\ref{tab:verification} records the verification items that were actually
-executed or directly observed for the captured baseline run; it deliberately
-reports only observed results, not a test suite.
+executed or directly observed. Backend/runtime checks remain tied to the captured
+baseline run, while the screenshot rows record current-UI presentation evidence;
+the table deliberately reports only observed results, not a test suite.
 
 \begin{table}[H]
   \centering\small
-  \caption{Verification items executed/observed for the captured baseline run.}
+  \caption{Verification and UI-evidence items executed/observed for the thesis draft.}
   \label{tab:verification}
   \begin{tabular}{p{3.4cm} p{3.4cm} p{3.6cm} p{3.6cm}}
     \toprule
     \textbf{Verification item} & \textbf{Evidence source} & \textbf{Observed result} & \textbf{Limitation} \\
     \midrule
-    Baseline runtime commit & \texttt{git rev-parse} in \texttt{/tmp/luve-main-6a61bc8} & HEAD exactly \texttt{6a61bc8} & Detached baseline worktree only \\
+    Baseline runtime commit & \texttt{git rev-parse} in \codepath{/tmp/luve-main-6a61bc8} & HEAD exactly \texttt{6a61bc8} & Detached baseline worktree only \\
     Baseline stack running & \texttt{docker compose -p luve\_baseline ps} & All services up; core-api, gateway, postgres, rabbitmq, redis healthy & Single-node controlled-demo \\
     Core API readiness & \texttt{GET :8000/readyz} & HTTP 200, \texttt{database: ok} & DB reachability only \\
     Gateway readiness & \texttt{GET :8080/readyz} & HTTP 200, \texttt{gateway: initialized} & Startup state only; no RabbitMQ probe \\
-    Baseline frontend served & \texttt{GET :8000/app/} & LUVE single-page app served & Served bundle is baseline; no PR~\#2 companion shell \\
-    Screenshot capture & Playwright, clean context & Five baseline screenshots captured (Figs.~\ref{fig:ui-login}--\ref{fig:demo-grading}) & 1440$\times$900 viewport; no microphone \\
-    Session evidence & Fig.~\ref{fig:demo-session} & WebRTC session reached connected state & No real speech; transcript not validated \\
-    Grading evidence & Fig.~\ref{fig:demo-grading} & Skipped / insufficient-evidence grading state captured & Skip path only; no successful grading observed \\
+    Baseline frontend served & \texttt{GET :8000/app/} & LUVE single-page app served during baseline check & Backend/runtime baseline check only; separate from current UI screenshots \\
+    Current UI screenshot capture & Manual current-app capture & Six current-UI screenshots captured (Figs.~\ref{fig:ui-login}--\ref{fig:demo-grading}) & Presentation evidence only; not a full backend baseline rewrite \\
+    Session evidence & Fig.~\ref{fig:demo-session} & Current demo UI shows a connected session with transcript and tutor reply visible & No STT-accuracy, tutor-quality, latency, or throughput claim \\
+    Grading evidence & Fig.~\ref{fig:demo-grading} & Development-preview grading/analysis view captured & Demonstrative output only; no real-LLM or validated grading-quality result \\
     \bottomrule
   \end{tabular}
 \end{table}
 This table reports no full test-suite result, no load/stress/benchmark result,
 no coverage/pass-rate/test-count, and no user-study or learning-effectiveness
-result. The headless session had no real microphone, so it does not validate STT
-quality.
+result. The current UI screenshot evidence does not validate STT accuracy, tutor
+quality, grading validity, latency, or throughput.
 
 \textbf{Negative and failure-path verification.} Beyond the happy path, a few
 failure behaviors are important to verify or document. If the inline publish to
@@ -1805,7 +1830,8 @@ system-design perspective, and its contribution lies in the architecture, the
 module boundaries, the data and control flows, and the runtime integration that
 together let the prototype run end to end. The frozen baseline
 \texttt{main@6a61bc8} served as the single reference point for every design and
-implementation claim in the preceding chapters.
+implementation claim in the preceding chapters; current UI screenshots were
+used only as presentation evidence and do not redefine that baseline.
 
 At the system-design level, LUVE integrates a frontend client with the Core API
 and the TEN/WebRTC gateway. The client is a React/Vite/TypeScript single-page
@@ -1969,10 +1995,10 @@ runtime smoke and pre-demo checklist is treated as a recommended verification
 procedure; its items count as recorded results only when they are actually
 executed in the target environment.
 
-\textbf{User-interface baseline limitation.} The ``cat companion'' interface
-introduced in PR~\#2 is not part of the baseline and is not described as
-implemented baseline functionality; the results and discussion in this thesis
-refer only to the baseline client.
+\textbf{User-interface evidence limitation.} The cat-companion presentation shown
+in current UI screenshots is treated as presentation evidence only. It does not
+change the frozen backend/system-design baseline or imply that all current app
+changes have been revalidated as thesis results.
 
 \begin{table}[H]
   \centering\small
@@ -1988,7 +2014,7 @@ refer only to the baseline client.
     Real-time scaling / checkpointing & Single-session-per-node; horizontal scaling not validated; in-memory event log may be lost on crash before completion & Future work could add timeout/resource controls, mid-session durable checkpointing, and investigate multi-session/multi-node scaling \\
     STT / pronunciation & English-focused stable mode; multilingual not validated; pronunciation is a clarity estimate, not phoneme/acoustic scoring & Future work may evaluate multilingual/second-pass STT behind a canary, and explore true acoustic/phoneme-level scoring \\
     Grading / evaluation & Default offline/dev-preview grader; optional real LLM grader not a production-assessment guarantee; no benchmark/accuracy result & Future work could develop a grading-quality evaluation methodology and validate the real LLM grader with curated test cases \\
-    UI / user-facing & Saved-session review states are basic; cat-companion UI (PR~\#2) is not baseline & Future UI work could refine review states and revisit optional companion UI only if later merged and re-reviewed \\
+    UI / user-facing & Saved-session review states are basic; current cat-companion UI screenshots are presentation evidence only & Future UI work could refine review states and fully re-review the current UI if it becomes part of a new system baseline \\
     Research / user study & No user study or learning-effectiveness result is part of this thesis & Future user studies could assess usability or, with an appropriate design, learning outcomes \\
     \bottomrule
   \end{tabular}
@@ -2053,9 +2079,9 @@ research; it is not a current result of this thesis.
 \textbf{User interface and user-facing refinement.} Future user-interface work
 could polish the saved-session review states --- for example, the presentation
 of pending, available, and skipped grading outcomes --- and could revisit
-optional companion-interface work. The ``cat companion'' interface from PR~\#2
-remains outside the thesis baseline and should not be described as baseline
-functionality unless it is later merged and re-reviewed.
+optional companion-interface work. The current cat-companion screenshots should
+remain described as UI presentation evidence unless the full current application
+is later audited and adopted as a new thesis baseline.
 
 \textbf{Research evaluation.} Finally, future user studies could evaluate the
 usability of the system or, with an appropriate experimental design, learning

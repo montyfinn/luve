@@ -32,8 +32,11 @@ soften them in the thesis.
   **at-least-once**; grading is **idempotent (dedup on `session_id`)**.
 - ❌ Do **not** claim horizontal scaling. The realtime hot path is
   **single-session-per-node**.
-- ⚠️ The "cat companion" UI (**PR #2**) is **not merged into `main`** and
-  must **not** be treated as the baseline.
+- ⚠️ The backend/system-design baseline remains **`main@6a61bc8`**.
+  Current cat-companion/current-UI screenshots may be used only as client
+  presentation/interface evidence for the demo. They do not redefine the
+  frozen backend baseline, prove backend correctness, or imply that PR #2 /
+  current UI work is merged or validated as backend behavior.
 
 ## What the system is
 A Docker Compose monorepo for **real-time English speaking practice**:

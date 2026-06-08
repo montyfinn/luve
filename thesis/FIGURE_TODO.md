@@ -21,14 +21,15 @@ Place final images under `thesis/fig/` and uncomment the matching
 | architecture_overview | `fig/architecture_overview.png` | §3.3.1 `\label{fig:arch}` | core-api (`main.py` REST :8000 + `run_ten.py` gateway :8080), grading-worker, PostgreSQL, RabbitMQ. Show HTTP/WebRTC client-facing and control boundaries, PostgreSQL persistence, and RabbitMQ asynchronous grading work; do not describe the system as communicating only over HTTP + RabbitMQ. |
 | realtime_pipeline | `fig/realtime_pipeline.png` | §3.3.1 `\label{fig:pipeline}` | Hot-path VAD → STT → LLM → TTS → WebRTC. Note single-session-per-node cap. |
 | erd | `fig/erd.png` | §3.3.2 `\label{fig:erd}` | ERD of: USERS, LESSONS, SESSIONS, GRADING_RESULTS, GRADING_SKIP_LOG, SESSION_OUTBOX. |
-| ui_login | `fig/ui_login.png` | §3.3.3 `\label{fig:ui-login}` | Baseline `main` authentication entry point (xem ghi chú [VI] bên dưới). |
-| ui_practice | `fig/ui_practice.png` | §3.3.3 `\label{fig:ui-practice}` | Real practice screen from `main`. **Do NOT** use the unmerged "cat companion" UI (PR #2) as baseline. |
-| ui_saved_session | `fig/ui_saved_session.png` | §3.3.3 `\label{fig:ui-saved-session}` | Saved-session review / grading-result screen from the baseline client (xem ghi chú [VI] bên dưới). |
+| ui_login | `fig/ui_login.png` | §3.3.3 `\label{fig:ui-login}` | Current LUVE authentication entry point. Treat as presentation/interface evidence only; it does not redefine the backend/system-design baseline `main@6a61bc8`. |
+| ui_register_form | `fig/ui_register_form.png` | §3.3.3 `\label{fig:ui-register-form}` | Current LUVE registration form with demo-safe data only. Treat as presentation/interface evidence only; do not use it as backend/runtime verification. |
+| ui_practice | `fig/ui_practice.png` | §3.3.3 `\label{fig:ui-practice}` | Current LUVE practice start screen. Treat as presentation/interface evidence only; it does not redefine the backend/system-design baseline `main@6a61bc8`. |
+| ui_saved_session | `fig/ui_saved_session.png` | §3.3.3 `\label{fig:ui-saved-session}` | Current LUVE saved-session review / grading-result screen. Treat as presentation/interface evidence only; runtime/backend verification remains separate. |
 | session_grading_flow | `fig/session_grading_flow.png` | §3.3.4 `\label{fig:session-grading-flow}` | On session end: commit SESSIONS + session_outbox in one transaction, then attempt inline publish of `session.completed`; grading is idempotent (dedup on `session_id`); outbox relay default-off. |
 | realtime_sequence | `fig/realtime_sequence.png` | §3.3.4 `\label{fig:realtime-sequence}` | Sequence diagram of the real-time speaking flow (xem ghi chú [VI] bên dưới). |
 | publish_failure_flow | `fig/publish_failure_flow.png` | §3.3.4 `\label{fig:publish-failure-flow}` | Flowchart xử lý lỗi publish RabbitMQ (xem ghi chú [VI] bên dưới). |
-| demo_session | `fig/demo_session.png` | §4.3.1 `\label{fig:demo-session}` | Screenshot of a live practice session (real run). |
-| demo_grading | `fig/demo_grading.png` | §4.3.1 `\label{fig:demo-grading}` | Saved-session grading panel (real run). |
+| demo_session | `fig/demo_session.png` | §4.3.1 `\label{fig:demo-session}` | Current demo session screen during real-time speaking practice. Treat as presentation evidence; do not infer STT quality, latency, or tutor quality from the screenshot alone. |
+| demo_grading | `fig/demo_grading.png` | §4.3.1 `\label{fig:demo-grading}` | Current post-session development-preview grading/analysis screen. It is illustrative UI evidence, not validated grading or learning-effectiveness evidence. |
 
 ## TABLE_TODO — tables the LUVE thesis still needs
 
@@ -55,18 +56,27 @@ tracking labels assigned here for unnumbered markers.
 
 ### `fig/ui_login.png` — `\label{fig:ui-login}`
 - Chụp màn hình **điểm vào xác thực (authentication entry point)** của client.
-- Ảnh BẮT BUỘC lấy từ baseline `main@6a61bc8`, **KHÔNG dùng UI "cat companion"
-  của PR #2**.
+- Có thể dùng ảnh current UI/cat-companion làm **presentation/interface evidence**.
+  Ảnh này **không** đổi baseline backend/system-design `main@6a61bc8` và không
+  chứng minh backend correctness.
+
+### `fig/ui_register_form.png` — `\label{fig:ui-register-form}`
+- Chụp màn hình **registration form** của current UI với email demo-safe.
+- Không để lộ email cá nhân, mật khẩu thật, token, key, hoặc secret.
+- Ảnh này chỉ là **presentation/interface evidence**, không phải backend/runtime
+  verification.
 
 ### `fig/ui_practice.png` — `\label{fig:ui-practice}`
-- Chụp màn hình **luyện nói thời gian thực** của client (baseline `main@6a61bc8`).
-- **KHÔNG dùng UI "cat companion" của PR #2.**
+- Chụp màn hình **practice start screen** của current UI.
+- Có thể dùng ảnh current UI/cat-companion làm **presentation/interface evidence**.
+  Không dùng ảnh này để đổi baseline backend/system-design `main@6a61bc8`.
 
 ### `fig/ui_saved_session.png` — `\label{fig:ui-saved-session}`
 - Chụp màn hình **xem lại phiên đã lưu / hiển thị kết quả chấm điểm** của client.
 - Thể hiện trạng thái chấm điểm **pending / available / skipped** nếu nhìn thấy
-  được trong baseline.
-- **KHÔNG dùng UI "cat companion" của PR #2.**
+  được trong current UI.
+- Có thể dùng ảnh current UI/cat-companion làm **presentation/interface evidence**.
+  Runtime/backend verification phải được ghi riêng, không suy ra từ ảnh UI.
 
 ## Ghi chú chuẩn bị hình §3.3.4 (nội bộ, tiếng Việt)
 
