@@ -344,9 +344,9 @@ comprises the following main components:
   the baseline architecture in this thesis.
 
   \item \textbf{Core API.} A FastAPI service (file \texttt{main.py}, port
-  8000) responsible for REST functions such as authentication, user
-  management, and session management. It is the entry point for operations
-  that are not part of the real-time audio path.
+  8000) responsible for REST functions such as authentication, current-user
+  lookup, session management, and saved-result retrieval. It is the entry point
+  for operations that are not part of the real-time audio path.
 
   \item \textbf{Real-time TEN/WebRTC gateway.} A second FastAPI application
   (file \texttt{run\_ten.py}, port 8080) that shares the same codebase as
@@ -370,7 +370,7 @@ comprises the following main components:
   the learner. In the real-time flow, the large language model is used to
   generate conversational replies appropriate to the context of the
   learner's utterance. This component is not described as the primary grader;
-  the full pedagogical evaluation and grading results are processed
+  the full grading/scoring analysis and grading results are processed
   asynchronously by the grading-worker after the session ends. This component
   provides the ``tutor'' behavior of the system.
   % TODO-CITE: the large language model used for the tutor component.
@@ -381,9 +381,10 @@ comprises the following main components:
   supports the reliable event-delivery mechanism (described later).
 
   \item \textbf{RabbitMQ message queue.} Acts as the asynchronous channel
-  between the conversation flow and the grading flow. When a session ends,
-  the \texttt{session.completed} event is delivered through RabbitMQ to
-  trigger the grading process.
+  between the conversation flow and the grading flow. When a session ends, the
+  durable \texttt{session\_outbox} intent is recorded and an inline publish of
+  the \texttt{session.completed} work item to RabbitMQ is attempted to trigger
+  the grading process.
 
   \item \textbf{Grading service (grading-worker).} A consumer process that
   listens on the \texttt{luve.session.completed} queue. It performs grading
@@ -404,13 +405,14 @@ a conversational reply appropriate to the context, which is then played back
 to the learner. Session events are collected during the interaction and
 persisted when the session ends. At session completion, the system writes
 the session record and a \texttt{session\_outbox} record within the same
-database transaction, then publishes the \texttt{session.completed} event. If
-the process crashes before session completion, part of the event log still
-held in memory may not have been persisted; this is a limitation of the
-current prototype. The \texttt{session.completed} event is delivered to the
-grading flow through RabbitMQ; the grading-worker receives it, performs
-grading, and stores the results in the database for later display to the
-learner.
+database transaction, after which an inline publish of the
+\texttt{session.completed} work item to RabbitMQ is attempted. If the publish
+fails, the outbox row remains for manual recovery, since the relay is disabled
+by default. If the process crashes before session completion, part of the event
+log still held in memory may not have been persisted; this is a limitation of
+the current prototype. When the work item reaches the grading flow, the
+grading-worker receives it, performs grading, and stores the results in the
+database for later display to the learner.
 
 \textbf{Boundary between real-time conversation and asynchronous grading.}
 An important design characteristic of LUVE is the clear separation between
@@ -545,8 +547,9 @@ runtime sequence described in Section~3.3.1. The real-time speaking session
 occurs first, on the conversation path; during the interaction, session
 events are accumulated. Durable session state is persisted only at completion:
 when the session ends, the system writes the \texttt{sessions} row and a
-\texttt{session\_outbox} row in one database transaction, and the
-\texttt{session.completed} event is then delivered across the queue boundary.
+\texttt{session\_outbox} row in one database transaction, and the system then
+attempts to deliver the \texttt{session.completed} work item across the queue
+boundary.
 Later, and off the real-time path, the grading-worker consumes that event and
 writes the resulting \texttt{grading\_results} (or a \texttt{grading\_skip\_log}
 entry when grading is skipped). The application uses the schema to persist the
@@ -568,11 +571,11 @@ provide, and this thesis does not claim, exactly-once delivery.
 
 \textbf{Privacy and design notes.} The persisted session and grading data are
 deliberately kept separate from application logs. Following the backend
-privacy patch (PR~\#1, merged into \texttt{main}), raw recognized transcripts
-are redacted from the logs --- the logs retain only metadata such as text
-length and confidence values. Raw transcript text is thus not treated as
-persistent application logging; the durable record of a session lives in the
-database tables described above rather than in log output.
+privacy patch (PR~\#1, merged into \texttt{main}), raw recognized transcript
+text is redacted from the relevant STT recognition log lines; those lines retain
+metadata such as text length and confidence values. Raw transcript text is thus
+not treated as persistent application logging; the durable record of a session
+lives in the database tables described above rather than in log output.
 
 \textbf{Limitations.} The schema is created from a baseline initialization
 script and evolved through numbered SQL migration files, but the current
@@ -696,12 +699,12 @@ speech-to-text (STT) component, which in the stable demo configuration runs in
 verification disabled, producing recognized text together with confidence
 metrics. The recognized text is forwarded to the real-time LLM tutor, which
 generates conversational replies only; it is not the grading component, and no
-full scoring or pedagogical evaluation is produced on this path. Tutor
+full scoring or grading/scoring analysis is produced on this path. Tutor
 responses are returned to the learner through the TTS/WebRTC output path when
-tutor audio is enabled. For
-privacy, raw STT transcripts are not written to the application logs: following
-the backend privacy patch (PR~\#1), log records retain only metadata such as
-text length and confidence values.
+tutor audio is enabled. For privacy, following the backend privacy patch
+(PR~\#1), raw recognized transcript text is redacted from the relevant STT
+recognition log lines; those lines retain metadata such as text length and
+confidence values.
 
 % TODO-FIGURE [VI]: Cần vẽ sequence diagram cho luồng realtime: browser audio -> TEN/WebRTC gateway -> VAD/STT -> LLM tutor -> response/output.
 \begin{figure}[H]
@@ -747,8 +750,9 @@ level, so a re-delivered event does not produce duplicate results.
 \end{figure}
 
 \textbf{Asynchronous grading flow.} Grading runs off the real-time path. The
-grading-worker consumes the \texttt{session.completed} work item delivered
-through the queue, reads the completed session and its transcript evidence, and
+grading-worker consumes the \texttt{session.completed} work item when it is
+received from the queue, reads the completed session and its transcript
+evidence, and
 produces a grading outcome. When grading succeeds, it writes a
 \texttt{grading\_results} row; when grading cannot proceed or is intentionally
 skipped (for example, when eligibility conditions are not met), it records a
@@ -808,8 +812,9 @@ presentation and orchestration layer over the Core API and the real-time
 gateway, rather than a holder of application logic. The processing-flow design
 (Section~3.3.4) ties these together: the real-time speaking flow runs on the
 conversation path, durable session state is persisted at completion, the
-\texttt{session.completed} event is committed to \texttt{session\_outbox} and
-published to RabbitMQ, and grading runs asynchronously off the hot path.
+\texttt{session.completed} event is committed to \texttt{session\_outbox}, after
+which an inline RabbitMQ publish is attempted, and grading runs asynchronously
+off the hot path.
 
 These design decisions are bounded by explicit limitations that frame the scope
 of the work. LUVE is a controlled-demo, research-prototype system and is not

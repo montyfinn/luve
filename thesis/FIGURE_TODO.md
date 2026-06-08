@@ -38,7 +38,7 @@ constraints in `LUVE_FACTS.md`).
 
 | Marker | Where (main.tex) | What it must show |
 |---|---|---|
-| Bảng 3.1 | §3.3.1 | Module responsibilities: core-api `main.py` (:8000), core-api `run_ten.py` (:8080), grading-worker — ports/interfaces, main duties. Two services talk only over HTTP + RabbitMQ. |
+| Bảng 3.1 | §3.3.1 | Module responsibilities: core-api `main.py` (:8000), core-api `run_ten.py` (:8080), grading-worker — ports/interfaces, main duties. Show HTTP/WebRTC client-facing and control boundaries, PostgreSQL persistence, and RabbitMQ asynchronous grading work; do not describe the system as communicating only over HTTP + RabbitMQ. |
 | Bảng 3.2 | §3.3.2 | Summary of the 6 core DB tables (USERS, LESSONS, SESSIONS, GRADING_RESULTS, GRADING_SKIP_LOG, SESSION_OUTBOX): purpose + key columns. |
 | Bảng 4.1 | §4.1 | Technology & dev environment: language, framework, DB, broker, STT, client, container — name/version + role. |
 | Bảng 4.2 | §4.1 | Demo STT/grading config: `small.en` + `forced_en` + second-pass off; `GRADING_PROVIDER=fake`, `GRADING_FAKE_FALLBACK` off, `OUTBOX_RELAY_ENABLED=false`. |
