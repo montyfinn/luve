@@ -18,13 +18,13 @@ Place final images under `thesis/fig/` and uncomment the matching
 
 | Key | File (suggested) | Where (main.tex) | What it must show |
 |---|---|---|---|
-| architecture_overview | `fig/architecture_overview.png` | §3.3.1 `\label{fig:arch}` | core-api (`main.py` REST :8000 + `run_ten.py` gateway :8080), grading-worker, PostgreSQL, RabbitMQ. The two services communicate **only** over HTTP and RabbitMQ. |
+| architecture_overview | `fig/architecture_overview.png` | §3.3.1 `\label{fig:arch}` | core-api (`main.py` REST :8000 + `run_ten.py` gateway :8080), grading-worker, PostgreSQL, RabbitMQ. Show HTTP/WebRTC client-facing and control boundaries, PostgreSQL persistence, and RabbitMQ asynchronous grading work; do not describe the system as communicating only over HTTP + RabbitMQ. |
 | realtime_pipeline | `fig/realtime_pipeline.png` | §3.3.1 `\label{fig:pipeline}` | Hot-path VAD → STT → LLM → TTS → WebRTC. Note single-session-per-node cap. |
 | erd | `fig/erd.png` | §3.3.2 `\label{fig:erd}` | ERD of: USERS, LESSONS, SESSIONS, GRADING_RESULTS, GRADING_SKIP_LOG, SESSION_OUTBOX. |
 | ui_login | `fig/ui_login.png` | §3.3.3 `\label{fig:ui-login}` | Baseline `main` authentication entry point (xem ghi chú [VI] bên dưới). |
 | ui_practice | `fig/ui_practice.png` | §3.3.3 `\label{fig:ui-practice}` | Real practice screen from `main`. **Do NOT** use the unmerged "cat companion" UI (PR #2) as baseline. |
 | ui_saved_session | `fig/ui_saved_session.png` | §3.3.3 `\label{fig:ui-saved-session}` | Saved-session review / grading-result screen from the baseline client (xem ghi chú [VI] bên dưới). |
-| session_grading_flow | `fig/session_grading_flow.png` | §3.3.4 `\label{fig:session-grading-flow}` | On session end: commit SESSIONS + session_outbox in one transaction, then inline-publish `session.completed`; grading is idempotent (dedup on `session_id`); outbox relay default-off. |
+| session_grading_flow | `fig/session_grading_flow.png` | §3.3.4 `\label{fig:session-grading-flow}` | On session end: commit SESSIONS + session_outbox in one transaction, then attempt inline publish of `session.completed`; grading is idempotent (dedup on `session_id`); outbox relay default-off. |
 | realtime_sequence | `fig/realtime_sequence.png` | §3.3.4 `\label{fig:realtime-sequence}` | Sequence diagram of the real-time speaking flow (xem ghi chú [VI] bên dưới). |
 | publish_failure_flow | `fig/publish_failure_flow.png` | §3.3.4 `\label{fig:publish-failure-flow}` | Flowchart xử lý lỗi publish RabbitMQ (xem ghi chú [VI] bên dưới). |
 | demo_session | `fig/demo_session.png` | §4.3.1 `\label{fig:demo-session}` | Screenshot of a live practice session (real run). |
