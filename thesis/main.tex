@@ -834,9 +834,10 @@ run locally for demonstration rather than operated as a hosted service.
 
 \textbf{Technology stack.} LUVE is organized as a Docker Compose monorepo whose
 app profile can run the infrastructure services, Core API, TEN/WebRTC gateway,
-and grading-worker as containers, and the services communicate only over HTTP
-and RabbitMQ. The backend is implemented in Python using the FastAPI
-framework. The \texttt{core-api} codebase runs two FastAPI applications: the
+and grading-worker as containers. Client-facing and control boundaries use HTTP
+and WebRTC, PostgreSQL provides durable persistence, and RabbitMQ carries
+asynchronous grading work. The backend is implemented in Python using the
+FastAPI framework. The \texttt{core-api} codebase runs two FastAPI applications: the
 Core API, which exposes the REST endpoints for authentication, current-user
 lookup, and session management, and the TEN/WebRTC real-time gateway, which
 handles the live audio and control path. Speech recognition is provided by the
@@ -966,7 +967,8 @@ database, which stores the six baseline tables: \texttt{users}, \texttt{lessons}
 carries the \texttt{session.completed} work to the grading stage. The
 \texttt{session\_outbox} table is the bridge between the two: at session
 completion the session state and the outbox row are committed together in one
-database transaction, after which the event is published to RabbitMQ. This
+database transaction, after which an inline publish of the
+\texttt{session.completed} work item to RabbitMQ is attempted. This
 outbox write is an implementation choice to reduce the dual-write failure risk
 between committing session state in PostgreSQL and publishing the RabbitMQ work
 item. Because the durable intent to grade is captured atomically with the
