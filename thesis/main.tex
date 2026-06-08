@@ -1491,7 +1491,72 @@ research-prototype scope, and the directions for addressing them are discussed
 in the next section.
 
 \section{Future Work}
-% [PLACEHOLDER]
+
+The future-work directions below follow directly from the limitations in
+Section~5.3. They describe engineering and research directions that a later
+version of LUVE could pursue; none of them is implemented in the current
+baseline, and they are stated as possibilities rather than as completed results.
+
+\textbf{Production deployment hardening.} If the project were to move beyond a
+controlled demo, a later version should add a production-grade migration runner
+with a preflight check, so that schema state no longer depends on manual
+verification. Readiness checking should be strengthened to cover RabbitMQ and
+other dependencies with deeper probes rather than the current shallow checks.
+Observability could be extended beyond logs and a dead-letter queue with metrics
+and tracing, and continuous-integration and test gates could be introduced once
+the system targets more than a controlled demo. These are prerequisites for any
+production claim and are explicitly not part of the present prototype.
+
+\textbf{Outbox and queue recovery.} The durable \texttt{session\_outbox} already
+captures grading intent, but recovery from a failed publish is manual in the
+baseline because the relay is disabled by default. Future work should
+operationalize or enable the outbox relay and define explicit retry and
+reconciliation procedures for pending rows. Such work should remain
+at-least-once-oriented with idempotent processing; it would not, and should not,
+be presented as providing exactly-once delivery, and automatic recovery should
+not be assumed to exist in the baseline.
+
+\textbf{Real-time reliability and scaling.} A later version could add better
+timeout and resource controls around STT and real-time inference, so that a slow
+or stuck recognition step does not degrade the session. To reduce the risk that
+in-memory event or transcript evidence is lost on a crash before completion,
+future work could introduce mid-session durable checkpointing of that evidence.
+Multi-session and multi-node scaling could also be investigated; however, this
+remains future work, and horizontal scaling should not be described as validated
+until it is actually demonstrated.
+
+\textbf{STT and pronunciation improvements.} The baseline deliberately runs an
+English-focused recognition mode. Future work may evaluate multilingual or
+second-pass STT, but only behind a proper canary rollout and evaluation rather
+than by default. Separately, future work may explore true acoustic or
+phoneme-level pronunciation scoring as a replacement for the current
+confidence-based clarity estimate. Both directions are explicitly not baseline
+capabilities, and a later version should validate them before relying on them.
+
+\textbf{AI grading and evaluation.} The grading stage would benefit from a
+stronger evaluation methodology for grading quality. Future work could evaluate
+the optional real LLM-based grader using validated prompts and curated test
+cases, while keeping the distinction between the default offline
+development-preview (``fake'') grader and the optional real grader explicit. Any
+benchmark or user-study evaluation of grading quality should be treated as future
+research; it is not a current result of this thesis.
+
+\textbf{User interface and user-facing refinement.} Future user-interface work
+could polish the saved-session review states --- for example, the presentation
+of pending, available, and skipped grading outcomes --- and could revisit
+optional companion-interface work. The ``cat companion'' interface from PR~\#2
+remains outside the thesis baseline and should not be described as baseline
+functionality unless it is later merged and re-reviewed.
+
+\textbf{Research evaluation.} Finally, future user studies could evaluate the
+usability of the system or, with an appropriate experimental design, learning
+outcomes. It should be stated clearly that no such user study and no
+learning-effectiveness result is part of the current thesis; these remain
+directions for future research rather than findings reported here.
+
+Taken together, these directions would extend LUVE from a coherent controlled-demo
+prototype toward a more robust and more thoroughly evaluated system, while
+preserving the honest scoping that characterizes the present work.
 
 % ===================== REFERENCES =================================
 \printbibliography[heading=bibintoc,title={REFERENCES}]
