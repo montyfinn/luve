@@ -562,15 +562,79 @@ processing flows.
 \chapter{RESEARCH METHODOLOGY AND SYSTEM DESIGN}
 
 \section{Research Methodology}
-% [PLACEHOLDER]
+
+This chapter follows a system-design methodology: rather than evaluating the
+system empirically, it derives a design from the requirements of the prototype
+and presents that design at the level of components, boundaries, data, and
+control flow. The methodology proceeds in stages that mirror the structure of
+the chapter. It begins by deriving requirements from the LUVE controlled-demo
+goal --- a real-time English speaking-practice prototype --- and separating the
+functional needs from the non-functional and design concerns. From these
+requirements it identifies the component boundaries of the system, so that each
+component has a single, well-defined responsibility and a clear interface to the
+others. A central design decision follows from this step: the real-time
+interaction is separated from asynchronous grading, so that the
+latency-sensitive path is not burdened by heavier analysis work. The methodology
+then designs the persistence and the completion-to-grading hand-off, modeling
+durable state and the outbox intent around a relational database, and afterwards
+designs the user interface and the processing flows that tie the components
+together end to end. At each stage, the limitations and scope of the prototype
+are kept explicit rather than deferred, so that the design is presented honestly
+within its controlled-demo boundaries. Consistent with this approach, the chapter
+does not rely on user studies, controlled experiments, benchmark measurements, or
+any measured evaluation, and it makes no claim of production readiness; its
+results are design artifacts --- an architecture, a schema, an interface design,
+and a set of processing flows --- rather than experimental findings.
 
 \section{Requirements Analysis}
+
+This section states the requirements that drive the LUVE design, separating the
+functional requirements (what the system must do) from the non-functional and
+design requirements (the constraints and properties the design must respect).
+The requirements correspond to the controlled-demo baseline \texttt{main@6a61bc8}.
+
 \subsection{Functional Requirements}
-% [PLACEHOLDER] Real-time speaking practice; STT; LLM tutor replies;
-% session saving; grading of saved sessions.
+
+At the functional level, the system must support the following capabilities. It
+must authenticate a learner and provide current-user lookup, so that practice
+sessions are scoped to the authenticated user. It must allow a learner to start
+and complete a speaking-practice session. During a session, it must carry the
+real-time audio and control flow between the browser and the gateway, convert the
+learner's speech to text using the accepted stable recognition mode, and generate
+real-time conversational tutor replies from the recognized text. On completion,
+it must persist the session durably and allow saved sessions to be retrieved for
+review. It must grade completed sessions asynchronously through the message queue
+and the grading-worker, writing a grading result when grading succeeds. Finally,
+where grading does not proceed --- for example, when eligibility conditions are
+not met --- it must record a skipped or unavailable grading state so that such
+cases remain observable rather than silently lost.
+
 \subsection{Non-functional Requirements}
-% [PLACEHOLDER] Privacy (transcripts redacted from logs), security
-% (locked CORS, session-ownership check), reliability (durable outbox).
+
+The non-functional and design requirements constrain how those capabilities are
+realized. The work is scoped as a controlled-demo, research prototype rather than
+a production system. The design must separate the real-time hot path from
+asynchronous grading, so that the cost of grading does not affect the live
+interaction. Durable state must be held in PostgreSQL, and the
+completion-to-grading hand-off must be modeled with the \texttt{session\_outbox}
+table treated as a durable intent inside the database, not as a standalone queue
+service: the session state and the outbox intent are committed together, and an
+inline publish of the work item to RabbitMQ is attempted after the database
+commit rather than being assumed to succeed. Recovery from a failed publish must
+not be assumed automatic, since the relay is disabled by default and is manual
+unless explicitly enabled; accordingly, delivery is at-least-once-oriented with
+idempotent, session-level processing rather than exactly-once. For privacy, raw
+recognized transcript text must be redacted from the relevant STT recognition
+log lines, which retain only metadata such as text length and confidence values.
+The design must also remain honest about what it does not provide: there is no
+production-grade continuous-integration or quality-assurance process, and no
+benchmark, user-study, or learning-effectiveness result is claimed. Recognition
+is English-focused in the stable demo mode, so stable multilingual recognition is
+not claimed; the pronunciation value is a clarity estimate from
+speech-recognition confidence and uncertainty rather than acoustic or
+phoneme-level scoring; and horizontal scaling is not validated. Finally, the
+unmerged ``cat companion'' interface (PR~\#2) is excluded from the baseline and
+is not treated as an implemented requirement.
 
 \section{System Design}
 \subsection{System Architecture}

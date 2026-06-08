@@ -32,19 +32,24 @@ Place final images under `thesis/fig/` and uncomment the matching
 
 ## TABLE_TODO — tables the LUVE thesis still needs
 
-Each entry maps to a `% TODO-TABLE [VI]:` marker in `main.tex`. Fill only
-with real, verified data — do not fabricate numbers (see truth
-constraints in `LUVE_FACTS.md`).
+Each row tracks one actionable `% TODO-TABLE [VI]:` marker in `main.tex`, in
+order of appearance. Fill only with real, verified data — do not fabricate
+numbers (see truth constraints in `LUVE_FACTS.md`). Numbers in **bold** are the
+explicit `Bảng N` labels written in `main.tex`; the others are sequential
+tracking labels assigned here for unnumbered markers.
 
 | Marker | Where (main.tex) | What it must show |
 |---|---|---|
-| Bảng 3.1 | §3.3.1 | Module responsibilities: core-api `main.py` (:8000), core-api `run_ten.py` (:8080), grading-worker — ports/interfaces, main duties. Show HTTP/WebRTC client-facing and control boundaries, PostgreSQL persistence, and RabbitMQ asynchronous grading work; do not describe the system as communicating only over HTTP + RabbitMQ. |
+| **Bảng 3.1** | §3.3.1 | Module responsibilities: core-api `main.py` (:8000), core-api `run_ten.py` (:8080), grading-worker — ports/interfaces, main duties. Show HTTP/WebRTC client-facing and control boundaries, PostgreSQL persistence, and RabbitMQ asynchronous grading work; do not describe the system as communicating only over HTTP + RabbitMQ. |
 | Bảng 3.2 | §3.3.2 | Summary of the 6 core DB tables (USERS, LESSONS, SESSIONS, GRADING_RESULTS, GRADING_SKIP_LOG, SESSION_OUTBOX): purpose + key columns. |
-| Bảng 4.1 | §4.1 | Technology & dev environment: language, framework, DB, broker, STT, client, container — name/version + role. |
-| Bảng 4.2 | §4.1 | Demo STT/grading config: `small.en` + `forced_en` + second-pass off; `GRADING_PROVIDER=fake`, `GRADING_FAKE_FALLBACK` off, `OUTBOX_RELAY_ENABLED=false`. |
-| Bảng 4.3 | §4.4 | Testing / smoke tests: item, command, real result. Real results only. |
-| Bảng 5.1 | §5.3 | Limitations vs. future direction, one row per limitation from `LUVE_FACTS.md`. |
-| Bảng B.1 | Appendix B | Survey results (only if a real survey is run). |
+| Bảng 4.1 | §4.1 | Technology & dev environment: language, framework, DB, broker, STT, client, container — name + role (do not fabricate versions). |
+| **Bảng 4.2** | §4.1 | Demo STT/grading config: `small.en` + `forced_en` + second-pass off; `GRADING_PROVIDER=fake`, `GRADING_FAKE_FALLBACK` off, `OUTBOX_RELAY_ENABLED=false`. |
+| Bảng 4.3 | §4.2.1 | Main module implementation: module, main file/service, responsibility, limitation note (core-api `main.py`/`run_ten.py`, grading-worker, etc.). |
+| Bảng 4.4 | §4.2.2 | Main data-processing flow: data source, processing step, processing module, output data, limitation/caveat. |
+| Bảng 4.5 | §4.3.1 | Achieved results at system level: capability, related module, demo evidence, limitation/caveat. |
+| Bảng 4.6 | §4.4 | Testing / verification: item, how checked, expected result, status, limitation/caveat. Real results only. |
+| **Bảng 5.1** | §5.3 | Limitations vs. future direction, one row per limitation from `LUVE_FACTS.md`. |
+| **Bảng B.1** | Appendix B | Survey results (only if a real survey is run). |
 
 ## Ghi chú chuẩn bị hình §3.3.3 (nội bộ, tiếng Việt)
 

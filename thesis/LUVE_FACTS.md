@@ -40,7 +40,9 @@ A Docker Compose monorepo for **real-time English speaking practice**:
 STT capture → streaming LLM tutor replies → saved sessions → grading
 pipeline.
 
-## Services (communicate only over HTTP and RabbitMQ)
+## Services (communication boundaries: HTTP/WebRTC, PostgreSQL persistence, RabbitMQ async grading)
+<!-- Communication boundaries: client-facing and control paths use HTTP/WebRTC where applicable; PostgreSQL provides durable persistence; RabbitMQ carries asynchronous grading work. -->
+
 - **core-api** (`core_api` image) runs **two FastAPI apps from one codebase**:
   - `src/main.py` — REST / auth / sessions, **port 8000**.
   - `run_ten.py` — TEN / WebRTC realtime gateway, **port 8080**. Hot path
@@ -58,8 +60,8 @@ Single-session-per-node cap enforced in the WebRTC adapter.
 ## Session → grading flow (verified)
 On session end the gateway commits, **in one transaction**, the
 `sessions` row (status, `raw_backup_json`, `ended_at`) **and** a
-`session_outbox` row, then **publishes `session.completed` inline**.
-- Inline publish is the **live** path.
+`session_outbox` row, then **attempts inline publish of `session.completed` after DB commit**.
+- Inline publish is the **live** path (attempted, not guaranteed).
 - The transactional-outbox **relay exists but is default-off**
   (`OUTBOX_RELAY_ENABLED=false`) — recovery from a publish failure is
   **manual** unless the relay is enabled.
@@ -67,10 +69,10 @@ On session end the gateway commits, **in one transaction**, the
 - Grading is **idempotent** (deduped on `session_id`).
 
 ## Privacy / logging (PR #1, merged into `main`)
-Raw STT transcripts are **redacted from logs**: log lines emit
-metadata only (`text_len`, `avg_logprob`, `no_speech_prob`), not the
-transcript text. Two sites fixed: `coordinator.py` and
-`luve_extension.py`.
+Raw recognized transcript text is **redacted from the relevant STT recognition
+log lines; those lines retain metadata** such as text length and confidence
+values (`text_len`, `avg_logprob`, `no_speech_prob`), not the transcript text.
+Two sites fixed: `coordinator.py` and `luve_extension.py`.
 
 ## Auth / CORS (be precise — the two apps differ)
 - **REST API (`main.py`, :8000):** CORS is **locked** —
