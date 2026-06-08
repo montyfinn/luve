@@ -669,7 +669,7 @@ others.
 % và luồng bất đồng bộ (session.completed qua RabbitMQ -> grading-worker).
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/architecture_overview.png}
+  \includegraphics[width=\textwidth]{fig/architecture_overview.png}
   \caption{Overall architecture of the LUVE system.}
   \label{fig:arch}
 \end{figure}
@@ -807,7 +807,7 @@ limitations are analyzed in more detail in Chapter~5.
 % VAD -> STT -> LLM -> TTS -> WebRTC.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/realtime_pipeline.png}
+  \includegraphics[width=\textwidth]{fig/realtime_pipeline.png}
   \caption{Real-time processing pipeline (VAD $\to$ STT $\to$ LLM $\to$ TTS $\to$ WebRTC).}
   \label{fig:pipeline}
 \end{figure}
@@ -829,7 +829,7 @@ is used).
 % TODO-FIGURE [VI]: Cần vẽ ERD cơ sở dữ liệu chính của LUVE, gồm users, lessons, sessions, grading_results, grading_skip_log, session_outbox và quan hệ chính giữa chúng.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/erd.png}
+  \includegraphics[width=\textwidth]{fig/erd.png}
   \caption{Entity-relationship diagram (ERD) of the LUVE database.}
   \label{fig:erd}
 \end{figure}
@@ -1079,7 +1079,7 @@ confidence values.
 % TODO-FIGURE [VI]: Cần vẽ sequence diagram cho luồng realtime: browser audio -> TEN/WebRTC gateway -> VAD/STT -> LLM tutor -> response/output.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/realtime_sequence.png}
+  \includegraphics[width=\textwidth]{fig/realtime_sequence.png}
   \caption{Sequence of the real-time speaking flow (browser audio $\to$ gateway $\to$ VAD/STT $\to$ LLM tutor $\to$ output).}
   \label{fig:realtime-sequence}
 \end{figure}
@@ -1114,7 +1114,7 @@ level, so a re-delivered event does not produce duplicate results.
 % TODO-FIGURE [VI]: Cần vẽ flowchart xử lý lỗi publish RabbitMQ: commit DB thành công -> publish fail -> warning log -> outbox row chờ relay/manual recovery.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/publish_failure_flow.png}
+  \includegraphics[width=0.85\textwidth]{fig/publish_failure_flow.png}
   \caption{Publish-failure handling (DB commit succeeds $\to$ publish fails $\to$ warning logged $\to$ outbox row awaits relay/manual recovery).}
   \label{fig:publish-failure-flow}
 \end{figure}
@@ -1136,7 +1136,7 @@ phoneme-level pronunciation analysis.
 % TODO-FIGURE [VI]: Cần vẽ sequence diagram cho luồng hoàn tất phiên và chấm điểm: session completed -> session_outbox -> RabbitMQ -> grading-worker -> grading_results.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/session_grading_flow.png}
+  \includegraphics[width=0.9\textwidth]{fig/session_grading_flow.png}
   \caption{Flow from session completion to grading (session\_outbox $\to$ RabbitMQ $\to$ grading-worker $\to$ grading\_results).}
   \label{fig:session-grading-flow}
 \end{figure}
