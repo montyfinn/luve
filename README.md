@@ -115,10 +115,12 @@ App services run under the Compose `app` profile.
 These commands run **containers**, not manual `venv` processes.
 
 ```bash
-# 1. Create the root .env (Compose reads this — see "Configuration" below)
-cp .env.example .env   # then fill in real values locally
+# 0. Copy the example environment file before starting Docker Compose.
+#    Compose fails fast until the required values are filled.
+cp .env.example .env
+#    Edit .env and fill the required values marked in "Configuration" below.
 
-# 2. Start the full stack (first run needs --build so ten_gateway can reuse the
+# 1. Start the full stack (first run needs --build so ten_gateway can reuse the
 #    core_api image). Plain `docker compose up -d` (no profile) starts ONLY infra.
 docker compose --profile app up -d --build
 
