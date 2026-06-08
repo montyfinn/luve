@@ -1360,7 +1360,65 @@ prototype scope, and the directions for extending it are discussed in the
 remainder of this chapter.
 
 \section{Thesis Contributions}
-% [PLACEHOLDER]
+
+The contributions of this thesis are technical and system-oriented. They concern
+how LUVE is structured as software and how its runtime concerns are separated,
+rather than any educational outcome. The main contributions are summarized
+below.
+
+\textbf{System architecture.} The thesis designs a multi-surface architecture
+for LUVE with explicit component boundaries: a frontend client; a Core API that
+provides the REST surface and serves the static frontend; a TEN/WebRTC gateway
+that handles the real-time path; an STT processing module; a real-time LLM tutor
+reply path; PostgreSQL for durable persistence; RabbitMQ for asynchronous
+grading work; and a grading-worker. The contribution is the way these surfaces
+are delineated and connected --- the data and control flows between them and the
+boundaries they respect --- so that each component has a single, well-defined
+responsibility and can be reasoned about or replaced independently.
+
+\textbf{Real-time and asynchronous separation.} A second contribution is the
+clean separation between the real-time speaking interaction and post-session
+grading. On the real-time path, the system generates conversational tutor
+replies to sustain the interaction; grading and scoring are delegated to the
+grading-worker after a session completes. This keeps the latency-sensitive hot
+path conceptually and operationally distinct from the slower analysis stage, so
+that the cost of grading does not intrude on the live conversation.
+
+\textbf{Persistence and outbox reliability.} The thesis models the transition
+from session completion to grading through PostgreSQL together with a
+\texttt{session\_outbox} table. The \texttt{session\_outbox} is an ordinary
+PostgreSQL table rather than a queue service; it is written in the same
+transaction as the session state so that the durable intent to grade survives a
+failed RabbitMQ publish. The recovery posture is documented honestly: the relay
+that would re-deliver pending rows is disabled by default, so recovery is manual
+unless it is explicitly enabled, and the mechanism is at-least-once-oriented with
+idempotent, session-level deduplication rather than exactly-once delivery.
+
+\textbf{Truthful AI and scoring boundary.} A further contribution is documenting,
+rather than overstating, where artificial intelligence is used. The thesis
+distinguishes the real-time LLM tutor replies from the grading stage, and within
+grading it distinguishes the default offline development-preview (``fake'')
+grader from the optional real LLM-based grader enabled by configuration. It also
+frames the pronunciation value as a clarity estimate derived from
+speech-recognition confidence and uncertainty, not an acoustic or phoneme-level
+score, and it makes no claim of stable multilingual recognition, since the demo
+mode is English-focused.
+
+\textbf{DevOps and demo readiness.} Finally, the thesis contributes a coherent
+controlled-demo packaging of the system. The services are coordinated for local
+use through the Docker Compose app profile, with a CPU-default configuration and
+an optional GPU path for the STT gateway as described in Chapter~4. The baseline
+also includes the scoped PR~\#1 privacy improvement, which redacts raw STT
+transcript text from the relevant recognition log lines, and a verification
+posture suited to a controlled demo. Throughout, the limitations of the
+prototype are stated explicitly rather than glossed over.
+
+Taken together, these contributions constitute a coherent end-to-end software
+design for a real-time speaking-practice prototype, with clearly separated
+runtime concerns and an honestly bounded scope. They are deliberately framed as
+system-design results: the thesis does not claim production readiness, learning
+effectiveness, user-study outcomes, or measured performance, and the
+corresponding limitations are detailed in the next section.
 
 \section{Limitations}
 % [PLACEHOLDER] Follow the "Known limitations" section of LUVE_FACTS.md:
