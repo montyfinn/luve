@@ -731,9 +731,25 @@ comprises the following main components:
   later display.
 \end{itemize}
 
-% TODO-TABLE [VI]: Bảng 3.1 - Trách nhiệm các module hệ thống. Nội dung cần có:
-% tên module (core-api main.py, core-api run_ten.py, grading-worker), cổng/giao
-% tiếp, trách nhiệm chính. Bám LUVE_FACTS.md (phân biệt HTTP/WebRTC boundaries, PostgreSQL persistence, và RabbitMQ async grading).
+\begin{table}[H]
+  \centering\small
+  \caption{Responsibilities of the main LUVE components.}
+  \label{tab:module-responsibilities}
+  \begin{tabular}{p{3.1cm} p{7.2cm} p{4.2cm}}
+    \toprule
+    \textbf{Component} & \textbf{Responsibility} & \textbf{Boundary / note} \\
+    \midrule
+    Frontend client & Presentation and orchestration; authentication entry, session control, real-time interaction surface, saved-session review & Served as static assets by the Core API (HTTP); not the PR~\#2 cat-companion UI \\
+    Core API & REST surface: authentication, current-user lookup, session management, saved-result retrieval; serves the static frontend & HTTP; entry point for non-real-time operations \\
+    TEN/WebRTC gateway & Real-time conversation path: WebRTC negotiation, audio/control flow, links STT and tutor reply & WebRTC; capped at single session per node \\
+    STT component & Converts learner audio to recognized text with confidence/uncertainty signals & Stable demo mode \texttt{small.en}/\texttt{forced\_en}; not phoneme/acoustic scoring \\
+    Real-time LLM tutor & Generates conversational tutor replies during the session & Replies only; grading is delegated, not performed here \\
+    PostgreSQL & Durable persistence of users, lessons, sessions, grading results, and the outbox & Durable state store (not a queue) \\
+    RabbitMQ & Asynchronous channel carrying \texttt{session.completed} grading work & Async grading boundary; publish attempted, not guaranteed \\
+    grading-worker & Consumes completed-session work; writes \texttt{grading\_results} or \texttt{grading\_skip\_log} & Off the real-time path; fake (default) or optional real LLM grading \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Main data and control flow.} A typical practice session proceeds as
 follows. First, the learner speaks into the microphone in the browser; the
@@ -858,7 +874,23 @@ each with a distinct responsibility:
   session record, and is \emph{not} a standalone queue service.
 \end{itemize}
 
-% TODO-TABLE [VI]: Cần lập bảng tóm tắt các bảng dữ liệu chính: tên bảng, trách nhiệm, dữ liệu chính, quan hệ liên quan.
+\begin{table}[H]
+  \centering\small
+  \caption{Core database tables and their purpose.}
+  \label{tab:db-tables}
+  \begin{tabular}{p{4cm} p{10.5cm}}
+    \toprule
+    \textbf{Table} & \textbf{Purpose} \\
+    \midrule
+    \texttt{users} & Authenticated account records for learners; identity anchor for owned records. \\
+    \texttt{lessons} & Metadata for lesson or practice content that a session may be associated with. \\
+    \texttt{sessions} & Lifecycle and metadata of a practice session, including the information needed after it ends. \\
+    \texttt{grading\_results} & Persisted grading output for a completed session that was graded successfully. \\
+    \texttt{grading\_skip\_log} & Record of cases where grading was skipped or could not proceed, keeping such cases observable. \\
+    \texttt{session\_outbox} & Durable outbox table bridging session completion and asynchronous grading delivery; a PostgreSQL table, not a queue service. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Relationships between tables.} The principal relationships follow the
 lifecycle of a practice session. In the application flow, sessions belong to
@@ -1203,10 +1235,49 @@ rather than deployed as a separate frontend service. The default Docker Compose
 configuration runs the stack on CPU; an opt-in GPU configuration for the STT
 gateway is also available where suitable hardware is present.
 
-% TODO-TABLE [VI]: Cần lập bảng môi trường phát triển và công nghệ sử dụng, gồm thành phần, công nghệ, vai trò trong hệ thống, ghi chú demo.
-% TODO-TABLE [VI]: Bảng 4.2 - Cấu hình demo STT/grading. Nội dung cần có:
-% STT model=small.en, mode=forced_en, second-pass=tắt; GRADING_PROVIDER=fake (mặc định),
-% GRADING_FAKE_FALLBACK=tắt, OUTBOX_RELAY_ENABLED=false. Bám đúng LUVE_FACTS.md.
+\begin{table}[H]
+  \centering\small
+  \caption{Development environment and technology stack.}
+  \label{tab:dev-environment}
+  \begin{tabular}{p{3.4cm} p{3.9cm} p{7.2cm}}
+    \toprule
+    \textbf{Component} & \textbf{Technology} & \textbf{Role in LUVE} \\
+    \midrule
+    Frontend client & React, Vite, TypeScript & Single-page app; built as static assets served by the Core API \\
+    Backend & Python, FastAPI & Application framework for both backend surfaces \\
+    Core API & FastAPI app & REST surface (auth, current-user lookup, sessions, saved-result retrieval) and static-asset serving \\
+    Real-time gateway & FastAPI app (TEN/WebRTC) & Real-time audio/control path for a speaking session \\
+    Database & PostgreSQL & Durable persistence and the \texttt{session\_outbox} hand-off \\
+    Message broker & RabbitMQ & Asynchronous grading work \\
+    Grading service & grading-worker & Consumes completed-session work and writes grading outcomes \\
+    Packaging & Docker Compose (app profile) & Coordinates services for local/controlled-demo use \\
+    Compute (optional) & CPU default; opt-in GPU & GPU configuration available for the STT gateway where suitable hardware is present \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+Specific dependency version numbers are not asserted, and the deployment is a
+controlled-demo packaging rather than a production deployment.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Stable demo STT and grading configuration.}
+  \label{tab:stt-grading-config}
+  \begin{tabular}{p{5cm} p{9.5cm}}
+    \toprule
+    \textbf{Aspect} & \textbf{Configuration / treatment} \\
+    \midrule
+    STT model & \texttt{small.en} \\
+    Language mode & \texttt{forced\_en} (English-focused) \\
+    Second-pass STT verification & Disabled \\
+    Multilingual STT & Not claimed in the stable demo mode \\
+    Pronunciation value & Clarity estimate derived from STT confidence/uncertainty; not acoustic or phoneme-level scoring \\
+    Default grading & \texttt{GRADING\_PROVIDER=fake}; offline development-preview grader by default \\
+    Fake fallback & \texttt{GRADING\_FAKE\_FALLBACK} disabled by default \\
+    Optional real LLM grading & Configurable; not a production-assessment guarantee \\
+    Outbox relay & Disabled by default; recovery is manual unless the relay is explicitly enabled \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 To avoid asserting unverified details, specific dependency version numbers are
 not stated here; each component is described by its role in the system rather
@@ -1346,7 +1417,21 @@ integration targets a controlled-demo deployment: it is not production-ready,
 and no horizontal-scaling claim is made --- the real-time path is operated at
 the scale of a single session per node.
 
-% TODO-TABLE [VI]: Cần lập bảng hiện thực các module chính, gồm module, file/service chính, trách nhiệm, ghi chú giới hạn.
+\begin{table}[H]
+  \centering\small
+  \caption{Main module implementation and anchors.}
+  \label{tab:module-implementation}
+  \begin{tabular}{p{3cm} p{5cm} p{6.5cm}}
+    \toprule
+    \textbf{Module} & \textbf{Implementation anchor} & \textbf{Responsibility / note} \\
+    \midrule
+    Client & \texttt{client/}, \texttt{client/package.json} & Vite client built into static assets served by the Core API; excludes PR~\#2 cat-companion UI \\
+    Core API & \texttt{services/core-api/src/main.py} (Compose: \texttt{core\_api}) & REST surface and static-asset serving \\
+    TEN/WebRTC gateway & \texttt{services/core-api/run\_ten.py} (Compose: \texttt{ten\_gateway}) & Real-time path; control routes owner-scoped, health/diagnostic endpoints a hardening caveat \\
+    Grading-worker & \texttt{services/grading-worker/src/worker.py} (Compose: \texttt{grading\_worker}) & Consumes completed-session work; writes \texttt{grading\_results} or \texttt{grading\_skip\_log} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \subsection{Data Processing}
 
@@ -1423,7 +1508,25 @@ unavailable analysis, to the extent these states are represented by the
 backend. The ``cat companion'' interface (PR~\#2) is not part of the baseline
 and is not used as the basis for this retrieval view.
 
-% TODO-TABLE [VI]: Cần lập bảng luồng xử lý dữ liệu chính, gồm nguồn dữ liệu, bước xử lý, module xử lý, dữ liệu đầu ra, giới hạn/caveat.
+\begin{table}[H]
+  \centering\small
+  \caption{Main data-processing flow, with caveats.}
+  \label{tab:data-processing}
+  \begin{tabular}{p{3.6cm} p{10.9cm}}
+    \toprule
+    \textbf{Stage} & \textbf{Processing, output, and caveats} \\
+    \midrule
+    Real-time audio input & Browser audio enters via the TEN/WebRTC gateway as the live audio/control flow. \\
+    STT recognition & STT (\texttt{small.en}/\texttt{forced\_en}) produces recognized text plus confidence/uncertainty metadata; English-focused, not phoneme/acoustic scoring. \\
+    Real-time tutor reply & The LLM tutor produces a conversational reply only; no grading on this path. \\
+    Session-completion persistence & Session state is persisted at completion; the in-memory real-time event log/transcript evidence may be lost if the process crashes before completion, though a broader session record can already exist. \\
+    \texttt{session\_outbox} intent & A durable outbox row is committed with the session state in one transaction; \texttt{session\_outbox} is a PostgreSQL table, not a queue service. \\
+    Attempted RabbitMQ publish & After the commit, an inline publish of \texttt{session.completed} is attempted, not guaranteed; on failure a warning is logged and the row remains, with recovery manual unless the default-off relay is enabled. \\
+    Grading-worker processing & The grading-worker reads the completed session/transcript evidence and writes \texttt{grading\_results} or \texttt{grading\_skip\_log}; delivery is at-least-once-oriented with idempotent, session-level deduplication, not exactly-once. \\
+    Saved-session retrieval & The client retrieves saved sessions and grading results through the Core API for review. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Limitations.} Several properties bound how this data pipeline should be
 interpreted. The STT stage is English-focused in the stable demo mode. Schema
@@ -1824,8 +1927,25 @@ introduced in PR~\#2 is not part of the baseline and is not described as
 implemented baseline functionality; the results and discussion in this thesis
 refer only to the baseline client.
 
-% TODO-TABLE [VI]: Bảng 5.1 - Hạn chế và hướng phát triển. Nội dung cần có:
-% hạn chế hiện tại (từ LUVE_FACTS.md), hướng khắc phục/phát triển tương ứng.
+\begin{table}[H]
+  \centering\small
+  \caption{Limitations and corresponding future directions.}
+  \label{tab:limitations-future}
+  \begin{tabular}{p{2.9cm} p{5.6cm} p{5.9cm}}
+    \toprule
+    \textbf{Category} & \textbf{Current limitation} & \textbf{Future direction} \\
+    \midrule
+    Production hardening & Controlled-demo prototype; manual numbered SQL migrations, no production-grade migration runner or CI/QA & A later version could add a production-grade migration runner with preflight and CI/test gates \\
+    Readiness / observability & Shallow health/readiness checks; RabbitMQ not fully covered; observability limited to logs and DLQ & Readiness could cover RabbitMQ and deeper dependency probes; observability could be extended with metrics/tracing \\
+    Outbox relay / recovery & Relay disabled by default, so recovery from a failed publish is manual & Future work could operationalize/enable the relay and define retry/reconciliation, remaining at-least-once-oriented (not exactly-once) \\
+    Real-time scaling / checkpointing & Single-session-per-node; horizontal scaling not validated; in-memory event log may be lost on crash before completion & Future work could add timeout/resource controls, mid-session durable checkpointing, and investigate multi-session/multi-node scaling \\
+    STT / pronunciation & English-focused stable mode; multilingual not validated; pronunciation is a clarity estimate, not phoneme/acoustic scoring & Future work may evaluate multilingual/second-pass STT behind a canary, and explore true acoustic/phoneme-level scoring \\
+    Grading / evaluation & Default offline/dev-preview grader; optional real LLM grader not a production-assessment guarantee; no benchmark/accuracy result & Future work could develop a grading-quality evaluation methodology and validate the real LLM grader with curated test cases \\
+    UI / user-facing & Saved-session review states are basic; cat-companion UI (PR~\#2) is not baseline & Future UI work could refine review states and revisit optional companion UI only if later merged and re-reviewed \\
+    Research / user study & No user study or learning-effectiveness result is part of this thesis & Future user studies could assess usability or, with an appropriate design, learning outcomes \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 Collectively, these limitations define the boundary within which the results of
 this thesis should be read. They are consistent with the controlled-demo,
