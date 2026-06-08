@@ -986,7 +986,7 @@ boundaries that the backend enforces.
 % TODO-FIGURE [VI]: Cần chụp màn hình giao diện đăng nhập/khởi tạo phiên học từ baseline main, không dùng PR #2 cat companion UI.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/ui_login.png}
+  \includegraphics[width=0.9\textwidth]{fig/ui_login.png}
   \caption{Authentication entry point of the baseline LUVE client.}
   \label{fig:ui-login}
 \end{figure}
@@ -1005,8 +1005,8 @@ shown here because it is produced asynchronously after the session ends.
 % TODO-FIGURE [VI]: Cần chụp màn hình giao diện luyện nói thời gian thực từ baseline main.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/ui_practice.png}
-  \caption{Real-time practice screen of the baseline LUVE client.}
+  \includegraphics[width=0.9\textwidth]{fig/ui_practice.png}
+  \caption{Authenticated practice start screen of the baseline LUVE client.}
   \label{fig:ui-practice}
 \end{figure}
 
@@ -1028,8 +1028,8 @@ as demonstrative output rather than a real production assessment.
 % TODO-FIGURE [VI]: Cần chụp màn hình giao diện saved session / grading result từ baseline main.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/ui_saved_session.png}
-  \caption{Saved-session and grading-result screen of the baseline LUVE client.}
+  \includegraphics[width=0.9\textwidth]{fig/ui_saved_session.png}
+  \caption{Saved-session history panel showing a completed baseline demo session.}
   \label{fig:ui-saved-session}
 \end{figure}
 
@@ -1577,8 +1577,8 @@ system does not perform acoustic or phoneme-level pronunciation scoring.
 % TODO-FIGURE [VI]: Cần chụp màn hình kết quả demo phiên luyện nói từ baseline main@6a61bc8, không dùng PR #2 cat companion UI.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/demo_session.png}
-  \caption{Demo result: a real-time practice session.}
+  \includegraphics[width=0.9\textwidth]{fig/demo_session.png}
+  \caption{Connected real-time session screen while the speech engine was still warming up.}
   \label{fig:demo-session}
 \end{figure}
 
@@ -1598,8 +1598,8 @@ phoneme-level or acoustic pronunciation score.
 % TODO-FIGURE [VI]: Cần chụp màn hình kết quả saved-session/grading từ baseline main@6a61bc8, thể hiện trạng thái grading nếu có.
 \begin{figure}[H]
   \centering
-  % \includegraphics[width=\textwidth]{fig/demo_grading.png}
-  \caption{Demo result: grading panel for a saved session.}
+  \includegraphics[width=0.9\textwidth]{fig/demo_grading.png}
+  \caption{Post-session grading skip state for a session with insufficient user speech.}
   \label{fig:demo-grading}
 \end{figure}
 
@@ -1623,7 +1623,28 @@ automatic migration runner. Health, readiness, and observability remain limited.
 Finally, the ``cat companion'' interface (PR~\#2) is not part of the baseline and
 is excluded from these results.
 
-% TODO-TABLE [VI]: Cần lập bảng kết quả đạt được ở mức hệ thống: chức năng, module liên quan, bằng chứng demo, giới hạn/caveat.
+Table~\ref{tab:achieved-results} summarizes the demo-visible capabilities that
+were directly observed during a captured baseline run, together with their
+evidence and caveats.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Demo-visible capabilities observed in a captured baseline run.}
+  \label{tab:achieved-results}
+  \begin{tabular}{p{3.1cm} p{2.4cm} p{4.3cm} p{4.2cm}}
+    \toprule
+    \textbf{Observed capability} & \textbf{Evidence} & \textbf{Observed state} & \textbf{Caveat} \\
+    \midrule
+    Authentication entry UI & Fig.~\ref{fig:ui-login} & Baseline auth-entry/landing screen rendered & Demo-visible UI only; no auth performance claim \\
+    Practice start / home UI & Fig.~\ref{fig:ui-practice} & Authenticated practice start screen after local registration & Throwaway local account; no learning-effectiveness claim \\
+    Connected session shell & Fig.~\ref{fig:demo-session} & Real-time session reached a connected state & Speech-engine/model warm-up was visible; headless browser had no real microphone, so no real spoken transcript was captured \\
+    Saved-session history & Fig.~\ref{fig:ui-saved-session} & One completed session listed in the history panel & Session had no captured user speech; no scores shown \\
+    Post-session grading-skip handling & Fig.~\ref{fig:demo-grading} & Insufficient-evidence / skipped-grading state shown (``Detected student words: 0'') & Skipped-grading path only; not a successful grading result, and not a real-LLM or fake/dev-preview score output \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+No latency, accuracy, throughput, learning-effectiveness, or production-readiness
+result is claimed from these observations.
 
 \subsection{Result Evaluation}
 
@@ -1685,7 +1706,33 @@ results are retrieved through the Core API to confirm that the review path
 works. Where these steps have not been executed in a given environment, they
 remain a recommended checklist rather than a recorded test result.
 
-% TODO-TABLE [VI]: Cần lập bảng kiểm thử/xác minh, gồm hạng mục, cách kiểm tra, kết quả mong đợi, trạng thái, giới hạn/caveat.
+Table~\ref{tab:verification} records the verification items that were actually
+executed or directly observed for the captured baseline run; it deliberately
+reports only observed results, not a test suite.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Verification items executed/observed for the captured baseline run.}
+  \label{tab:verification}
+  \begin{tabular}{p{3.4cm} p{3.4cm} p{3.6cm} p{3.6cm}}
+    \toprule
+    \textbf{Verification item} & \textbf{Evidence source} & \textbf{Observed result} & \textbf{Limitation} \\
+    \midrule
+    Baseline runtime commit & \texttt{git rev-parse} in \texttt{/tmp/luve-main-6a61bc8} & HEAD exactly \texttt{6a61bc8} & Detached baseline worktree only \\
+    Baseline stack running & \texttt{docker compose -p luve\_baseline ps} & All services up; core-api, gateway, postgres, rabbitmq, redis healthy & Single-node controlled-demo \\
+    Core API readiness & \texttt{GET :8000/readyz} & HTTP 200, \texttt{database: ok} & DB reachability only \\
+    Gateway readiness & \texttt{GET :8080/readyz} & HTTP 200, \texttt{gateway: initialized} & Startup state only; no RabbitMQ probe \\
+    Baseline frontend served & \texttt{GET :8000/app/} & LUVE single-page app served & Served bundle is baseline; no PR~\#2 companion shell \\
+    Screenshot capture & Playwright, clean context & Five baseline screenshots captured (Figs.~\ref{fig:ui-login}--\ref{fig:demo-grading}) & 1440$\times$900 viewport; no microphone \\
+    Session evidence & Fig.~\ref{fig:demo-session} & WebRTC session reached connected state & No real speech; transcript not validated \\
+    Grading evidence & Fig.~\ref{fig:demo-grading} & Skipped / insufficient-evidence grading state captured & Skip path only; no successful grading observed \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+This table reports no full test-suite result, no load/stress/benchmark result,
+no coverage/pass-rate/test-count, and no user-study or learning-effectiveness
+result. The headless session had no real microphone, so it does not validate STT
+quality.
 
 \textbf{Negative and failure-path verification.} Beyond the happy path, a few
 failure behaviors are important to verify or document. If the inline publish to
