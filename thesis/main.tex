@@ -1421,12 +1421,74 @@ effectiveness, user-study outcomes, or measured performance, and the
 corresponding limitations are detailed in the next section.
 
 \section{Limitations}
-% [PLACEHOLDER] Follow the "Known limitations" section of LUVE_FACTS.md:
-% controlled-demo; English-forced STT; pronunciation is a clarity estimate
-% from STT confidence, not phoneme scoring; durable outbox but relay default-off;
-% no production migration runner; shallow health/observability; single-session-per-node.
+
+This section states the limitations of LUVE honestly and does not soften any
+caveat established in the previous chapters. The limitations span the
+prototype's scope, its runtime behavior, recognition and grading, persistence,
+evaluation, and the baseline user interface.
+
+\textbf{Prototype and deployment scope.} LUVE is a controlled-demo, research
+prototype and is not production-ready. There is no production-grade
+continuous-integration or quality-assurance process, and no claim to one is
+made. Schema evolution relies on numbered manual SQL migrations with manual
+verification; there is no production-grade automatic migration runner or
+preflight check, so the persisted-data layout depends on those migrations having
+been applied in a given environment.
+
+\textbf{Real-time and runtime limitations.} The system is single-node and
+controlled-demo oriented, and horizontal scaling has not been validated. Health,
+readiness, and observability remain limited: the Core API readiness check covers
+database reachability and the gateway readiness check covers startup state, but
+RabbitMQ is not fully covered by these shallow checks. No load or stress testing
+has been performed, so the prototype's behavior under sustained or concurrent
+load is not characterized.
+
+\textbf{STT and pronunciation limitations.} The stable demo recognition mode is
+English-focused --- the \texttt{small.en} model in \texttt{forced\_en} mode with
+second-pass verification disabled --- and stable multilingual recognition is
+neither validated nor claimed. The pronunciation value reported by the system is
+a clarity estimate derived from speech-recognition confidence and uncertainty,
+not an acoustic or phoneme-level pronunciation score; no true acoustic or
+phoneme-level pronunciation validation has been carried out.
+
+\textbf{Persistence and outbox limitations.} The \texttt{session\_outbox} table
+captures a durable grading intent in PostgreSQL; it is not a queue service. The
+inline publish of the work item to RabbitMQ can fail, in which case the outbox
+row remains for recovery. That recovery is not automatic by default: the relay
+is disabled unless explicitly enabled, so recovery is otherwise manual. Delivery
+is therefore at-least-once-oriented with idempotent, session-level
+deduplication, not exactly-once. In addition, the real-time event log and
+transcript evidence are accumulated in memory during a session and persisted at
+completion, so if the real-time process crashes before completion this in-memory
+evidence may be lost even though a broader session record can already exist.
+
+\textbf{AI and grading limitations.} Depending on configuration, grading may run
+in an offline development-preview (``fake'') mode, which is the default; the
+optional real LLM-based grader is configurable but does not constitute a
+production assessment guarantee. No benchmark, accuracy, or grading-validity
+result is claimed for either mode. Because grading consumes the completed
+session's transcript evidence, the quality of a saved-session grading outcome
+depends on the quality of that STT-derived evidence.
+
+\textbf{Evaluation limitations.} The thesis reports no user study and no
+learning-effectiveness result. It also reports no benchmark, latency,
+throughput, coverage, accuracy, score, test-count, or pass-rate figures. The
+runtime smoke and pre-demo checklist is treated as a recommended verification
+procedure; its items count as recorded results only when they are actually
+executed in the target environment.
+
+\textbf{User-interface baseline limitation.} The ``cat companion'' interface
+introduced in PR~\#2 is not part of the baseline and is not described as
+implemented baseline functionality; the results and discussion in this thesis
+refer only to the baseline client.
+
 % TODO-TABLE [VI]: Bảng 5.1 - Hạn chế và hướng phát triển. Nội dung cần có:
 % hạn chế hiện tại (từ LUVE_FACTS.md), hướng khắc phục/phát triển tương ứng.
+
+Collectively, these limitations define the boundary within which the results of
+this thesis should be read. They are consistent with the controlled-demo,
+research-prototype scope, and the directions for addressing them are discussed
+in the next section.
 
 \section{Future Work}
 % [PLACEHOLDER]
