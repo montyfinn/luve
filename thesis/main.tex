@@ -224,33 +224,146 @@ DLQ    & Dead Letter Queue \\
 \chapter{INTRODUCTION}
 
 \section{Problem Statement}
-% [PLACEHOLDER] Background, motivation, and significance of the topic.
-% TODO-CITE: demand for English speaking practice / limitations of traditional methods.
+
+This thesis addresses the software-engineering problem of building an
+interactive, real-time English speaking-practice system. From a system-design
+perspective, such a system is challenging not because of any single feature but
+because it must coordinate several subsystems that have very different timing and
+reliability characteristics. A learner speaks into a browser, so the system must
+capture audio on the client and transport it in real time to a server; it must
+convert speech to text, generate conversational tutor replies quickly enough to
+sustain an interaction, and then persist what happened in the session so that it
+can be reviewed and graded afterwards. Recognition and reply generation belong on
+a latency-sensitive path, whereas grading and analysis are heavier and can run
+later, so the system has to keep these two concerns separate while still moving
+data reliably from one to the other.
+% TODO-CITE: background technologies (real-time speech recognition, large language models, WebRTC) are surveyed in Chapter~2.
+
+The core difficulty is therefore one of integration and boundary management
+rather than of any individual algorithm: a real-time transport path, a speech
+recognition component, a conversational model, a durable data store, an
+asynchronous grading stage, and a review interface must be composed into a single
+coherent system with clear responsibilities and well-defined hand-offs.
+
+Two cross-cutting concerns sharpen this difficulty. The first is reliability at
+the boundary between the live session and the deferred grading: when a session
+ends, the system must record what happened durably and then move a unit of work
+to the grading stage, without losing that work if the messaging step does not
+succeed. The second is privacy: because the system processes a learner's speech,
+the recognized transcript is sensitive, and care is needed so that raw transcript
+text does not leak into operational logs. These concerns motivate specific design
+choices --- a durable hand-off recorded in the database and a scoped redaction of
+transcript text from the relevant recognition log lines --- that are developed in
+the later chapters. This thesis approaches the overall problem as a
+software/system-design exercise and builds LUVE, a controlled-demo prototype, to
+demonstrate one coherent way of structuring it. The thesis does not study the educational effectiveness of such a system, nor
+does it make any claim about market demand or learning improvement; its concern is
+the design and implementation of the software.
 
 \section{Research Objectives}
 \subsection{General Objective}
-% [PLACEHOLDER] Overall goal: build a real-time English speaking practice
-% demo system (STT + LLM tutor + grading of saved sessions).
+
+The general objective is to design and implement LUVE as a coherent software
+system for real-time English speaking practice, delivered as a controlled-demo
+research prototype rather than a production-ready product. The emphasis is on the
+architecture, the boundaries between components, the data and control flows, and
+the runtime integration that allow the prototype to operate end to end.
 
 \subsection{Specific Objectives}
-% [PLACEHOLDER] Specific objectives, following LUVE_FACTS.md.
+
+The specific objectives are the following:
+
+\begin{itemize}[leftmargin=*]
+  \item to design a multi-component architecture for real-time speaking
+  interaction, with explicit component boundaries;
+  \item to implement a controlled-demo prototype integrating the frontend
+  client, the Core API, the TEN/WebRTC gateway, the STT component, the real-time
+  LLM tutor reply path, PostgreSQL, RabbitMQ, and the grading-worker;
+  \item to separate the real-time interaction from asynchronous grading, so that
+  the latency-sensitive path is not burdened by analysis work;
+  \item to persist completed sessions and support saved-session review; and
+  \item to document the reliability and privacy boundaries of the system,
+  including the scoped redaction of STT transcript text from the relevant
+  recognition log lines and the durable \texttt{session\_outbox} hand-off.
+\end{itemize}
+
+These objectives are deliberately framed as software objectives. The thesis does
+not aim to demonstrate production readiness.
 
 \section{Research Subject and Scope}
 \subsection{Research Subject}
-% [PLACEHOLDER]
+
+The subject of the thesis is the LUVE software system itself --- its
+architecture, its constituent components (the frontend client, the Core API, the
+TEN/WebRTC gateway, the STT module, the real-time LLM tutor, PostgreSQL,
+RabbitMQ, the \texttt{session\_outbox} table, and the grading-worker), and the
+data and control flows that connect them. The single reference point for every
+claim in this thesis is the frozen source-code baseline \texttt{main@6a61bc8}.
+
 \subsection{Research Scope}
-% [PLACEHOLDER] State clearly: this is a controlled-demo / research prototype,
-% NOT a production product. STT stable mode: forced_en + small.en, second-pass
-% disabled by default.
+
+The scope is intentionally bounded. LUVE is studied as a controlled-demo,
+research prototype, not as a production product. Speech recognition is treated in
+its stable demo mode only: the \texttt{small.en} model in \texttt{forced\_en}
+mode with second-pass verification disabled, which makes recognition
+English-focused; stable multilingual recognition is outside the scope and is not
+claimed. The pronunciation value reported by the system is treated as a clarity
+estimate derived from speech-recognition confidence and uncertainty, not as
+acoustic or phoneme-level pronunciation scoring. Grading is considered in both of
+its configured modes: an offline development-preview (``fake'') grader by default
+and an optional real LLM-based grader enabled by configuration. On the
+reliability side, the outbox relay is treated as disabled by default, so recovery
+from a failed publish is manual unless the relay is explicitly enabled, and the
+hand-off is at-least-once-oriented rather than exactly-once. Horizontal scaling is
+not within scope and is not validated. Finally, the unmerged ``cat companion''
+interface (PR~\#2) is not part of the baseline and is excluded from the scope of
+this thesis.
 
 \section{Research Methodology}
-% [PLACEHOLDER]
+
+The work followed a sequence of system-design and implementation steps. It began
+with requirements and boundary analysis, separating the functional needs ---
+real-time speaking practice, recognition, tutor replies, session persistence, and
+grading of saved sessions --- from the non-functional concerns of privacy,
+security, and reliability. This was followed by architecture design, in which the
+components and their boundaries were defined, and by database and outbox design,
+in which durable state and the completion-to-grading hand-off were modeled around
+PostgreSQL and the \texttt{session\_outbox} table. The design was then mapped onto
+the implementation across the frontend, the Core API, the real-time gateway, the
+STT and tutor paths, and the grading-worker. Verification was carried out at a
+level appropriate to a controlled demo, combining build and static checks,
+targeted backend checks, and a runtime smoke and pre-demo verification checklist;
+checklist items count as recorded results only when executed in the target
+environment. Throughout, the limitations of the prototype were documented
+truthfully rather than glossed over. The methodology did not include user
+studies, controlled experiments, benchmark measurements, or a
+continuous-integration pipeline.
 
 \section{Scientific and Practical Significance}
-% [PLACEHOLDER]
+
+The contributions of this thesis are technical and system-oriented, and are
+treated in detail in Chapter~5. In brief, the thesis contributes a componentized
+LUVE architecture with explicit boundaries; a clean separation of the real-time
+speaking interaction from asynchronous grading; a persistence and hand-off design
+built on PostgreSQL, RabbitMQ, and the durable \texttt{session\_outbox} table;
+explicit and honest boundaries around where artificial intelligence is used,
+including the distinction between real-time tutor replies and grading and the
+clarity-estimate treatment of pronunciation; and a controlled-demo DevOps and
+documentation posture in which the prototype's scope and limitations are stated
+plainly. These are offered as software-design results rather than as claims about
+learning outcomes or measured performance.
 
 \section{Thesis Structure}
-% [PLACEHOLDER] Briefly describe the five chapters.
+
+The remainder of the thesis is organized as follows. Chapter~1 (this chapter)
+introduces the problem, objectives, scope, methodology, and contributions.
+Chapter~2 reviews the background and the related technologies on which LUVE is
+built. Chapter~3 presents the system design, covering the architecture, the
+database design, the interface design, and the algorithm and processing-flow
+design. Chapter~4 describes the development environment, the implementation
+process, the achieved demo-visible results, and the testing and verification
+posture. Chapter~5 concludes the thesis, summarizes the contributions and
+limitations, and discusses directions for future work.
 
 % ------------------- CHAPTER 2 ------------------------------------
 \chapter{THEORETICAL BACKGROUND AND RELATED WORK}
