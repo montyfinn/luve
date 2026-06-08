@@ -6,12 +6,11 @@
 %   - Do NOT fabricate references. Add an entry only for a real source
 %     you have actually read, then \cite{key} it in main.tex.
 %   - Resolve every "% TODO-CITE" marker in main.tex.
-%   - This file is intentionally EMPTY of real entries at skeleton stage.
-%     Real references will be added later. An empty bibliography may make
-%     biber/biblatex emit a harmless "empty bibliography" warning — that
-%     is acceptable now and disappears once you add and \cite real entries.
-%   - Do NOT add a dummy/placeholder @entry just to silence the warning:
-%     a placeholder can accidentally print as a fabricated reference.
+%   - Real bibliography entries have been added for verified thesis sources.
+%   - Keep unresolved TODO-CITE notes as comments only; do not add dummy
+%     entries or \nocite{*}.
+%   - Do NOT add a dummy/placeholder @entry: a placeholder can accidentally
+%     print as a fabricated reference.
 %   - Do NOT use \nocite{*}.
 %
 %  Suggested real sources to look up and add yourself (NOT pre-filled,
@@ -25,15 +24,107 @@
 %   * "Transactional Outbox" pattern reference (e.g., microservices.io).
 % =====================================================================
 
-% --- TODO-CITE: Whisper / faster-whisper STT ------------------------
-% @inproceedings{whisper2023, ... }
-% @misc{fasterwhisper, ... }
+% =====================================================================
+%  Real, verified sources. Do NOT add fake/dummy entries below this line.
+%  Living documentation pages and software repositories use access date
+%  2026-06-08. Paper page numbers are intentionally omitted where they
+%  were not verified, rather than invented.
+% =====================================================================
 
-% --- TODO-CITE: LLM tutor model family ------------------------------
-% @article{llm_reference, ... }
+% --- Speech-to-Text: Whisper paper + faster-whisper implementation ---
+@inproceedings{radfordWhisper,
+  author    = {Radford, Alec and Kim, Jong Wook and Xu, Tao and Brockman, Greg and McLeavey, Christine and Sutskever, Ilya},
+  title     = {Robust Speech Recognition via Large-Scale Weak Supervision},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning (ICML)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {202},
+  year      = {2023},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v202/radford23a.html}
+}
 
-% --- TODO-CITE: WebRTC ----------------------------------------------
-% @misc{webrtc_spec, ... }
+@misc{fasterWhisper,
+  author       = {{SYSTRAN}},
+  title        = {faster-whisper: Faster {Whisper} transcription with {CTranslate2}},
+  howpublished = {\url{https://github.com/SYSTRAN/faster-whisper}},
+  note         = {Accessed: 2026-06-08}
+}
 
-% --- TODO-CITE: Transactional Outbox pattern ------------------------
-% @misc{outbox_pattern, ... }
+% --- Large Language Models (general background) ----------------------
+@inproceedings{brownGPT3,
+  author    = {Brown, Tom B. and others},
+  title     = {Language Models are Few-Shot Learners},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {33},
+  year      = {2020},
+  url       = {https://proceedings.neurips.cc/paper/2020/hash/1457c0d6bfcb4967418bfb8ac142f64a-Abstract.html}
+}
+
+% --- Web Real-Time Communication ------------------------------------
+@misc{webrtcSpec,
+  author       = {{W3C}},
+  title        = {{WebRTC} 1.0: Real-Time Communication Between Browsers},
+  howpublished = {\url{https://www.w3.org/TR/webrtc/}},
+  year         = {2025},
+  note         = {W3C Recommendation. Accessed: 2026-06-08}
+}
+
+% --- Message broker -------------------------------------------------
+@misc{rabbitmqDocs,
+  author       = {{RabbitMQ}},
+  title        = {{RabbitMQ} Documentation},
+  howpublished = {\url{https://www.rabbitmq.com/docs}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- Transactional Outbox pattern -----------------------------------
+@misc{transactionalOutbox,
+  author       = {Richardson, Chris},
+  title        = {Pattern: Transactional outbox},
+  howpublished = {\url{https://microservices.io/patterns/data/transactional-outbox.html}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- Relational persistence -----------------------------------------
+@misc{postgresDocs,
+  author       = {{PostgreSQL Global Development Group}},
+  title        = {{PostgreSQL} Documentation},
+  howpublished = {\url{https://www.postgresql.org/docs/}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- Backend framework ----------------------------------------------
+@misc{fastapiDocs,
+  author       = {Ram{\'i}rez, Sebasti{\'a}n},
+  title        = {{FastAPI} Documentation},
+  howpublished = {\url{https://fastapi.tiangolo.com/}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- Frontend library + build tool ----------------------------------
+@misc{reactDocs,
+  author       = {{Meta Open Source}},
+  title        = {{React} Documentation},
+  howpublished = {\url{https://react.dev/}},
+  note         = {Accessed: 2026-06-08}
+}
+
+@misc{viteDocs,
+  author       = {{Vite}},
+  title        = {{Vite} Documentation},
+  howpublished = {\url{https://vite.dev/}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- Container orchestration (local/demo) ---------------------------
+@misc{dockerComposeDocs,
+  author       = {{Docker, Inc.}},
+  title        = {{Docker Compose} Documentation},
+  howpublished = {\url{https://docs.docker.com/compose/}},
+  note         = {Accessed: 2026-06-08}
+}
+
+% --- STILL UNRESOLVED (do not invent) -------------------------------
+% TODO-CITE: speaking-practice / computer-assisted language learning (CALL)
+%   background for §2.1 — no strong academic survey verified yet; keep the
+%   in-text TODO-CITE comment until a real source is confirmed.

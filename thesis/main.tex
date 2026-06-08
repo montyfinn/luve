@@ -236,8 +236,9 @@ sustain an interaction, and then persist what happened in the session so that it
 can be reviewed and graded afterwards. Recognition and reply generation belong on
 a latency-sensitive path, whereas grading and analysis are heavier and can run
 later, so the system has to keep these two concerns separate while still moving
-data reliably from one to the other.
-% TODO-CITE: background technologies (real-time speech recognition, large language models, WebRTC) are surveyed in Chapter~2.
+data reliably from one to the other. The background technologies behind these
+stages --- real-time communication, speech recognition, and conversational
+language models --- are surveyed in Chapter~2.
 
 The core difficulty is therefore one of integration and boundary management
 rather than of any individual algorithm: a real-time transport path, a speech
@@ -404,7 +405,7 @@ ordinary request/response calls. Standard HTTP request/response interactions are
 well suited to discrete operations such as authentication or fetching saved
 data, but they are not designed for the continuous, low-latency, bidirectional
 media flow that a live speaking interaction requires. Web Real-Time Communication
-(WebRTC) is the browser technology that addresses this need: it provides
+(WebRTC)~\cite{webrtcSpec} is the browser technology that addresses this need: it provides
 peer-connection establishment, session negotiation, and the transport of media
 and control data between a browser and a remote endpoint. At a high level,
 WebRTC allows the client and the server-side gateway to negotiate a session and
@@ -425,7 +426,6 @@ TEN/WebRTC gateway, and it carries the audio and control flow of a speaking
 session; the heavier, non-interactive operations remain on the HTTP REST surface.
 This separation of a real-time media boundary from conventional request/response
 boundaries is a recurring theme in the design.
-% TODO-CITE: WebRTC standard / MDN or W3C WebRTC reference.
 
 \section{Speech-to-Text Technology}
 
@@ -434,7 +434,8 @@ into text that downstream components can process. The quality and timing of this
 conversion shape everything that follows, since both the conversational response
 and any later analysis operate on the recognized text and on the confidence
 signals that accompany it. LUVE uses the \texttt{faster-whisper} implementation
-of the Whisper family of speech-recognition models. In its stable demo
+of the Whisper family of speech-recognition models~\cite{radfordWhisper,fasterWhisper}.
+In its stable demo
 configuration, recognition runs with the \texttt{small.en} model in
 \texttt{forced\_en} mode with second-pass verification disabled, which makes the
 recognition path English-focused. This configuration is a deliberate scoping
@@ -447,12 +448,11 @@ confidence-derived signals can support a coarse, text-level estimate of how
 clearly a learner was understood, but they do not measure articulation of
 individual sounds, and the system is careful not to present them as if they did.
 This thesis does not report recognition accuracy figures for the model.
-% TODO-CITE: Whisper paper and/or faster-whisper documentation.
 
 \section{Large Language Models for Conversational Response}
 
 Large language models (LLMs) are sequence models capable of generating fluent
-natural-language text conditioned on an input. In LUVE, an LLM is used at the
+natural-language text conditioned on an input~\cite{brownGPT3}. In LUVE, an LLM is used at the
 architecture level to generate conversational tutor replies from the recognized
 text during a session, so that the interaction can continue naturally. The
 important point for the design is the boundary around this use: the real-time
@@ -468,7 +468,6 @@ to the asynchronous grading-worker after a session completes. This thesis makes
 no claim about the pedagogical effectiveness of the generated replies and reports
 no performance figures for any specific model; the LLM is treated as a component
 with a defined responsibility and a defined boundary within the system.
-% TODO-CITE: LLM background / official provider documentation or survey.
 
 \section{Asynchronous Processing and Message Queues}
 
@@ -478,7 +477,7 @@ learner is speaking, so it is desirable to move them off the latency-sensitive
 hot path and process them asynchronously. A message queue is the standard
 mechanism for this kind of decoupling: a producer hands off a unit of work, and a
 separate consumer processes it independently, so that the producer is not blocked
-by the consumer's workload. Beyond decoupling, message brokers commonly provide
+by the consumer's workload~\cite{rabbitmqDocs}. Beyond decoupling, message brokers commonly provide
 useful operational properties: a consumer acknowledges a work item once it has
 been processed, items that cannot be processed can be routed aside for inspection
 rather than lost, and producers and consumers can be scaled or restarted
@@ -492,13 +491,12 @@ treated as guaranteed, and the design therefore does not assume that delivery
 always succeeds on the first attempt. Delivery is at-least-once-oriented with
 idempotent, session-level processing rather than exactly-once, so that a work
 item processed more than once does not produce duplicate results.
-% TODO-CITE: RabbitMQ documentation / message-queue background.
 
 \section{Relational Persistence and Transactional Outbox}
 
 A speaking-practice system needs durable storage for structured data --- accounts,
 sessions, and grading outcomes --- with well-defined relationships and
-transactional guarantees. A relational database such as PostgreSQL is a natural
+transactional guarantees. A relational database such as PostgreSQL~\cite{postgresDocs} is a natural
 fit, because it provides both the relational model and the ability to commit
 several related changes atomically. That atomicity is central to a recurring
 reliability problem: when a session completes, the system must both record the
@@ -508,7 +506,8 @@ broker can fail between the two steps. This is the classic dual-write problem:
 two independent systems --- the database and the message broker --- must both be
 updated, but there is no single transaction spanning them, so a crash or a failed
 publish after the database commit can leave the state change recorded without the
-corresponding message ever being sent. The transactional outbox pattern addresses
+corresponding message ever being sent. The transactional outbox
+pattern~\cite{transactionalOutbox} addresses
 this by writing the outbound intent into the same database, in the same
 transaction as the state change, so that the intent is durable if and only if the
 state change is. A separate relay process can then read pending outbox entries
@@ -518,7 +517,6 @@ table rather than a queue service; the session state and the outbox intent are
 committed together, and a relay would later deliver pending rows. In the baseline
 that relay is disabled by default, so recovery from a failed publish is manual
 unless the relay is explicitly enabled.
-% TODO-CITE: transactional outbox pattern reference.
 
 \section{Web Application Architecture and Deployment}
 
@@ -537,11 +535,12 @@ asynchronous messaging; and a separate worker process performs grading. Rather
 than being deployed as a standalone service, the frontend is built into static
 assets that the backend serves. These components are packaged and coordinated for
 local, demonstration use with Docker Compose, which allows the infrastructure
-services and the application services to be brought up together. This thesis names these technologies only as
+services and the application services to be brought up
+together~\cite{fastapiDocs,reactDocs,viteDocs,dockerComposeDocs,postgresDocs,rabbitmqDocs}.
+This thesis names these technologies only as
 the components used in LUVE and does not assert specific version numbers or any
 claim of production readiness; the deployment is a controlled-demo packaging
 rather than a hosted, production-grade service.
-% TODO-CITE: official documentation for FastAPI, React/Vite, Docker Compose, PostgreSQL, RabbitMQ if needed.
 
 \section{Chapter Summary}
 
@@ -692,29 +691,26 @@ comprises the following main components:
   \item \textbf{Real-time TEN/WebRTC gateway.} A second FastAPI application
   (file \texttt{run\_ten.py}, port 8080) that shares the same codebase as
   the Core API but serves the real-time conversation path exclusively. This
-  gateway establishes the WebRTC connection with the browser, receives the
-  learner's audio stream, and orchestrates the processing steps on the
-  ``hot path''. The path is capped at a single session per node
+  gateway establishes the WebRTC~\cite{webrtcSpec} connection with the browser,
+  receives the learner's audio stream, and orchestrates the processing steps on
+  the ``hot path''. The path is capped at a single session per node
   (\textit{single-session-per-node}).
-  % TODO-CITE: Need an official source for WebRTC as a browser real-time communication standard.
 
   \item \textbf{Speech-to-Text (STT) component.} LUVE uses the
   \texttt{faster-whisper} model with the stable demo configuration
   \texttt{small.en} in \texttt{forced\_en} mode (forced English
   recognition), and the second-pass verification step is disabled by
   default. The STT component converts the learner's audio into text together
-  with confidence metrics.
-  % TODO-CITE: faster-whisper / Whisper (Radford et al.).
+  with confidence metrics~\cite{radfordWhisper,fasterWhisper}.
 
   \item \textbf{Tutor response component (LLM tutor).} The recognized text
-  is fed into a large language model to generate a conversational reply for
-  the learner. In the real-time flow, the large language model is used to
+  is fed into a large language model~\cite{brownGPT3} to generate a conversational
+  reply for the learner. In the real-time flow, the large language model is used to
   generate conversational replies appropriate to the context of the
   learner's utterance. This component is not described as the primary grader;
   the full grading/scoring analysis and grading results are processed
   asynchronously by the grading-worker after the session ends. This component
   provides the ``tutor'' behavior of the system.
-  % TODO-CITE: the large language model used for the tutor component.
 
   \item \textbf{PostgreSQL database.} Stores the system's persistent data,
   including users, lessons, practice sessions, and grading results. In
@@ -763,7 +759,7 @@ flow is asynchronous and does not sit on the hot path. Grading is triggered
 only after the session has ended, through the message queue. Thanks to this
 boundary, the latency or computational load of the grading stage does not
 affect the learner's conversation experience. The event-delivery mechanism
-uses the durable \textit{outbox} pattern: the outbox record is written in the
+uses the durable \textit{outbox} pattern~\cite{transactionalOutbox}: the outbox record is written in the
 same transaction as the session record, so it is not lost once the
 transaction succeeds. However, in the current version the outbox
 \textit{relay} is disabled by default, so recovery after a failed event
@@ -771,7 +767,6 @@ publish is a manual operation unless the relay is enabled. Message delivery
 is \textit{at-least-once}, and the grading process is designed to be
 idempotent through deduplication on \texttt{session\_id}; therefore the
 system does not claim exactly-once delivery guarantees.
-% TODO-CITE: the transactional outbox design pattern.
 
 \textbf{Privacy and security notes.} The real-time session control routes,
 specifically \texttt{/rtc/offer}, \texttt{/rtc/ice}, and \texttt{/rtc/cmd},
@@ -1190,7 +1185,7 @@ FastAPI framework. The \texttt{core-api} codebase runs two FastAPI applications:
 Core API, which exposes the REST endpoints for authentication, current-user
 lookup, and session management, and the TEN/WebRTC real-time gateway, which
 handles the live audio and control path. Speech recognition is provided by the
-\texttt{faster-whisper} implementation of Whisper; in the stable demo
+\texttt{faster-whisper} implementation of Whisper~\cite{radfordWhisper,fasterWhisper}; in the stable demo
 configuration it uses the \texttt{small.en} model in \texttt{forced\_en} mode
 with second-pass verification disabled, which makes the recognition path
 English-focused. The real-time LLM tutor produces conversational replies during
@@ -1199,13 +1194,12 @@ grading mode is configurable, defaulting to an offline development-preview
 grader and optionally using a real LLM-based grader. Durable state is stored in
 a PostgreSQL database, and RabbitMQ serves as the asynchronous message broker
 between session completion and grading. The frontend client is a single-page
-application built with React, Vite, and TypeScript. The frontend is built as
-static assets and served by the Core API container rather than deployed as a
-separate frontend service. The default Docker Compose configuration runs the
-stack on CPU; an opt-in GPU configuration for the STT gateway is also available
-where suitable hardware is present.
-% TODO-CITE: faster-whisper / Whisper (Radford et al.).
-% TODO-CITE: Docker / Docker Compose, FastAPI, React, Vite, PostgreSQL, RabbitMQ as appropriate.
+application built with React, Vite, and
+TypeScript~\cite{fastapiDocs,reactDocs,viteDocs,dockerComposeDocs,postgresDocs,rabbitmqDocs}.
+The frontend is built as static assets and served by the Core API container
+rather than deployed as a separate frontend service. The default Docker Compose
+configuration runs the stack on CPU; an opt-in GPU configuration for the STT
+gateway is also available where suitable hardware is present.
 
 % TODO-TABLE [VI]: Cần lập bảng môi trường phát triển và công nghệ sử dụng, gồm thành phần, công nghệ, vai trò trong hệ thống, ghi chú demo.
 % TODO-TABLE [VI]: Bảng 4.2 - Cấu hình demo STT/grading. Nội dung cần có:
