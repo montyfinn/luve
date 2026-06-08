@@ -1305,7 +1305,59 @@ in Chapter~5.
 \chapter{CONCLUSION AND FUTURE WORK}
 
 \section{Conclusion}
-% [PLACEHOLDER]
+
+This thesis designed and implemented LUVE, a real-time English speaking
+practice system, as a controlled-demo, research prototype rather than a
+production-ready product. The work was approached from a software and
+system-design perspective, and its contribution lies in the architecture, the
+module boundaries, the data and control flows, and the runtime integration that
+together let the prototype run end to end. The frozen baseline
+\texttt{main@6a61bc8} served as the single reference point for every design and
+implementation claim in the preceding chapters.
+
+At the system-design level, LUVE integrates a frontend client with the Core API
+and the TEN/WebRTC gateway. The client is a React/Vite/TypeScript single-page
+application that is built into static assets and served by the Core API rather
+than deployed as a separate service. The Core API provides the REST surface for
+authentication, current-user lookup, session management, and saved-result
+retrieval, and it also serves the static frontend. The TEN/WebRTC gateway
+provides the real-time speaking interaction, carrying the audio and control
+flow of a session. Speech recognition runs in the stable demo mode --- the
+\texttt{small.en} model in \texttt{forced\_en} mode with second-pass
+verification disabled --- and the real-time LLM tutor generates conversational
+replies that are deliberately kept separate from grading. Durable state is held
+in PostgreSQL, RabbitMQ carries the asynchronous grading work, and the
+\texttt{session\_outbox} table acts as a durable PostgreSQL bridge between
+session completion and grading; the grading-worker consumes the completed-session
+work and produces a \texttt{grading\_results} row on success or a
+\texttt{grading\_skip\_log} row when grading cannot proceed.
+
+On the implementation and verification side, the prototype achieves a working,
+demo-visible real-time speaking flow and a saved-session and grading flow. It
+incorporates a scoped privacy improvement --- the PR~\#1 patch redacts raw STT
+transcript text from the relevant recognition log lines --- and a reliability
+mechanism in which the outbox preserves the durable intent to grade and a
+warning is logged if the inline RabbitMQ publish fails. The verification posture
+was defined at a level appropriate to a controlled demo, combining build and
+static checks, targeted backend checks, and a runtime smoke/pre-demo checklist;
+checklist items are treated as recorded results only when executed in the target
+environment.
+
+These results are bounded by limitations that frame the prototype honestly. The
+system is not production-ready, and no production-grade continuous-integration or
+quality-assurance process is claimed. No learning-effectiveness or user-study
+result is reported, and no benchmark, latency, throughput, or coverage figures
+are claimed. Stable multilingual recognition is not validated, and the
+pronunciation value is a clarity estimate derived from speech-recognition
+confidence and uncertainty rather than acoustic or phoneme-level scoring. The
+outbox relay is disabled by default, so recovery from a failed publish is manual
+unless the relay is explicitly enabled, and delivery is at-least-once-oriented
+with idempotent, session-level deduplication rather than exactly-once. Finally,
+horizontal scaling is not validated, consistent with the single-node,
+controlled-demo scope. In summary, LUVE demonstrates a coherent end-to-end
+software design for real-time speaking practice within a clearly bounded
+prototype scope, and the directions for extending it are discussed in the
+remainder of this chapter.
 
 \section{Thesis Contributions}
 % [PLACEHOLDER]
