@@ -1,7 +1,7 @@
 /**
  * Real email/password auth client for core_api (C4). Client-only — uses the
- * existing endpoints under /api/v1/auth (register / login / me). No Google,
- * realtime, or grading wiring here; the rest of the app stays mock.
+ * existing endpoints under /api/v1/auth (register / login / me). Realtime,
+ * session, and grading calls live in their own client modules.
  *
  * Base URL comes from config (VITE_CORE_API_URL, default http://localhost:8000).
  * :5173 is already in the core_api CORS allow-list.

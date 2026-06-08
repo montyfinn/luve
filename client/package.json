@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "LUVE learner-first frontend (skeleton). Static screens only; no backend/realtime wiring yet. See docs/design/CLIENT_FRONTEND_MIGRATION_PLAN.md.",
+  "description": "LUVE learner-first frontend for the controlled-demo speaking practice workflow.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

@@ -16,14 +16,14 @@ interface AuthScreenProps {
   googleEnabled: boolean;
   /** Real auth — throws ApiError on failure; resolves (and App navigates) on success. */
   onSubmit: (mode: Mode, creds: AuthCreds) => Promise<void>;
-  onGoogle: () => void; // mock only — never calls Google in C4
+  onGoogle: () => void; // disabled in this build — never calls Google
   onBack: () => void;
 }
 
 /**
  * Auth — now wired to real core_api email/password auth via onSubmit.
  * Validation mirrors the backend (username ≥3, password ≥8). Server errors are
- * shown inline in the existing design. Google stays mock/disabled (C4 scope).
+ * shown inline in the existing design. Google sign-in stays disabled.
  */
 export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, onBack }: AuthScreenProps) {
   const [email, setEmail] = useState("");

@@ -28,7 +28,8 @@ interface LiveProps {
 }
 
 /** Live conversation shell. Orb carries state; transcript builds turn-by-turn.
- *  All driven by scripted mock beats — no real mic/WebRTC here. */
+ *  Realtime/WebRTC ownership stays in PracticeScreen; this component renders
+ *  the live state it receives from the active session flow. */
 export function Live({
   phase,
   transcript,
