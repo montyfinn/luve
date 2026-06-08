@@ -14,8 +14,9 @@ type AuthMode = "login" | "register";
 
 /**
  * App shell — top-level view machine (intro -> auth -> practice; no React Router).
- * C4: auth is REAL (email/password against core_api). Practice/live/analysis
- * remain scripted mock; Google stays mock (not wired in this task).
+ * Email/password auth uses core_api; practice, realtime, history, and grading
+ * views are delegated to the configured demo flow. Google sign-in remains
+ * disabled in this build.
  */
 export function App() {
   // Restore a signed-in session synchronously so we don't flash the intro.
@@ -27,7 +28,7 @@ export function App() {
   // The bearer token is persisted via session.ts (localStorage) for later
   // authenticated calls (sessions/grading); C4 doesn't need it in React state.
 
-  // diagnostics / event-log state (mock readouts; auth + session log lines are real)
+  // Diagnostics readouts are local UI state; auth + session log lines are real.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [diag, setDiag] = useState<DiagState>({ googleEnabled: false, gradingMode: "real" });
   const [log, setLog] = useState<LogLine[]>([]);
@@ -102,7 +103,7 @@ export function App() {
     [addLog, go],
   );
 
-  // Google stays mock in C4 — never calls Google endpoints.
+  // Google sign-in is disabled in this build — never calls Google endpoints.
   const handleGoogle = useCallback(() => {
     addLog("google sign-in is not wired in this build — use email & password");
   }, [addLog]);

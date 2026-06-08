@@ -16,9 +16,9 @@ const GRADING_MODES: GradingMode[] = ["real", "preview", "insufficient"];
 
 /**
  * Developer diagnostics drawer (operator plane). Closed by default; opens from
- * the top-bar gear. All readouts are MOCK/static placeholders. The "Demo
- * controls" let a reviewer preview states (Google enabled/paused, grading
- * result) without any backend — values feed the mock UI only.
+ * the top-bar gear. Health/provider readouts are local demo placeholders while
+ * session id and log entries reflect App state. The "Demo controls" let a
+ * reviewer preview selected UI states without changing backend configuration.
  */
 export function DiagnosticsDrawer({ open, onClose, state, set, log, sessionId }: DrawerProps) {
   useEffect(() => {
