@@ -170,10 +170,18 @@ COMMITTEE CHAIR\\(Signature and full name)
 % ===================== ACKNOWLEDGEMENTS ============================
 \chapter*{ACKNOWLEDGEMENTS}
 \addcontentsline{toc}{chapter}{ACKNOWLEDGEMENTS}
-% [PLACEHOLDER] Acknowledge the supervisor, family, friends, and everyone
-% who supported the thesis work.
-I would like to sincerely thank [PLACEHOLDER: Supervisor's name] for the
-dedicated guidance throughout this thesis. \ldots
+I would like to express my sincere gratitude to my supervisor, Dr. Cao Tien Dung,
+for his guidance, feedback, and support throughout the development and writing
+of this thesis. His advice helped me clarify the technical direction of the
+project and improve the structure of the system design discussion.
+
+I would also like to thank the faculty members and the School of Information
+Technology for providing the academic foundation and learning environment that
+supported this work. I am grateful to my friends and classmates for their
+encouragement, discussion, and feedback during the implementation and
+demonstration process. Finally, I would like to thank my family for their
+continuous encouragement, patience, and support during the completion of this
+thesis.
 \clearpage
 
 % ===================== ABSTRACT ====================================
@@ -182,14 +190,37 @@ dedicated guidance throughout this thesis. \ldots
 % chapter (heading "TOM TAT LUAN VAN") in addition to this one.
 \chapter*{ABSTRACT}
 \addcontentsline{toc}{chapter}{ABSTRACT}
-% [PLACEHOLDER] 200-300 words: objectives, methodology, main results,
-% conclusions. Follow LUVE_FACTS.md - do NOT claim production-ready /
-% stable multilingual STT / phoneme pronunciation scoring / exactly-once /
-% horizontal scaling.
-[PLACEHOLDER: English summary of the thesis.]
+LUVE is a web-based English speaking practice prototype designed to support
+interactive speaking sessions, transcript persistence, and post-session review.
+This thesis presents LUVE from a software and system design perspective, focusing
+on how the application is structured, implemented, and verified as a controlled
+demonstration system. The system combines a React/Vite client, a FastAPI
+backend, a realtime audio and session gateway, speech-to-text processing,
+LLM-based tutor responses, PostgreSQL persistence, RabbitMQ-based asynchronous
+processing, and post-session analysis views.
+
+The main objective of the thesis is to document the architecture, component
+responsibilities, data flow, control flow, database design, interface design, and
+implementation decisions behind the prototype. Particular attention is given to
+reliability and DevOps-related concerns, including containerized deployment,
+readiness checks, failure isolation, asynchronous processing, and the separation
+between realtime interaction and post-session analysis. The implementation is
+evaluated through source-level review, runtime smoke checks, observed
+screenshots, and consistency checks between the system behavior and the
+documented design.
+
+The result is a working controlled-demo prototype that demonstrates a complete
+speaking-practice workflow: authentication, practice-session entry, realtime
+interaction, session persistence, saved-session browsing, and
+development-preview post-session analysis. The thesis does not claim production
+readiness, validated learning effectiveness, benchmark speech-recognition
+accuracy, or validated grading quality. Instead, it identifies the implemented
+capabilities, the boundaries of the current prototype, and the engineering work
+required for future hardening.
 \vspace{0.5cm}
 
-\noindent\textbf{Keywords:} [PLACEHOLDER: 4-6 keywords, comma-separated]
+\noindent\textbf{Keywords:} English speaking practice, realtime web application,
+speech-to-text, system design, FastAPI, React
 \clearpage
 
 % ===================== TOC / LOF / LOT =============================
@@ -2105,18 +2136,55 @@ preserving the honest scoping that characterizes the present work.
 \appendix
 
 \chapter{Source Code}
-% [PLACEHOLDER] Insert important source-code excerpts (if needed).
-% Example listing skeleton:
-% \begin{lstlisting}[language=Python]
-% # ...
-% \end{lstlisting}
+This appendix summarizes the implementation artifacts used by the LUVE
+prototype. The main source code is organized into the client application,
+backend services, realtime gateway components, database-related code,
+asynchronous worker components, Docker Compose configuration, and thesis
+documentation. Full source code is maintained in the project repository and is
+not reproduced in full in this appendix to avoid unnecessary duplication.
+
+The LUVE source code is maintained in the project GitHub repository:
+\url{https://github.com/montyfinn/luve}. The repository contains the React/Vite
+client, FastAPI backend, realtime gateway components, asynchronous worker
+services, database-related code, Docker Compose configuration, and thesis
+documentation. The backend/system-design baseline discussed in this thesis is
+tied to the reviewed baseline commit \codepath{main@6a61bc8}, while later
+interface screenshots are used only as presentation/interface evidence.
 
 \chapter{Survey Results}
-% [PLACEHOLDER]
-% TODO-TABLE [VI]: Bảng B.1 - Kết quả khảo sát. Nội dung cần có: câu hỏi khảo sát,
-% số người tham gia, kết quả tổng hợp. KHÔNG bịa số liệu — chỉ điền khi có dữ liệu thật.
+No formal user survey was conducted as part of this thesis. The evaluation
+evidence used in this document is limited to implementation review, runtime
+smoke checks, screenshots, and documented system limitations. Therefore, this
+appendix is reserved for future survey instruments or user-study results if the
+prototype is later evaluated with participants.
 
 \chapter{User Guide}
-% [PLACEHOLDER] Installation and run guide (docker compose --profile app up -d --build).
+This appendix summarizes the basic local demonstration workflow for the LUVE
+prototype. The guide is intended for controlled local execution and review, not
+for production deployment.
+
+\textbf{Prerequisites.} The local environment requires Docker, Docker Compose,
+access to the project repository, and locally configured environment variables.
+Sensitive values such as API keys, database passwords, and service credentials
+must be stored outside version control.
+
+\textbf{Starting the system.} The main services can be started through Docker
+Compose from the project root. The standard local stack includes the web client,
+backend API, realtime gateway, PostgreSQL database, RabbitMQ message broker,
+Redis service, and asynchronous grading worker. For GPU speech-to-text testing,
+the GPU override file can be used on a machine with a working NVIDIA driver and
+container toolkit.
+
+\textbf{Typical demonstration flow.} A reviewer opens the LUVE web client,
+registers or logs in with a demo account, starts a speaking-practice session,
+grants microphone permission, and speaks with the realtime tutor. During the
+session, the interface displays the conversation flow and tutor replies. After
+the session is completed, the user can open the saved-session history and inspect
+the available analysis or grading view.
+
+\textbf{Shutdown and safety notes.} The local services can be stopped through
+Docker Compose when the demonstration is complete. Volumes should not be deleted
+unless the user intentionally wants to remove local database and broker state.
+Environment files and credentials should not be committed to the repository.
 
 \end{document}
