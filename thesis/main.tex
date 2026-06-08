@@ -301,9 +301,10 @@ DLQ    & Dead Letter Queue \\
 LUVE is built as a research prototype for real-time English speaking
 practice. The version presented in this thesis corresponds to the frozen
 source-code baseline \texttt{main@6a61bc8}. The system is organized as a
-multi-service application running under Docker Compose, in which the
-services communicate with one another only through two channels: the HTTP
-protocol and the RabbitMQ message queue. This organization cleanly separates
+multi-service application running under Docker Compose. Client-facing and
+control boundaries use HTTP and WebRTC where applicable, PostgreSQL provides
+durable persistence, and RabbitMQ carries asynchronous grading work. This
+organization cleanly separates
 the real-time conversation flow from the asynchronous grading flow, allowing
 one component to be developed or replaced without directly affecting the
 others.
@@ -392,7 +393,7 @@ comprises the following main components:
 
 % TODO-TABLE [VI]: Bảng 3.1 - Trách nhiệm các module hệ thống. Nội dung cần có:
 % tên module (core-api main.py, core-api run_ten.py, grading-worker), cổng/giao
-% tiếp, trách nhiệm chính. Bám LUVE_FACTS.md (hai service chỉ giao tiếp HTTP+RabbitMQ).
+% tiếp, trách nhiệm chính. Bám LUVE_FACTS.md (phân biệt HTTP/WebRTC boundaries, PostgreSQL persistence, và RabbitMQ async grading).
 
 \textbf{Main data and control flow.} A typical practice session proceeds as
 follows. First, the learner speaks into the microphone in the browser; the
@@ -795,7 +796,9 @@ system architecture (Section~3.3.1) organizes the system as cooperating
 components --- a browser client, the Core API, the TEN/WebRTC real-time
 gateway, the STT component, the real-time LLM tutor that produces
 conversational replies, a PostgreSQL database, a RabbitMQ message queue, and
-the grading-worker --- which communicate only over HTTP and RabbitMQ. The
+the grading-worker. Client-facing and control boundaries use HTTP and WebRTC
+where applicable; PostgreSQL provides durable persistence; and RabbitMQ carries
+asynchronous grading work. The
 database design (Section~3.3.2) organizes durable state around six tables ---
 \texttt{users}, \texttt{lessons}, \texttt{sessions}, \texttt{grading\_results},
 \texttt{grading\_skip\_log}, and \texttt{session\_outbox} --- where the outbox
