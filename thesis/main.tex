@@ -1928,17 +1928,21 @@ readiness, the GPU/CUDA STT runtime, the real-time STT/LLM/TTS pipeline, session
 persistence, the RabbitMQ hand-off, and grading-worker behavior.
 Table~\ref{tab:runtime-testcases} lists these cases with their observed results.
 Each \emph{Observed Result} is taken directly from the recaptured evidence in the
-controlled-demo run; for brevity the evidence column abbreviates the two log
+controlled-demo run; for brevity the observed/evidence column abbreviates the two log
 captures as \emph{GW log} (\codepath{gateway-live-gpu-demo.log}) and \emph{W log}
 (\codepath{grading-worker-tail.log}), alongside the readiness/inspection JSON and
 text captures. A \emph{Pass} status means the expected functional behavior was
 observed in the controlled demo; it is \emph{not} a benchmark, a validated
 recognition-accuracy result, or a validated grading-quality result.
 
-{\scriptsize
+{\footnotesize
 \setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.15}
-\begin{longtable}{p{0.5cm} p{1.6cm} p{1.9cm} p{2.0cm} p{2.3cm} p{2.8cm} p{0.9cm} p{2.1cm}}
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.55cm}
+                  >{\raggedright\arraybackslash}p{1.25cm}
+                  >{\raggedright\arraybackslash}p{5.05cm}
+                  >{\raggedright\arraybackslash}p{6.1cm}
+                  >{\centering\arraybackslash}p{0.9cm}}
   \caption{Functional Runtime Test Cases and Observed Results, recorded in a
   single controlled GPU-enabled demo run (\codepath{main@6640171}). Functional
   evidence observed in a controlled demo --- not a benchmark, not validated
@@ -1946,38 +1950,38 @@ recognition-accuracy result, or a validated grading-quality result.
   learning-effectiveness study.}
   \label{tab:runtime-testcases} \\
   \toprule
-  \textbf{ID} & \textbf{Area} & \textbf{Precondition} & \textbf{Steps} & \textbf{Expected Result} & \textbf{Observed Result} & \textbf{Status} & \textbf{Evidence} \\
+  \textbf{ID} & \textbf{Area} & \textbf{Procedure and expected result} & \textbf{Observed result and evidence} & \textbf{Status} \\
   \midrule
   \endfirsthead
-  \multicolumn{8}{l}{\footnotesize\itshape Table~\ref{tab:runtime-testcases} continued from previous page}\\
+  \multicolumn{5}{l}{\footnotesize\itshape Table~\ref{tab:runtime-testcases} continued from previous page}\\
   \toprule
-  \textbf{ID} & \textbf{Area} & \textbf{Precondition} & \textbf{Steps} & \textbf{Expected Result} & \textbf{Observed Result} & \textbf{Status} & \textbf{Evidence} \\
+  \textbf{ID} & \textbf{Area} & \textbf{Procedure and expected result} & \textbf{Observed result and evidence} & \textbf{Status} \\
   \midrule
   \endhead
-  \midrule \multicolumn{8}{r}{\footnotesize\itshape continued on next page}\\
+  \midrule \multicolumn{5}{r}{\footnotesize\itshape continued on next page}\\
   \endfoot
   \bottomrule
   \endlastfoot
-  T1 & Infrastructure & GPU host; Compose app profile & Bring up the stack & App containers running with the GPU image & Gateway runs from \texttt{luve-core-api:gpu}; services up & Pass & \codepath{gpu-inspect.txt} \\
-  T2 & Infrastructure & Stack running & \texttt{GET /readyz} (Core API) & HTTP 200, database reachable & \texttt{status:ready}, \texttt{database:ok} & Pass & \codepath{core-readyz.json} \\
-  T3 & Infrastructure & Stack running & \texttt{GET /readyz} (gateway) & Gateway initialized & \texttt{status:ready}, \texttt{gateway:initialized} & Pass & \codepath{gateway-readyz.json} \\
-  T4 & Infrastructure & Stack running & \texttt{GET /rtc/health} & RTC health OK & \texttt{status:ok}; 2 sessions closed & Pass & \codepath{rtc-health.json} \\
-  T5 & GPU runtime & GPU host & Inspect gateway container & GPU device request present & \texttt{DeviceRequests} with \texttt{Capabilities:[[gpu]]} & Pass & \codepath{gpu-inspect.txt} \\
-  T6 & GPU runtime & Gateway up & Query CUDA device count & At least one CUDA device & \texttt{ctranslate2\_cuda\_devices=1} & Pass & \codepath{ctranslate2-cuda.txt} \\
-  T7 & GPU runtime & Gateway startup & Read STT GPU health log & GPU health reported & \texttt{stt.gpu.health} \texttt{nvidia\_smi\_available=True} \texttt{ctranslate2\_cuda\_devices=1} & Pass & GW log \\
-  T8 & STT & GPU available & Load STT model & Model loads on CUDA & \texttt{stt.model.loading model=small.en device=cuda compute\_type=int8\_float16} & Pass & GW log \\
-  T9 & Real-time & Authenticated client & Start a speaking session & WebRTC session created & \texttt{webrtc.session.created} \texttt{session\_id=bf21\dots} & Pass & GW log \\
-  T10 & STT & Session active & Speak into the microphone & Audio processed by STT engine & \texttt{faster\_whisper:Processing audio} (multiple) & Pass & GW log \\
-  T11 & STT & Audio streaming & Observe interim recognition & Non-empty interim text & \texttt{TEN STT output\dots final=False} with \texttt{text\_len} up to 60 & Pass & GW log \\
-  T12 & STT & Utterance spoken & Observe final recognition & Non-empty final text & \texttt{final=True} \texttt{text\_len} 11--114 & Pass & GW log \\
-  T13 & STT & Utterance ends & Flush recognition job & STT job completes & \texttt{ten.stt.job\_finished is\_final=True} & Pass & GW log \\
-  T14 & LLM tutor & Final text available & Generate tutor reply & Tutor reply via provider & \texttt{ten.llm.started}/\texttt{finished source=groq} & Pass & GW log \\
-  T15 & TTS & Tutor reply ready & Synthesize speech & Audio playback begins & \texttt{ten.tts.started}; \texttt{ten.tts.first\_chunk} & Pass & GW log \\
-  T16 & Persistence & Session completing & Persist session record & Session events saved to DB & ``Blackbox logs saved to DB'' for \texttt{bf21\dots} & Pass & GW log \\
-  T17 & Messaging & Session completed & Publish completion event & Event published to queue & \texttt{session.completed published queue=luve.session.completed} & Pass & GW log \\
-  T18 & Grading & Worker started & Subscribe to queue & Worker ready/subscribed & \texttt{worker.ready queue=luve.session.completed} & Pass & W log \\
-  T19 & Grading & Eligible session & Consume event and grade & Grading result produced; re-delivery deduplicated & \texttt{grading.completed overall\_score=5.05 provider\_requested=llm grader\_version=llm\_grader.v1}; \texttt{grading.already\_graded} on redelivery & Pass & W log \\
-  T20 & Grading & Short session (8 words) & Consume event and gate & Ineligible session skipped & \texttt{grading.session\_ineligible reason=insufficient\_words student\_word\_count=8 min\_words\_threshold=15} & Pass & W log \\
+  T1 & Infra. & GPU host; Compose app profile. Bring up stack; expect app containers running with GPU image. & Gateway runs from \codepath{luve-core-api:gpu}; services up. Evidence: \codepath{gpu-inspect.txt}. & Pass \\
+  T2 & Infra. & Stack running. Request Core API \codepath{GET /readyz}; expect HTTP 200 and database reachable. & \codepath{status:ready}, \codepath{database:ok}. Evidence: \codepath{core-readyz.json}. & Pass \\
+  T3 & Infra. & Stack running. Request gateway \codepath{GET /readyz}; expect gateway initialized. & \codepath{status:ready}, \codepath{gateway:initialized}. Evidence: \codepath{gateway-readyz.json}. & Pass \\
+  T4 & Infra. & Stack running. Request \codepath{GET /rtc/health}; expect RTC health OK. & \codepath{status:ok}; 2 sessions closed. Evidence: \codepath{rtc-health.json}. & Pass \\
+  T5 & GPU & GPU host. Inspect gateway container; expect GPU device request present. & \codepath{DeviceRequests} includes \codepath{Capabilities:[[gpu]]}. Evidence: \codepath{gpu-inspect.txt}. & Pass \\
+  T6 & GPU & Gateway up. Query CUDA device count; expect at least one CUDA device. & \codepath{ctranslate2_cuda_devices=1}. Evidence: \codepath{ctranslate2-cuda.txt}. & Pass \\
+  T7 & GPU & Gateway startup. Read STT GPU health log; expect GPU health reported. & \codepath{stt.gpu.health}; \codepath{nvidia_smi_available=True}; \codepath{ctranslate2_cuda_devices=1}. Evidence: GW log. & Pass \\
+  T8 & STT & GPU available. Load STT model; expect model to load on CUDA. & \codepath{stt.model.loading}; \codepath{model=small.en}; \codepath{device=cuda}; \codepath{compute_type=int8_float16}. Evidence: GW log. & Pass \\
+  T9 & Realtime & Authenticated client. Start speaking session; expect WebRTC session created. & \codepath{webrtc.session.created}; \codepath{session_id=bf21...}. Evidence: GW log. & Pass \\
+  T10 & STT & Session active. Speak into microphone; expect audio processed by STT engine. & \codepath{faster_whisper:Processing} audio appears multiple times. Evidence: GW log. & Pass \\
+  T11 & STT & Audio streaming. Observe interim recognition; expect non-empty interim text. & TEN STT output with \codepath{final=False}; \codepath{text_len} up to 60. Evidence: GW log. & Pass \\
+  T12 & STT & Utterance spoken. Observe final recognition; expect non-empty final text. & \codepath{final=True}; \codepath{text_len} 11--114. Evidence: GW log. & Pass \\
+  T13 & STT & Utterance ends. Flush recognition job; expect STT job completion. & \codepath{ten.stt.job_finished is_final=True}. Evidence: GW log. & Pass \\
+  T14 & LLM tutor & Final text available. Generate tutor reply; expect provider-backed tutor reply. & \codepath{ten.llm.started}; finished with \codepath{source=groq}. Evidence: GW log. & Pass \\
+  T15 & TTS & Tutor reply ready. Synthesize speech; expect audio playback begins. & \codepath{ten.tts.started}; \codepath{ten.tts.first_chunk}. Evidence: GW log. & Pass \\
+  T16 & Persist. & Session completing. Persist session record; expect session events saved to DB. & ``Blackbox logs saved to DB'' for \codepath{bf21...}. Evidence: GW log. & Pass \\
+  T17 & Queue & Session completed. Publish completion event; expect event published to queue. & Published \codepath{session.completed}; queue \codepath{luve.session.completed}. Evidence: GW log. & Pass \\
+  T18 & Grading & Worker started. Subscribe to queue; expect worker ready/subscribed. & \codepath{worker.ready}; queue \codepath{luve.session.completed}. Evidence: W log. & Pass \\
+  T19 & Grading & Eligible session. Consume event and grade; expect grading result and deduplicated re-delivery. & \codepath{grading.completed}; \codepath{overall_score=5.05}; \codepath{provider_requested=llm}; \codepath{grader_version=llm_grader.v1}; \codepath{grading.already_graded} on redelivery. Evidence: W log. & Pass \\
+  T20 & Grading & Short session (8 words). Consume event and gate; expect ineligible session skipped. & \codepath{grading.session_ineligible}; \codepath{reason=insufficient_words}; \codepath{student_word_count=8}; \codepath{min_words_threshold=15}. Evidence: W log. & Pass \\
 \end{longtable}
 }
 
