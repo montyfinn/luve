@@ -185,9 +185,8 @@ thesis.
 \clearpage
 
 % ===================== ABSTRACT ====================================
-% A single English abstract is used (full-English thesis). If the faculty
-% also requires a Vietnamese abstract, add a separate Vietnamese-abstract
-% chapter (heading "TOM TAT LUAN VAN") in addition to this one.
+% English abstract followed by the required Vietnamese abstract (TÓM TẮT,
+% added below) to satisfy the faculty grading form (Việt + Anh).
 \chapter*{ABSTRACT}
 \addcontentsline{toc}{chapter}{ABSTRACT}
 LUVE is a web-based English speaking practice prototype designed to support
@@ -221,6 +220,40 @@ required for future hardening.
 
 \noindent\textbf{Keywords:} English speaking practice, realtime web application,
 speech-to-text, system design, FastAPI, React
+\clearpage
+
+% ===================== VIETNAMESE ABSTRACT (TOM TAT) ==============
+% Vietnamese-language abstract required by the faculty grading form
+% (rubric criterion 1: "tom tat Viet + Anh"). System-design framing,
+% consistent with the English abstract; no learning-effectiveness or
+% validated-grading claims. Renders under XeLaTeX with TeX Gyre Termes,
+% which covers Vietnamese diacritics.
+\chapter*{TÓM TẮT}
+\addcontentsline{toc}{chapter}{TÓM TẮT}
+LUVE là một nguyên mẫu (prototype) ứng dụng web hỗ trợ luyện nói tiếng Anh
+theo thời gian thực, được trình bày trong luận văn này dưới góc độ thiết kế
+phần mềm và thiết kế hệ thống. Thay vì đánh giá hiệu quả sư phạm, luận văn tập
+trung vào cách hệ thống được kiến trúc, hiện thực và kiểm chứng như một hệ thống
+trình diễn có kiểm soát (controlled demo). Hệ thống tích hợp một ứng dụng khách
+React/Vite, một backend FastAPI, một cổng (gateway) âm thanh thời gian thực dựa
+trên WebRTC, mô-đun nhận dạng giọng nói (speech-to-text, STT), phần sinh câu trả
+lời của trợ giảng bằng mô hình ngôn ngữ lớn (LLM), phần chuyển văn bản thành
+giọng nói (text-to-speech, TTS), lưu trữ phiên với PostgreSQL, và xử lý chấm
+điểm/phân tích bất đồng bộ thông qua hàng đợi thông điệp RabbitMQ.
+
+Luận văn mô tả kiến trúc thành phần, luồng dữ liệu và luồng điều khiển, thiết kế
+cơ sở dữ liệu, thiết kế giao diện, cùng cơ chế bàn giao bền vững từ lúc kết thúc
+phiên đến khâu chấm điểm (transactional outbox). Hệ thống được đóng gói và minh
+họa bằng Docker Compose, kèm một lần chạy thử nghiệm có kiểm soát sử dụng GPU cho
+STT. Luận văn không khẳng định khả năng triển khai sản phẩm thực tế, hiệu quả học
+tập đã được kiểm chứng, độ chính xác nhận dạng giọng nói hay chất lượng chấm điểm
+đã được kiểm định; thay vào đó, luận văn nêu rõ các năng lực đã hiện thực, ranh
+giới và các giới hạn của nguyên mẫu hiện tại, cùng phần công việc kỹ thuật cần
+thiết để củng cố hệ thống trong tương lai.
+\vspace{0.5cm}
+
+\noindent\textbf{Từ khóa:} luyện nói tiếng Anh, ứng dụng web thời gian thực,
+nhận dạng giọng nói, thiết kế hệ thống, FastAPI, React
 \clearpage
 
 % ===================== TOC / LOF / LOT =============================
@@ -585,6 +618,62 @@ This thesis names these technologies only as
 the components used in LUVE and does not assert specific version numbers or any
 claim of production readiness; the deployment is a controlled-demo packaging
 rather than a hosted, production-grade service.
+
+\section{Comparison with Conventional Speaking-Practice System Patterns}
+
+The technologies surveyed above can be combined in several different ways, and it
+is useful to situate LUVE relative to the conventional system patterns from which
+it differs. This section compares LUVE against three reference patterns at the
+level of \emph{system architecture and capability}: a traditional text-based
+chatbot tutor, in which the learner types and receives text replies; a basic
+speech-to-text demonstration, which transcribes audio but does not sustain a
+conversation; and a monolithic real-time voice assistant, which couples
+recognition, response, and any analysis on a single path. The comparison
+criteria are the input modality, the presence of a real-time voice loop,
+speech-to-text integration, large-language-model response generation,
+text-to-speech or audio response, session persistence, asynchronous
+grading/analysis, the completion hand-off (message queue or transactional
+outbox), the privacy/logging boundary, and Docker Compose reproducibility.
+Table~\ref{tab:pattern-comparison} summarizes the comparison. The generic
+patterns are described as archetypes rather than specific products, so entries
+such as ``Varies'' indicate that the property is not intrinsic to the pattern.
+
+\begin{table}[H]
+  \centering\footnotesize
+  \caption{Architecture and capability comparison of LUVE with conventional
+  speaking-practice system patterns. This is a design-level comparison, not a
+  measured product-superiority or learning-outcome comparison.}
+  \label{tab:pattern-comparison}
+  \begin{tabular}{p{2.9cm} p{2.6cm} p{2.4cm} p{2.6cm} p{2.6cm}}
+    \toprule
+    \textbf{Criterion} & \textbf{Traditional text chatbot tutor} & \textbf{Basic STT demo} & \textbf{Monolithic realtime voice assistant} & \textbf{LUVE} \\
+    \midrule
+    Input modality & Text & Voice (one-shot) & Voice (realtime) & Voice (realtime) \\
+    Realtime voice loop & No & No & Yes & Yes \\
+    STT integration & No & Yes & Yes & Yes (\texttt{faster-whisper}) \\
+    LLM response & Yes (text) & No & Yes & Yes (tutor reply) \\
+    TTS / audio response & Optional & No & Yes & Yes \\
+    Session persistence & Varies & No & Varies & Yes (PostgreSQL) \\
+    Async grading/analysis & No & No & Typically inline & Yes (separate worker) \\
+    Completion hand-off / queue & No & No & Usually none & Yes (outbox + RabbitMQ) \\
+    Privacy / logging boundary & Varies & Not addressed & Varies & Transcript redacted from STT logs \\
+    Docker Compose reproducibility & Varies & Varies & Varies & Yes (CPU and GPU) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The distinguishing characteristics of LUVE are visible in the lower rows of the
+table: it pairs a real-time voice loop with a deliberately \emph{separated}
+asynchronous grading/analysis stage and a durable completion-to-grading hand-off
+(the \texttt{session\_outbox} table together with RabbitMQ), and it draws an
+explicit privacy boundary by redacting raw transcript text from speech-recognition
+log lines. A traditional text chatbot lacks the voice and recognition path
+entirely; a basic STT demo lacks the conversational and persistence layers; and a
+monolithic voice assistant typically performs any analysis inline rather than
+isolating it from the latency-sensitive path. This comparison is at the level of
+system capability and architecture; it is \emph{not} a measured comparison of
+product superiority, recognition accuracy, or learning outcomes, none of which is
+claimed in this thesis.
 
 \section{Chapter Summary}
 
@@ -1742,6 +1831,37 @@ grade. These are intentionally narrow checks of particular behaviors; this
 thesis does not report test counts, pass rates, or coverage figures, as such
 figures are not part of the verified baseline.
 
+\textbf{Automated test inventory.} To describe the scope of the automated tests
+present in the submitted source tree, the test files were inventoried by a static
+source scan rather than by a full execution run. The submitted code contains
+24~Python test files under \codepath{services/}, with over 300~test functions
+counted by static scan. Table~\ref{tab:test-inventory} summarizes the
+backend/service areas these tests cover, together with the frontend static
+checks. This inventory reports \emph{what tests exist in the source}, not a pass
+rate: the final clean worktree did not re-run the suite because per-service
+Python virtual environments were not installed during the evidence pass, so no
+``all tests passed'' claim is made here. Runtime verification was instead carried
+out separately through the Docker/GPU live-demo evidence described below.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Automated test inventory from a static scan of the submitted source
+  tree (\codepath{main@6640171}). Counts describe tests present in source, not
+  executed pass/fail results.}
+  \label{tab:test-inventory}
+  \begin{tabular}{p{5.0cm} p{9.0cm}}
+    \toprule
+    \textbf{Aspect} & \textbf{Detail} \\
+    \midrule
+    Python test files & 24 files under \codepath{services/} \\
+    Python test functions & Over 300 (\texttt{def test\_...}), by independent static scan \\
+    Backend/service areas covered & Authentication / OAuth; readiness endpoints; session APIs; STT eligibility; outbox persistence; grading input construction; grading provider client; LLM grader parsing; worker retry/fallback; reconciliation; session eligibility \\
+    Frontend checks & \texttt{typecheck} and \texttt{build} scripts present; no frontend unit-test script observed \\
+    Execution status in evidence pass & Not re-run in the final clean worktree (per-service virtual environments not installed); inventory only --- no pass-rate or coverage claim \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \textbf{Runtime smoke testing and pre-demo verification checklist.} Because LUVE
 is exercised as a live demo, the most informative verification is at the runtime
 level. The following sequence is used as a pre-demo verification checklist
@@ -1790,6 +1910,85 @@ no coverage/pass-rate/test-count, and no user-study or learning-effectiveness
 result. The current UI screenshot evidence does not validate STT accuracy, tutor
 quality, grading validity, latency, or throughput.
 
+\textbf{GPU-enabled runtime demonstration.} Separately from the baseline
+runtime check above, a later GPU-enabled Docker Compose runtime was brought up
+from the submitted worktree at \codepath{main@6640171}. In this run the gateway
+container ran from the \texttt{luve-core-api:gpu} image with a GPU device request,
+the Core API and gateway readiness endpoints returned ready
+(\texttt{database: ok} and \texttt{gateway: initialized}), the \texttt{/rtc/health}
+endpoint returned \texttt{ok}, and \texttt{ctranslate2} reported one visible CUDA
+device inside the gateway container. This demonstration confirms GPU/CUDA
+\emph{visibility} and that the GPU runtime image is wired into the Compose stack;
+it is explicitly \emph{not} a latency, throughput, or recognition-accuracy
+benchmark, and it is not a comparison of GPU against CPU performance.
+
+\textbf{Functional runtime test cases.} The same GPU-enabled demo run was used
+to record a sequence of functional runtime test cases covering infrastructure
+readiness, the GPU/CUDA STT runtime, the real-time STT/LLM/TTS pipeline, session
+persistence, the RabbitMQ hand-off, and grading-worker behavior.
+Table~\ref{tab:runtime-testcases} lists these cases with their observed results.
+Each \emph{Observed Result} is taken directly from the recaptured evidence in the
+controlled-demo run; for brevity the evidence column abbreviates the two log
+captures as \emph{GW log} (\codepath{gateway-live-gpu-demo.log}) and \emph{W log}
+(\codepath{grading-worker-tail.log}), alongside the readiness/inspection JSON and
+text captures. A \emph{Pass} status means the expected functional behavior was
+observed in the controlled demo; it is \emph{not} a benchmark, a validated
+recognition-accuracy result, or a validated grading-quality result.
+
+{\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{p{0.5cm} p{1.6cm} p{1.9cm} p{2.0cm} p{2.3cm} p{2.8cm} p{0.9cm} p{2.1cm}}
+  \caption{Functional Runtime Test Cases and Observed Results, recorded in a
+  single controlled GPU-enabled demo run (\codepath{main@6640171}). Functional
+  evidence observed in a controlled demo --- not a benchmark, not validated
+  recognition accuracy, and not a validated grading-quality or
+  learning-effectiveness study.}
+  \label{tab:runtime-testcases} \\
+  \toprule
+  \textbf{ID} & \textbf{Area} & \textbf{Precondition} & \textbf{Steps} & \textbf{Expected Result} & \textbf{Observed Result} & \textbf{Status} & \textbf{Evidence} \\
+  \midrule
+  \endfirsthead
+  \multicolumn{8}{l}{\footnotesize\itshape Table~\ref{tab:runtime-testcases} continued from previous page}\\
+  \toprule
+  \textbf{ID} & \textbf{Area} & \textbf{Precondition} & \textbf{Steps} & \textbf{Expected Result} & \textbf{Observed Result} & \textbf{Status} & \textbf{Evidence} \\
+  \midrule
+  \endhead
+  \midrule \multicolumn{8}{r}{\footnotesize\itshape continued on next page}\\
+  \endfoot
+  \bottomrule
+  \endlastfoot
+  T1 & Infrastructure & GPU host; Compose app profile & Bring up the stack & App containers running with the GPU image & Gateway runs from \texttt{luve-core-api:gpu}; services up & Pass & \codepath{gpu-inspect.txt} \\
+  T2 & Infrastructure & Stack running & \texttt{GET /readyz} (Core API) & HTTP 200, database reachable & \texttt{status:ready}, \texttt{database:ok} & Pass & \codepath{core-readyz.json} \\
+  T3 & Infrastructure & Stack running & \texttt{GET /readyz} (gateway) & Gateway initialized & \texttt{status:ready}, \texttt{gateway:initialized} & Pass & \codepath{gateway-readyz.json} \\
+  T4 & Infrastructure & Stack running & \texttt{GET /rtc/health} & RTC health OK & \texttt{status:ok}; 2 sessions closed & Pass & \codepath{rtc-health.json} \\
+  T5 & GPU runtime & GPU host & Inspect gateway container & GPU device request present & \texttt{DeviceRequests} with \texttt{Capabilities:[[gpu]]} & Pass & \codepath{gpu-inspect.txt} \\
+  T6 & GPU runtime & Gateway up & Query CUDA device count & At least one CUDA device & \texttt{ctranslate2\_cuda\_devices=1} & Pass & \codepath{ctranslate2-cuda.txt} \\
+  T7 & GPU runtime & Gateway startup & Read STT GPU health log & GPU health reported & \texttt{stt.gpu.health} \texttt{nvidia\_smi\_available=True} \texttt{ctranslate2\_cuda\_devices=1} & Pass & GW log \\
+  T8 & STT & GPU available & Load STT model & Model loads on CUDA & \texttt{stt.model.loading model=small.en device=cuda compute\_type=int8\_float16} & Pass & GW log \\
+  T9 & Real-time & Authenticated client & Start a speaking session & WebRTC session created & \texttt{webrtc.session.created} \texttt{session\_id=bf21\dots} & Pass & GW log \\
+  T10 & STT & Session active & Speak into the microphone & Audio processed by STT engine & \texttt{faster\_whisper:Processing audio} (multiple) & Pass & GW log \\
+  T11 & STT & Audio streaming & Observe interim recognition & Non-empty interim text & \texttt{TEN STT output\dots final=False} with \texttt{text\_len} up to 60 & Pass & GW log \\
+  T12 & STT & Utterance spoken & Observe final recognition & Non-empty final text & \texttt{final=True} \texttt{text\_len} 11--114 & Pass & GW log \\
+  T13 & STT & Utterance ends & Flush recognition job & STT job completes & \texttt{ten.stt.job\_finished is\_final=True} & Pass & GW log \\
+  T14 & LLM tutor & Final text available & Generate tutor reply & Tutor reply via provider & \texttt{ten.llm.started}/\texttt{finished source=groq} & Pass & GW log \\
+  T15 & TTS & Tutor reply ready & Synthesize speech & Audio playback begins & \texttt{ten.tts.started}; \texttt{ten.tts.first\_chunk} & Pass & GW log \\
+  T16 & Persistence & Session completing & Persist session record & Session events saved to DB & ``Blackbox logs saved to DB'' for \texttt{bf21\dots} & Pass & GW log \\
+  T17 & Messaging & Session completed & Publish completion event & Event published to queue & \texttt{session.completed published queue=luve.session.completed} & Pass & GW log \\
+  T18 & Grading & Worker started & Subscribe to queue & Worker ready/subscribed & \texttt{worker.ready queue=luve.session.completed} & Pass & W log \\
+  T19 & Grading & Eligible session & Consume event and grade & Grading result produced; re-delivery deduplicated & \texttt{grading.completed overall\_score=5.05 provider\_requested=llm grader\_version=llm\_grader.v1}; \texttt{grading.already\_graded} on redelivery & Pass & W log \\
+  T20 & Grading & Short session (8 words) & Consume event and gate & Ineligible session skipped & \texttt{grading.session\_ineligible reason=insufficient\_words student\_word\_count=8 min\_words\_threshold=15} & Pass & W log \\
+\end{longtable}
+}
+
+\noindent The grading score \texttt{overall\_score=5.05} (T19) is a demonstrative
+provider output, not an objectively correct or human-validated score; T19 also
+records that a re-delivered event was deduplicated (\texttt{grading.already\_graded})
+rather than graded twice, and T20 records that a session below the word-count
+threshold was safely skipped. The table reports functional behavior observed in a
+single controlled demo; it asserts no recognition accuracy, latency, throughput,
+GPU-versus-CPU, grading-quality, or learning-effectiveness result.
+
 \textbf{Negative and failure-path verification.} Beyond the happy path, a few
 failure behaviors are important to verify or document. If the inline publish to
 RabbitMQ fails after the database commit, the expected behavior is that a
@@ -1814,6 +2013,46 @@ multilingual recognition has likewise not been validated, since the demo mode is
 English-focused. Finally, the full test suite has intermittently hung in some
 environments and is therefore not relied upon as a whole; focused per-service
 checks are preferred instead.
+
+\textbf{Functional quality check for tutor replies and analysis output.} Because
+the tutor replies and the analysis/grading output are produced by language
+models, it is useful to state the dimensions along which their output is
+inspected during a demo. Table~\ref{tab:quality-rubric} lists these dimensions.
+This is a \emph{functional demo spot-check rubric} used to judge whether output is
+well-formed and appropriate for a controlled demonstration; it is \emph{not}
+validated human-expert grading, an inter-rater reliability study, or a
+learning-effectiveness study, and it produces no score that should be read as a
+measured quality metric.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Functional quality dimensions for inspecting tutor replies and
+  analysis output during a controlled demo. A functional spot-check, not a
+  validated pedagogical assessment instrument.}
+  \label{tab:quality-rubric}
+  \begin{tabular}{p{4.6cm} p{9.4cm}}
+    \toprule
+    \textbf{Dimension} & \textbf{What is checked (functional)} \\
+    \midrule
+    Relevance to learner utterance & The reply responds to what the learner actually said rather than a non-sequitur. \\
+    Grammar usefulness & The reply is grammatical; any grammar-related feedback names a real, plausible issue. \\
+    Vocabulary usefulness & Vocabulary is appropriate to a beginner speaking-practice context. \\
+    Conversation continuity & The reply sustains the dialogue and invites a next turn rather than dead-ending it. \\
+    Response length / TTS suitability & The reply is short enough to be spoken naturally in real time, not a wall of text. \\
+    Safety and truthfulness & No unsafe content; the grader uses a null/insufficient marker when transcript evidence is too thin to score. \\
+    Grading/analysis consistency with evidence & Reported scores and feedback are consistent with the available transcript evidence for the session, not contradicted by it. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Fitness for controlled-demo use.} Taken together, the verification above
+supports a bounded statement of fitness. LUVE is good enough to demonstrate the
+implemented system architecture, GPU-backed STT runtime availability, the
+real-time WebRTC/STT/LLM/TTS flow, session persistence, the asynchronous grading
+hand-off, and the saved analysis preview in a controlled demo environment. It
+should not yet be treated as production-ready software, as validated pronunciation
+scoring, as a multi-user scale benchmark, or as proof of learning effectiveness.
+These boundaries are consistent with the limitations analyzed in Chapter~5.
 
 \section{Chapter Summary}
 
@@ -2147,9 +2386,17 @@ The LUVE source code is maintained in the project GitHub repository:
 \url{https://github.com/montyfinn/luve}. The repository contains the React/Vite
 client, FastAPI backend, realtime gateway components, asynchronous worker
 services, database-related code, Docker Compose configuration, and thesis
-documentation. The backend/system-design baseline discussed in this thesis is
-tied to the reviewed baseline commit \codepath{main@6a61bc8}, while later
-interface screenshots are used only as presentation/interface evidence.
+documentation. The final submitted state corresponds to branch \codepath{main}
+at commit \codepath{6640171}. The system-design discussion in this thesis was
+anchored to the earlier reviewed baseline commit \codepath{6a61bc8}; the commits
+between \codepath{6a61bc8} and \codepath{6640171} consist of code-review,
+documentation and comment, and static-copy polish, together with GPU runtime
+support (CUDA-enabled speech-to-text), and they do not change the core
+architecture, component boundaries, database schema, or data and control flows
+described in Chapters~3 and~4. In particular, GPU CUDA runtime support was merged
+into \codepath{main} (PR~\#5), so the submitted code matches the GPU-enabled
+Docker Compose runtime referenced in Chapter~4. Later interface screenshots are
+used only as presentation/interface evidence.
 
 \chapter{Survey Results}
 No formal user survey was conducted as part of this thesis. The evaluation

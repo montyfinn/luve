@@ -1,8 +1,14 @@
 # LUVE_FACTS — verified system knowledge for the thesis
 
-Frozen baseline: **`main@6a61bc8`**. Only write claims you can trace to
-the running system. The constraints below are hard limits — do not
-soften them in the thesis.
+System-design baseline: **`main@6a61bc8`** (the commit the architecture,
+schema, and flow discussion is anchored to). Final submitted state:
+**`main@6640171`** (verified as the HEAD of the submitted worktree
+`/home/minhthuy/project/luve-code-hygiene`). The commits from `6a61bc8`
+to `6640171` are code-review / documentation / static-copy polish plus
+GPU CUDA runtime support (PR #5) and do **not** change the core
+architecture, component boundaries, schema, or data/control flows.
+Only write claims you can trace to the running system. The constraints
+below are hard limits — do not soften them in the thesis.
 
 ## Thesis writing policy
 - **Thesis body language: English.** All visible thesis text (headings,
@@ -32,7 +38,9 @@ soften them in the thesis.
   **at-least-once**; grading is **idempotent (dedup on `session_id`)**.
 - ❌ Do **not** claim horizontal scaling. The realtime hot path is
   **single-session-per-node**.
-- ⚠️ The backend/system-design baseline remains **`main@6a61bc8`**.
+- ⚠️ The backend/system-design baseline remains **`main@6a61bc8`**; the
+  final submitted commit is **`main@6640171`** (GPU runtime added via PR #5,
+  no core-architecture change — see header note).
   Current cat-companion/current-UI screenshots may be used only as client
   presentation/interface evidence for the demo. They do not redefine the
   frozen backend baseline, prove backend correctness, or imply that PR #2 /
