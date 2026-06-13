@@ -36,13 +36,13 @@ RUN pip install --no-cache-dir -r requirements-gpu.txt
 # ---- Runtime: slim image + venv + CUDA libs on the loader path ----
 FROM python:3.10-slim AS runtime
 
-# LD_LIBRARY_PATH points the dynamic loader at the cuBLAS/cuDNN .so files that
-# the nvidia-*-cu12 wheels install under the venv's site-packages.
+# LD_LIBRARY_PATH points the dynamic loader at the CUDA Runtime / cuBLAS / cuDNN
+# .so files that the nvidia-*-cu12 wheels install under the venv's site-packages.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     HF_HOME=/cache/huggingface \
-    LD_LIBRARY_PATH="/opt/venv/lib/python3.10/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib"
+    LD_LIBRARY_PATH="/opt/venv/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.10/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib"
 
 WORKDIR /app
 

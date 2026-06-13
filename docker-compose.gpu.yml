@@ -22,3 +22,8 @@ services:
       dockerfile: Dockerfile.gpu
     image: luve-core-api:gpu
     gpus: all
+    # Make the CUDA compute capability explicit for the container runtime, so
+    # ctranslate2 can use the GPU (not just nvidia-smi/utility). Merged with the
+    # ten_gateway environment inherited from docker-compose.yml.
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility

@@ -2,8 +2,12 @@
 # Installed ONLY in Dockerfile.gpu (the opt-in GPU image) — kept out of the
 # default CPU image to avoid bloating CPU/CI installs.
 #
-# ctranslate2==4.7.1 dynamically links cuBLAS 12 and cuDNN 9 at runtime; the
-# python:3.10-slim base provides neither. The NVIDIA driver itself (libcuda)
-# is injected at runtime by `gpus: all`, not from these wheels.
+# ctranslate2==4.7.1 dynamically loads the CUDA Runtime (libcudart.so.12),
+# cuBLAS 12, and cuDNN 9 at runtime; the python:3.10-slim base provides none of
+# them. The NVIDIA driver itself (libcuda) is injected at runtime by `gpus: all`,
+# not from these wheels. The CUDA Runtime wheel is required for CUDA device
+# enumeration (ctranslate2.get_cuda_device_count); without it ctranslate2 reports
+# 0 devices and falls back to CPU.
+nvidia-cuda-runtime-cu12>=12.1,<13
 nvidia-cublas-cu12>=12.1,<13
 nvidia-cudnn-cu12>=9,<10
