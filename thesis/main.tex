@@ -123,7 +123,7 @@
 \vfill
 {\Large\bfseries LUẬN VĂN TỐT NGHIỆP ĐẠI HỌC\par}
 \vspace{1.5cm}
-% TODO: confirm the official thesis title (uppercase, bold).
+% Official thesis title (uppercase, bold) — finalized.
 {\LARGE\bfseries LUVE: A REAL-TIME ENGLISH SPEAKING\\PRACTICE SYSTEM USING STT, LLM,\\AND AUTOMATED GRADING\par}
 \vspace{1.5cm}
 \begin{flushleft}
@@ -674,6 +674,56 @@ isolating it from the latency-sensitive path. This comparison is at the level of
 system capability and architecture; it is \emph{not} a measured comparison of
 product superiority, recognition accuracy, or learning outcomes, none of which is
 claimed in this thesis.
+
+\subsection{Comparative Assessment: Where LUVE Is Stronger, Comparable, or Unproven}
+Table~\ref{tab:pattern-comparison} states \emph{what} each pattern provides; this
+subsection states \emph{where LUVE stands} relative to the conventional baselines
+and, importantly, on what evidence. To keep the assessment honest, each criterion
+is given an explicit verdict --- \emph{Stronger}, \emph{Different (design choice)},
+or \emph{Not proven} --- together with the in-thesis evidence that supports it.
+A verdict of \emph{Stronger} is made only at the level of demonstrated
+system/architecture capability, never as a claim of measured performance,
+recognition accuracy, grading validity, or learning outcome.
+Table~\ref{tab:comparative-assessment} records these verdicts.
+
+\begin{table}[H]
+  \centering\footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.2}
+  \caption{Evidence-anchored comparative assessment of LUVE against conventional
+  speaking-practice baselines (text chatbot, STT-only demo, monolithic voice
+  assistant). ``Stronger'' is asserted only on demonstrated capability/architecture,
+  not on measured quality; deployment and evaluation rows are deliberately
+  ``Not proven''.}
+  \label{tab:comparative-assessment}
+  \begin{tabular}{p{3.3cm} p{3.0cm} p{7.7cm}}
+    \toprule
+    \textbf{Criterion} & \textbf{Verdict vs. baselines} & \textbf{Basis and in-thesis evidence} \\
+    \midrule
+    Interaction modality & Stronger than text-only chatbot & Demonstrates a full speech path (WebRTC audio, STT, LLM reply, TTS) in one runtime, not just text (Table~\ref{tab:pattern-comparison}; runtime cases T9--T15). \\
+    Turn structure & Different (design choice) & Low-latency real-time loop rather than discrete request/response turns; the hot path is isolated by design (Fig.~\ref{fig:pipeline}; T10--T13). \\
+    Feedback timing & Stronger than post-hoc-only tools & In-session conversational tutor reply plus a separate post-session analysis stage (T14 tutor reply; T19 grading). \\
+    Evidence persistence & Stronger than none/local-only & Sessions and grading outcomes persist in PostgreSQL with a session event record (ERD, Fig.~\ref{fig:erd}; T16 ``saved to DB''). \\
+    Reliability boundary & Stronger than direct publish & Durable \texttt{session\_outbox} hand-off with idempotent, deduplicated grading rather than a single best-effort publish (T17; T19 \texttt{already\_graded} on re-delivery). \\
+    Explainability / audit & Stronger than opaque pipelines & Per-stage runtime evidence is recorded and tabulated (Table~\ref{tab:runtime-testcases}); grading and skip decisions are logged (T19, T20). \\
+    Generated-output quality assurance & Comparable / different, \emph{not} validated & Only a functional spot-check rubric is defined (Table~\ref{tab:quality-rubric}); no human-rated, inter-rater, or benchmark evaluation was performed. \\
+    Deployment maturity & Not proven (controlled-demo only) & Single-node controlled demo; not production-ready, no scale or load validation (\textbf{Fitness} note, Section~4.4; Chapter~5 limitations). \\
+    Evaluation status & Not proven & Controlled-demo functional evidence only; no recognition-accuracy benchmark, no grading-validity study, no user study or learning-effectiveness result (Chapter~5). \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+In summary, LUVE is \emph{better} than a text-only chatbot baseline on
+speech-modality coverage, feedback timing, evidence persistence, reliability
+hand-off, and auditability, and these claims are each backed by a design artifact
+or a runtime case rather than by assertion. LUVE is \emph{different} from a
+monolithic voice assistant in that it deliberately separates the real-time loop
+from deferred analysis. LUVE is \emph{not proven} better on generated-output
+quality, deployment maturity, or any measured outcome: those rows are either a
+functional spot-check or an explicit ``not validated''. This separation of
+evidenced capability claims from unproven quality/maturity claims is intentional
+and is carried through the evaluation in Chapter~4 and the limitations in
+Chapter~5.
 
 \section{Chapter Summary}
 
@@ -2057,6 +2107,32 @@ hand-off, and the saved analysis preview in a controlled demo environment. It
 should not yet be treated as production-ready software, as validated pronunciation
 scoring, as a multi-user scale benchmark, or as proof of learning effectiveness.
 These boundaries are consistent with the limitations analyzed in Chapter~5.
+
+\textbf{Evidence artifacts.} For transparency, the concrete evidence the
+verification above relies on is consolidated here, with pointers to where it
+appears rather than reproduced in bulk:
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
+  \item Interface screenshots of the current demo client (authentication, practice
+        start, saved sessions, live session, grading view): Figs.~\ref{fig:ui-login}--\ref{fig:demo-grading}.
+  \item Docker Compose readiness checks (Core API \texttt{database:ok}, gateway
+        \texttt{initialized}, \texttt{/rtc/health} OK): runtime cases T2--T4.
+  \item GPU/STT load evidence (GPU device request, one CUDA device reported by
+        \texttt{ctranslate2}, STT model loading on CUDA): T5--T8.
+  \item Real-time pipeline evidence (WebRTC session, STT interim/final output, LLM
+        tutor reply, TTS first chunk): T9--T15.
+  \item Persistence and queue hand-off (session saved to DB, \texttt{session.completed}
+        published): T16--T17.
+  \item Grading-worker evidence (eligible session graded, re-delivery deduplicated,
+        ineligible session skipped): T18--T20.
+  \item Automated test inventory (24 test files, over 300 test functions, by static
+        scan; not re-run): Table~\ref{tab:test-inventory}.
+  \item Source availability: project repository
+        \url{https://github.com/montyfinn/luve} at \codepath{main@6640171}
+        (Appendix~A, Source Code).
+\end{itemize}
+This list records what evidence \emph{exists}; it does not upgrade any item into a
+benchmark, an accuracy figure, a validated grading result, or a
+learning-effectiveness finding.
 
 \section{Chapter Summary}
 
