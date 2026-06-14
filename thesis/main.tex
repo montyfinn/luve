@@ -42,14 +42,18 @@
 \setmainfont{TeX Gyre Termes}
 
 % ---------- Vietnamese names for auto-generated headings ------------
-\renewcommand{\contentsname}{MỤC LỤC}
-\renewcommand{\listfigurename}{DANH MỤC HÌNH}
-\renewcommand{\listtablename}{DANH MỤC BẢNG}
-\renewcommand{\bibname}{TÀI LIỆU THAM KHẢO}
-\renewcommand{\appendixname}{PHỤ LỤC}
-\renewcommand{\chaptername}{Chương}
-\renewcommand{\figurename}{Hình}
-\renewcommand{\tablename}{Bảng}
+\newcommand{\luveVietnameseCaptionNames}{%
+  \renewcommand{\contentsname}{MỤC LỤC}%
+  \renewcommand{\listfigurename}{DANH MỤC HÌNH ẢNH}%
+  \renewcommand{\listtablename}{DANH MỤC BẢNG BIỂU}%
+  \renewcommand{\bibname}{TÀI LIỆU THAM KHẢO}%
+  \renewcommand{\appendixname}{PHỤ LỤC}%
+  \renewcommand{\chaptername}{Chương}%
+  \renewcommand{\figurename}{Hình}%
+  \renewcommand{\tablename}{Bảng}%
+}
+\luveVietnameseCaptionNames
+\addto\captionsenglish{\luveVietnameseCaptionNames}
 
 % ---------- Page geometry ------------------------------------------
 \usepackage[a4paper,left=3cm,right=2cm,top=2cm,bottom=2cm]{geometry}
@@ -257,10 +261,10 @@ nhận dạng giọng nói, thiết kế hệ thống, FastAPI, React
 \tableofcontents
 \clearpage
 \listoffigures
-\addcontentsline{toc}{chapter}{LIST OF FIGURES}
+\addcontentsline{toc}{chapter}{DANH MỤC HÌNH ẢNH}
 \clearpage
 \listoftables
-\addcontentsline{toc}{chapter}{LIST OF TABLES}
+\addcontentsline{toc}{chapter}{DANH MỤC BẢNG BIỂU}
 \clearpage
 
 % ===================== ABBREVIATIONS ==============================
@@ -839,7 +843,9 @@ thời gian thực. Phiên bản trình bày trong luận văn này tương ứn
 được cố định \texttt{main@6a61bc8}. Hệ thống được tổ chức như một ứng dụng đa dịch
 vụ chạy dưới Docker Compose. Các ranh giới hướng máy khách và điều khiển dùng HTTP
 và WebRTC ở những chỗ phù hợp, PostgreSQL cung cấp lưu trữ bền vững, và RabbitMQ
-mang công việc chấm điểm bất đồng bộ. Cách tổ chức này tách biệt một cách rạch ròi
+mang công việc chấm điểm bất đồng bộ. Redis được sử dụng như một thành phần hạ tầng
+hỗ trợ trạng thái tạm thời, chẳng hạn đăng ký phiên WebRTC và trạng thái OAuth; dữ
+liệu phiên và kết quả phân tích lâu dài vẫn được lưu trong PostgreSQL. Cách tổ chức này tách biệt một cách rạch ròi
 luồng hội thoại thời gian thực khỏi luồng chấm điểm bất đồng bộ, cho phép một
 thành phần được phát triển hoặc thay thế mà không ảnh hưởng trực tiếp đến các
 thành phần khác.
