@@ -6,10 +6,8 @@
 %
 %  LANGUAGE POLICY
 %   - Thesis body language: ENGLISH. All visible text is in English.
-%   - Internal image/table preparation notes for the student may stay in
-%     Vietnamese, but ONLY inside "% TODO-FIGURE [VI]:" / "% TODO-TABLE [VI]:"
-%     comments. These are never typeset into the PDF.
-%   - All other comments (TODO-CITE, [PLACEHOLDER] guidance) are in English.
+%   - Source comments are maintenance notes only and are never typeset into
+%     the submitted PDF.
 %
 %  THESIS FOCUS
 %   - This is a SOFTWARE / SYSTEM DESIGN thesis: architecture, component
@@ -20,10 +18,6 @@
 %     claims, learner psychology, or unsupported learning-effectiveness
 %     claims. Pedagogical terms appear only to name software features
 %     (tutor reply, grading result, feedback display, session analysis).
-%
-%  This is a STRUCTURE-ONLY skeleton. Body text is placeholder notes only,
-%  except §3.3.1 which is written. Resolve every [PLACEHOLDER ...],
-%  TODO-FIGURE, TODO-TABLE, and TODO-CITE marker before submission.
 % =====================================================================
 % Note on font size: the standard `report` class only honours 10/11/12pt.
 % We use 12pt (reliable on Overleaf XeLaTeX). If the faculty strictly
@@ -285,7 +279,6 @@ API    & Application Programming Interface \\
 REST   & Representational State Transfer \\
 SQL    & Structured Query Language \\
 DLQ    & Dead Letter Queue \\
-% [PLACEHOLDER] Add more abbreviations as needed.
 \bottomrule
 \end{longtable}
 \clearpage
@@ -672,7 +665,7 @@ entirely; a basic STT demo lacks the conversational and persistence layers; and 
 monolithic voice assistant typically performs any analysis inline rather than
 isolating it from the latency-sensitive path. This comparison is at the level of
 system capability and architecture; it is \emph{not} a measured comparison of
-product superiority, recognition accuracy, or learning outcomes, none of which is
+measured product advantage, recognition accuracy, or learning outcomes, none of which is
 claimed in this thesis.
 
 \subsection{Comparative Assessment: Where LUVE Is Stronger, Comparable, or Unproven}
@@ -700,12 +693,12 @@ Table~\ref{tab:comparative-assessment} records these verdicts.
     \toprule
     \textbf{Criterion} & \textbf{Verdict vs. baselines} & \textbf{Basis and in-thesis evidence} \\
     \midrule
-    Interaction modality & Stronger than text-only chatbot & Demonstrates a full speech path (WebRTC audio, STT, LLM reply, TTS) in one runtime, not just text (Table~\ref{tab:pattern-comparison}; runtime cases T9--T15). \\
+    Interaction modality & Stronger in demonstrated capability coverage & Demonstrates a full speech path (WebRTC audio, STT, LLM reply, TTS) in one runtime, not just text (Table~\ref{tab:pattern-comparison}; runtime cases T9--T15). \\
     Turn structure & Different (design choice) & Low-latency real-time loop rather than discrete request/response turns; the hot path is isolated by design (Fig.~\ref{fig:pipeline}; T10--T13). \\
-    Feedback timing & Stronger than post-hoc-only tools & In-session conversational tutor reply plus a separate post-session analysis stage (T14 tutor reply; T19 grading). \\
-    Evidence persistence & Stronger than none/local-only & Sessions and grading outcomes persist in PostgreSQL with a session event record (ERD, Fig.~\ref{fig:erd}; T16 ``saved to DB''). \\
-    Reliability boundary & Stronger than direct publish & Durable \texttt{session\_outbox} hand-off with idempotent, deduplicated grading rather than a single best-effort publish (T17; T19 \texttt{already\_graded} on re-delivery). \\
-    Explainability / audit & Stronger than opaque pipelines & Per-stage runtime evidence is recorded and tabulated (Table~\ref{tab:runtime-testcases}); grading and skip decisions are logged (T19, T20). \\
+    Feedback timing & Stronger in demonstrated feedback coverage & In-session conversational tutor reply plus a separate post-session analysis stage (T14 tutor reply; T19 grading). \\
+    Evidence persistence & Stronger in demonstrated persistence coverage & Sessions and grading outcomes persist in PostgreSQL with a session event record (ERD, Fig.~\ref{fig:erd}; T16 ``saved to DB''). \\
+    Reliability boundary & Stronger in demonstrated hand-off reliability & Durable \texttt{session\_outbox} hand-off with idempotent, deduplicated grading rather than a single best-effort publish (T17; T19 \texttt{already\_graded} on re-delivery). \\
+    Explainability / audit & Stronger in demonstrated auditability & Per-stage runtime evidence is recorded and tabulated (Table~\ref{tab:runtime-testcases}); grading and skip decisions are logged (T19, T20). \\
     Generated-output quality assurance & Comparable / different, \emph{not} validated & Only a functional spot-check rubric is defined (Table~\ref{tab:quality-rubric}); no human-rated, inter-rater, or benchmark evaluation was performed. \\
     Deployment maturity & Not proven (controlled-demo only) & Single-node controlled demo; not production-ready, no scale or load validation (\textbf{Fitness} note, Section~4.4; Chapter~5 limitations). \\
     Evaluation status & Not proven & Controlled-demo functional evidence only; no recognition-accuracy benchmark, no grading-validity study, no user study or learning-effectiveness result (Chapter~5). \\
@@ -713,14 +706,15 @@ Table~\ref{tab:comparative-assessment} records these verdicts.
   \end{tabular}
 \end{table}
 
-In summary, LUVE is \emph{better} than a text-only chatbot baseline on
-speech-modality coverage, feedback timing, evidence persistence, reliability
-hand-off, and auditability, and these claims are each backed by a design artifact
-or a runtime case rather than by assertion. LUVE is \emph{different} from a
-monolithic voice assistant in that it deliberately separates the real-time loop
-from deferred analysis. LUVE is \emph{not proven} better on generated-output
-quality, deployment maturity, or any measured outcome: those rows are either a
-functional spot-check or an explicit ``not validated''. This separation of
+In summary, LUVE has stronger demonstrated capability coverage than a text-only
+chatbot baseline for speech modality, feedback timing, evidence persistence,
+reliability hand-off, and auditability, and these claims are each backed by a
+design artifact or a runtime case rather than by assertion. LUVE is
+\emph{different} from a monolithic voice assistant in that it deliberately
+separates the real-time loop from deferred analysis. LUVE is \emph{not proven}
+to have measured superiority on generated-output quality, deployment maturity,
+or any measured outcome: those rows are either a functional spot-check or an
+explicit ``not validated''. This separation of
 evidenced capability claims from unproven quality/maturity claims is intentional
 and is carried through the evaluation in Chapter~4 and the limitations in
 Chapter~5.
@@ -832,22 +826,6 @@ the real-time conversation flow from the asynchronous grading flow, allowing
 one component to be developed or replaced without directly affecting the
 others.
 
-% TODO-FIGURE [VI]: fig/architecture_overview — Hình 3.1: Kiến trúc tổng thể LUVE.
-% Sơ đồ BẮT BUỘC phải thể hiện đầy đủ các thành phần và quan hệ:
-%   - Client (trình duyệt, ứng dụng Vite/React)
-%   - Core API (FastAPI REST, main.py, cổng 8000)
-%   - TEN/WebRTC realtime gateway (run_ten.py, cổng 8080)
-%   - STT (faster-whisper small.en, forced_en)
-%   - LLM tutor (sinh phản hồi hội thoại thời gian thực)
-%   - PostgreSQL
-%   - RabbitMQ
-%   - grading-worker
-%   - session_outbox: là một BẢNG trong PostgreSQL (ghi cùng transaction với
-%     sessions), KHÔNG phải một dịch vụ hàng đợi độc lập. Bộ chuyển tiếp
-%     (relay) của outbox mặc định TẮT (default-off) và chỉ chạy thủ công khi
-%     được bật.
-% Mũi tên cần phân biệt: luồng thời gian thực (Client <-> gateway qua WebRTC)
-% và luồng bất đồng bộ (session.completed qua RabbitMQ -> grading-worker).
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{fig/architecture_overview.png}
@@ -984,8 +962,6 @@ production-scale deployment. The real-time path is capped at a single session
 per node, and the system has not demonstrated horizontal scaling. These
 limitations are analyzed in more detail in Chapter~5.
 
-% TODO-FIGURE [VI]: fig/realtime_pipeline — đường ống hot-path
-% VAD -> STT -> LLM -> TTS -> WebRTC.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{fig/realtime_pipeline.png}
@@ -1007,7 +983,6 @@ defined in the baseline initialization script and evolved through a small set
 of numbered SQL migration files (no object-relational mapping migration tool
 is used).
 
-% TODO-FIGURE [VI]: Cần vẽ ERD cơ sở dữ liệu chính của LUVE, gồm users, lessons, sessions, grading_results, grading_skip_log, session_outbox và quan hệ chính giữa chúng.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{fig/erd.png}
@@ -1164,7 +1139,6 @@ control routes are likewise guarded by the same ownership check on the gateway.
 The interface therefore mirrors, at the presentation layer, the access
 boundaries that the backend enforces.
 
-% TODO-FIGURE [VI]: Ảnh current demo UI cho điểm vào xác thực; không dùng ảnh này để đổi baseline backend/system.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_login.png}
@@ -1190,7 +1164,6 @@ exchange is legible as it happens. Consistent with the system design, the
 real-time interface presents conversational tutor replies only; grading is not
 shown here because it is produced asynchronously after the session ends.
 
-% TODO-FIGURE [VI]: Ảnh current demo UI cho màn hình bắt đầu luyện nói.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_practice.png}
@@ -1213,7 +1186,6 @@ presenting it as a true phoneme score. The default grading mode in the baseline
 is an offline development-preview grader, so displayed scores must be understood
 as demonstrative output rather than a real production assessment.
 
-% TODO-FIGURE [VI]: Ảnh current demo UI cho danh sách saved sessions / trạng thái analysis.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/ui_saved_session.png}
@@ -1264,7 +1236,6 @@ tutor audio is enabled. For privacy, following the backend privacy patch
 recognition log lines; those lines retain metadata such as text length and
 confidence values.
 
-% TODO-FIGURE [VI]: Cần vẽ sequence diagram cho luồng realtime: browser audio -> TEN/WebRTC gateway -> VAD/STT -> LLM tutor -> response/output.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{fig/realtime_sequence.png}
@@ -1299,7 +1270,6 @@ oriented toward at-least-once delivery rather than exactly-once; to keep this
 safe, downstream processing is idempotent and deduplicated at the session
 level, so a re-delivered event does not produce duplicate results.
 
-% TODO-FIGURE [VI]: Cần vẽ flowchart xử lý lỗi publish RabbitMQ: commit DB thành công -> publish fail -> warning log -> outbox row chờ relay/manual recovery.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{fig/publish_failure_flow.png}
@@ -1321,7 +1291,6 @@ Among the reported skills, the pronunciation score is a clarity estimate
 derived from STT confidence and uncertainty signals, not an acoustic or
 phoneme-level pronunciation analysis.
 
-% TODO-FIGURE [VI]: Cần vẽ sequence diagram cho luồng hoàn tất phiên và chấm điểm: session completed -> session_outbox -> RabbitMQ -> grading-worker -> grading_results.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/session_grading_flow.png}
@@ -1767,7 +1736,6 @@ remain a hardening caveat rather than a fully protected surface. The achieved
 behavior is conversational practice with live recognition and tutor replies; the
 system does not perform acoustic or phoneme-level pronunciation scoring.
 
-% TODO-FIGURE [VI]: Ảnh current demo UI cho phiên luyện nói thời gian thực.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/demo_session.png}
@@ -1788,7 +1756,6 @@ be enabled by configuration. Among the reported skills, the pronunciation value
 is a clarity estimate derived from STT confidence and uncertainty, not a
 phoneme-level or acoustic pronunciation score.
 
-% TODO-FIGURE [VI]: Ảnh current demo UI cho saved-session analysis / grading.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\textwidth]{fig/demo_grading.png}
