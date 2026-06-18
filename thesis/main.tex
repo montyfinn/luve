@@ -2277,7 +2277,9 @@ trở nên minh bạch và dễ bảo vệ, chứ không che giấu chúng.
 \textbf{Các chỉ số chưa đo.} Các chỉ số sau \emph{chưa được đo} và do đó không
 được khẳng định trong luận văn; chúng được nêu thẳng thay vì ước lượng:
 \begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
-  \item tỉ lệ lỗi nhận dạng của STT (WER/CER) --- \emph{chưa đo};
+  \item tỉ lệ lỗi từ (WER) của STT trên giọng đọc bản ngữ sạch ---
+        \emph{đã đo mức nền} (8,4\%, Bảng~\ref{tab:wer-baseline}); trên giọng
+        người học qua đường WebRTC đầy đủ --- \emph{chưa đo};
   \item độ trễ trung bình của STT/LLM/TTS --- \emph{chưa đo};
   \item phân bố độ trễ từ đầu đến cuối --- \emph{chưa đo};
   \item tỉ lệ đậu và độ bao phủ của bộ kiểm thử đầy đủ (bộ kiểm thử không chạy lại
@@ -2287,6 +2289,39 @@ trở nên minh bạch và dễ bảo vệ, chứ không che giấu chúng.
   \item hiệu quả học tập --- \emph{chưa được đánh giá};
   \item khả năng mở rộng đa người dùng --- \emph{chưa được kiểm chứng}.
 \end{itemize}
+
+\textbf{Đo thử mức nền WER của STT.} Để có một con số tham chiếu thay cho ``chưa
+đo'', tỉ lệ lỗi từ (WER) của bộ nhận dạng ở chế độ demo (\texttt{small.en},
+\texttt{forced\_en}) được đo trên một mẫu nhỏ giọng đọc tiếng Anh bản ngữ sạch
+(15 câu, 335 từ, lấy từ tập LibriSpeech dev-clean) bằng cùng họ mô hình
+\texttt{faster-whisper}. Trên mẫu này, WER toàn mẫu là 8,4\%
+(Bảng~\ref{tab:wer-baseline}). Con số này cần được đọc trong đúng phạm vi của nó:
+nó là một \emph{mức nền ở cấp mô hình} trên giọng đọc bản ngữ sạch và \emph{không}
+đại diện cho (i) giọng người học Việt Nam, (ii) lời nói tự phát trong hội thoại,
+hay (iii) toàn bộ đường thu âm WebRTC/VAD của LUVE --- ở các điều kiện đó WER nhiều
+khả năng cao hơn. Việc đo WER trên giọng người học thật qua đường đầy đủ vẫn chưa
+được thực hiện và được nêu là công việc tiếp theo.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Đo thử mức nền WER của bộ nhận dạng demo (\texttt{small.en}, chế độ
+  \texttt{forced\_en}) trên một mẫu nhỏ giọng đọc tiếng Anh bản ngữ sạch
+  (LibriSpeech dev-clean), qua \texttt{faster-whisper} với lượng tử int8 trên CPU.
+  Đây là mức nền ở cấp mô hình, \emph{không} đại diện cho giọng người học hay
+  đường WebRTC đầy đủ.}
+  \label{tab:wer-baseline}
+  \begin{tabular}{p{7.2cm} r}
+    \toprule
+    \textbf{Chỉ số} & \textbf{Giá trị} \\
+    \midrule
+    Số câu (utterance) & 15 \\
+    Tổng số từ tham chiếu & 335 \\
+    Thay thế / xóa / chèn & 25 / 2 / 1 \\
+    WER toàn mẫu & 8,4\% (0{,}0836) \\
+    Khoảng WER theo từng câu & 0,0\%--17,6\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \textbf{Các mức độ tin cậy của chấm điểm.} Để tránh đọc nhầm đầu ra chấm điểm,
 Bảng~\ref{tab:grading-trust} phân biệt rõ ba mức. Cần nhấn mạnh: một điểm số như
