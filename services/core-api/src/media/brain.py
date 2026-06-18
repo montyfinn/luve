@@ -72,6 +72,7 @@ class LLMProcessor:
         stt: STTAnalysis,
         on_token: TokenCallback,
         stt_metadata: Mapping[str, Any] | None = None,
+        history: list[Mapping[str, str]] | None = None,
     ) -> PedagogicalReply:
         transcript = stt.raw_text.strip()
         if not transcript:
@@ -81,7 +82,9 @@ class LLMProcessor:
                 source="local_fallback",
             )
 
-        prompt = self._build_user_prompt(stt, stt_metadata=stt_metadata)
+        prompt = self._build_user_prompt(
+            stt, stt_metadata=stt_metadata, history=history
+        )
         try:
             if self._provider == "groq":
                 raw_output = await self._complete_from_groq(
@@ -266,11 +269,33 @@ class LLMProcessor:
                     await result
                 return
 
+    @staticmethod
+    def _format_history(history: list[Mapping[str, str]] | None) -> str:
+        """Render a bounded sliding window of prior turns as plain text.
+
+        Provider-agnostic: the recent learner/tutor turns are prepended to the
+        user prompt so both the Groq and Gemini paths receive them without
+        changing their message/contents structure. Empty history yields "".
+        """
+        if not history:
+            return ""
+        lines: list[str] = []
+        for turn in history:
+            text = str(turn.get("text", "")).strip()
+            if not text:
+                continue
+            label = "Lucy" if str(turn.get("speaker", "")).strip().lower() == "tutor" else "Learner"
+            lines.append(f"{label}: {text}")
+        if not lines:
+            return ""
+        return "Recent conversation (most recent last):\n" + "\n".join(lines) + "\n\n"
+
     def _build_user_prompt(
         self,
         stt: STTAnalysis,
         *,
         stt_metadata: Mapping[str, Any] | None = None,
+        history: list[Mapping[str, str]] | None = None,
     ) -> str:
         low_confidence_words = [
             item.word for item in stt.all_words if item.confidence < 0.6
@@ -281,6 +306,7 @@ class LLMProcessor:
         stt_note = self._build_stt_note(stt_metadata)
 
         return (
+            f"{self._format_history(history)}"
             "Learner transcript:\n"
             f"{stt.raw_text.strip()}\n\n"
             f"{stt_note}"

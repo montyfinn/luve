@@ -244,6 +244,11 @@ class LUVEExtension(ten.Extension):
         self._tts_first_chunk_logged = False
         self._cleanup_lock: asyncio.Lock | None = None
         self._event_log: list[dict[str, object]] = []
+        # Bounded conversation context window for the realtime tutor: a sliding
+        # list of recent {"speaker": learner|tutor, "text": ...} turns passed to
+        # the LLM so replies stay coherent across turns. 0 disables it.
+        self._dialogue_history: list[dict[str, str]] = []
+        self._tutor_context_turns = 6
         self._session_id: str | None = None
 
         self._utterance_pcm = bytearray()
@@ -1454,6 +1459,11 @@ class LUVEExtension(ten.Extension):
                 stt=analysis,
                 on_token=on_token,
                 stt_metadata=stt_metadata,
+                history=(
+                    self._dialogue_history[-self._tutor_context_turns:]
+                    if self._tutor_context_turns > 0
+                    else None
+                ),
             )
             if not self._responses_enabled():
                 return
@@ -1503,6 +1513,20 @@ class LUVEExtension(ten.Extension):
                     },
                 }
             )
+            if self._tutor_context_turns > 0:
+                learner_text = (analysis.raw_text or "").strip()
+                tutor_text = (result.response_text or "").strip()
+                if learner_text:
+                    self._dialogue_history.append(
+                        {"speaker": "learner", "text": learner_text}
+                    )
+                if tutor_text:
+                    self._dialogue_history.append(
+                        {"speaker": "tutor", "text": tutor_text}
+                    )
+                max_keep = max(self._tutor_context_turns * 2, 12)
+                if len(self._dialogue_history) > max_keep:
+                    self._dialogue_history = self._dialogue_history[-max_keep:]
             logger.info(
                 "ten.llm.finished source=%s duration_ms=%.2f response_chars=%s",
                 result.source,
@@ -1912,6 +1936,9 @@ class LUVEExtension(ten.Extension):
             self._properties.get("json_output_port", "json_out")
         )
         self._log_output_port = str(self._properties.get("log_output_port", "log_out"))
+        self._tutor_context_turns = max(
+            0, int(self._properties.get("tutor_context_turns", 6))
+        )
         self._auto_map_ports_locked()
         return True
 
