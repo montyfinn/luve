@@ -504,23 +504,18 @@ ghi-kép không nhất quán.
 
 \subsection{Tổng quan về các hệ thống luyện nói thời gian thực}
 
-Các hệ thống luyện nói tự động có máy tính hỗ trợ, cho phép người học đối thoại
-với máy tính, đã được nghiên cứu dưới dạng học ngôn ngữ có máy tính hỗ trợ dựa
-trên hội thoại~\cite{bibauwDialogueCALL2019}. Theo thuật ngữ phần mềm, một hệ
-thống luyện nói thời gian thực là một đường ống biến đầu vào nói của người học
-thành một câu trả lời tương tác và một bản ghi có thể xem lại. Về mặt kỹ thuật,
-một hệ thống như vậy phải thu âm thanh trong trình duyệt, truyền nó đến máy chủ
-với độ trễ thấp, chuyển giọng nói thành văn bản, sinh một câu trả lời hội thoại
-từ văn bản đó, và lưu trữ phiên để có thể xem lại và phân tích về sau. Mỗi giai
-đoạn này là một mối quan tâm riêng biệt với yêu cầu về độ trễ và độ tin cậy
-riêng, và hành vi tổng thể nảy sinh từ cách chúng được kết hợp chứ không phải từ
-bất kỳ giai đoạn đơn lẻ nào. Do đó nảy sinh một sự phân tách kiến trúc tự nhiên
-giữa một đường tương tác nhạy với độ trễ --- thu, truyền, nhận dạng và trả lời
---- và một đường trì hoãn, chậm hơn, xử lý việc phân tích dựa trên dữ liệu đã lưu
-sau khi một phiên kết thúc. LUVE tuân theo hình thái tổng quát này; phần còn lại
-của chương giới thiệu các công nghệ cụ thể mà nó dùng cho mỗi mối quan tâm. Luận
-văn xem các hệ thống như vậy thuần túy là các sản phẩm phần mềm và không đưa ra
-khẳng định nào về tác động của chúng đối với kết quả học tập.
+Các hệ thống luyện nói tự động cho phép người học đối thoại với máy tính đã được
+nghiên cứu trong nhánh học ngôn ngữ có máy tính hỗ trợ dựa trên hội
+thoại~\cite{bibauwDialogueCALL2019}. Dưới góc độ phần mềm, một hệ thống luyện nói
+thời gian thực là đường ống biến lời nói của người học thành câu trả lời tương tác
+và một bản ghi có thể xem lại. Hệ thống phải thu âm thanh trong trình duyệt, truyền
+về máy chủ với độ trễ thấp, chuyển giọng nói thành văn bản, sinh câu trả lời hội
+thoại từ văn bản đó, rồi lưu phiên để xem lại và phân tích về sau. Mỗi giai đoạn có
+yêu cầu độ trễ và độ tin cậy riêng, và hành vi tổng thể phụ thuộc vào cách chúng
+được ghép nối. Từ đó hình thành một sự phân tách kiến trúc: một đường tương tác
+nhạy độ trễ (thu, truyền, nhận dạng, trả lời) tách khỏi một đường trì hoãn xử lý
+phân tích trên dữ liệu đã lưu sau khi phiên kết thúc. LUVE theo hình thái này; các
+mục sau giới thiệu công nghệ dùng cho từng giai đoạn.
 
 \section{Cơ sở lý thuyết}
 
@@ -531,151 +526,103 @@ bộ, lưu trữ bền vững và kiến trúc ứng dụng web.
 
 \subsection{Giao tiếp thời gian thực trên nền web}
 
-Vì người học tương tác qua một trình duyệt, hệ thống cần một tầng giao tiếp có
-khả năng truyền âm thanh theo thời gian thực thay vì qua các lời gọi yêu
-cầu/phản hồi thông thường. Các tương tác yêu cầu/phản hồi HTTP tiêu chuẩn rất phù
-hợp với các thao tác rời rạc như xác thực hay lấy dữ liệu đã lưu, nhưng chúng
-không được thiết kế cho luồng phương tiện liên tục, độ trễ thấp, hai chiều mà một
-tương tác nói trực tiếp đòi hỏi. Web Real-Time Communication
-(WebRTC)~\cite{webrtcSpec} là công nghệ trình duyệt đáp ứng nhu cầu này: nó cung
-cấp việc thiết lập kết nối ngang hàng, thương lượng phiên, và truyền dữ liệu
-phương tiện cùng dữ liệu điều khiển giữa một trình duyệt và một đầu cuối ở xa. Ở
-mức tổng quát, WebRTC cho phép máy khách và cổng phía máy chủ thương lượng một
-phiên rồi trao đổi âm thanh và thông điệp điều khiển theo thời gian thực qua kết
-nối đó.
+Vì người học tương tác qua trình duyệt, hệ thống cần một tầng giao tiếp truyền âm
+thanh theo thời gian thực thay vì qua các lời gọi yêu cầu/phản hồi thông thường.
+HTTP yêu cầu/phản hồi phù hợp với các thao tác rời rạc như xác thực hay lấy dữ liệu
+đã lưu, nhưng không dành cho luồng phương tiện liên tục, độ trễ thấp, hai chiều mà
+một cuộc nói trực tiếp đòi hỏi. WebRTC (Web Real-Time Communication)~\cite{webrtcSpec}
+đáp ứng nhu cầu này: nó hỗ trợ thiết lập kết nối ngang hàng, thương lượng phiên, và
+truyền dữ liệu phương tiện lẫn điều khiển giữa trình duyệt và một đầu cuối ở xa.
 
-Ở mức tổng quát, việc thiết lập một phiên WebRTC bao gồm thương lượng các tham số
-của kết nối giữa hai đầu cuối rồi thiết lập một đường mạng khả dụng để phương
-tiện có thể truyền đi. Quá trình thương lượng trao đổi mô tả về năng lực phương
-tiện của mỗi bên, và một pha thiết lập kết nối xác định một tuyến đường giữa các
-đầu cuối; khi kết nối đã sẵn sàng, âm thanh có thể được truyền liên tục trong khi
-các thông điệp điều khiển bổ sung được trao đổi song song. Tính chất quan trọng
-đối với luận văn không phải là chi tiết của các pha này mà là năng lực mà chúng
-cung cấp: một kênh bền vững, độ trễ thấp giữa trình duyệt và một đầu cuối phía máy
-chủ, về cơ bản khác với một chuỗi các yêu cầu HTTP độc lập. Trong LUVE, tầng thời
-gian thực này là ranh giới giữa máy khách trình duyệt và cổng TEN/WebRTC, và nó
-mang luồng âm thanh cùng điều khiển của một phiên nói; các thao tác nặng hơn,
-không tương tác vẫn nằm trên bề mặt HTTP REST. Việc tách ranh giới phương tiện
-thời gian thực khỏi các ranh giới yêu cầu/phản hồi thông thường là một chủ đề lặp
-lại trong thiết kế.
+Thiết lập một phiên WebRTC gồm thương lượng tham số kết nối giữa hai đầu cuối rồi
+chọn một tuyến mạng để truyền phương tiện; khi kết nối sẵn sàng, âm thanh truyền
+liên tục trong khi các thông điệp điều khiển được trao đổi song song. Năng lực mà
+WebRTC mang lại là một kênh bền vững, độ trễ thấp giữa trình duyệt và máy chủ, khác
+hẳn một chuỗi yêu cầu HTTP độc lập. Trong LUVE, tầng này là ranh giới giữa máy
+khách và cổng TEN/WebRTC, mang luồng âm thanh và điều khiển của phiên nói, còn các
+thao tác nặng, không tương tác vẫn nằm trên bề mặt HTTP REST.
 
 \subsection{Công nghệ chuyển giọng nói thành văn bản}
 
-Chuyển giọng nói thành văn bản (STT) là thành phần biến âm thanh nói của người
-học thành văn bản mà các thành phần phía sau có thể xử lý. Chất lượng và thời
-điểm của việc chuyển đổi này định hình mọi thứ phía sau, vì cả câu trả lời hội
-thoại lẫn bất kỳ phân tích sau này đều thao tác trên văn bản đã nhận dạng và trên
-các tín hiệu độ tin cậy đi kèm. LUVE sử dụng bản hiện thực \texttt{faster-whisper}
-của họ mô hình nhận dạng giọng nói Whisper~\cite{radfordWhisper,fasterWhisper}.
-Ở cấu hình demo ổn định, việc nhận dạng chạy với mô hình \texttt{small.en} ở chế
-độ \texttt{forced\_en} với bước xác minh lượt hai bị tắt, khiến đường nhận dạng
-tập trung vào tiếng Anh. Cấu hình này là một lựa chọn giới hạn phạm vi có chủ
-đích cho nguyên mẫu: nhận dạng đa ngôn ngữ ổn định không nằm trong phạm vi và
-không được khẳng định. Thành phần STT tạo ra văn bản đã nhận dạng cùng với các
-tín hiệu độ tin cậy và độ bất định; các tín hiệu này là chỉ báo ở mức nhận dạng
-sẽ giúp định hướng việc chấm điểm về sau, và chúng rõ ràng không phải là một phân
-tích phát âm ở mức âm học hay âm vị. Sự phân biệt này quan trọng đối với thiết kế:
-các tín hiệu suy ra từ độ tin cậy có thể hỗ trợ một ước lượng thô ở mức văn bản
-về việc người học được hiểu rõ đến đâu, nhưng chúng không đo lường cách phát âm
-từng âm riêng lẻ, và hệ thống thận trọng để không trình bày chúng như thể chúng
-làm điều đó. Luận văn không báo cáo các con số về độ chính xác nhận dạng của mô
-hình.
+Chuyển giọng nói thành văn bản (STT) biến lời nói của người học thành văn bản cho
+các thành phần phía sau xử lý. Chất lượng và thời điểm của bước này định hình mọi
+xử lý sau, vì cả câu trả lời hội thoại lẫn phân tích về sau đều thao tác trên văn
+bản nhận dạng và các tín hiệu độ tin cậy đi kèm. LUVE dùng bản hiện thực
+\texttt{faster-whisper} của họ mô hình Whisper~\cite{radfordWhisper,fasterWhisper}.
+Ở cấu hình demo ổn định, nhận dạng chạy với mô hình \texttt{small.en} ở chế độ
+\texttt{forced\_en} và tắt bước xác minh lượt hai, nên đường nhận dạng tập trung
+vào tiếng Anh; nhận dạng đa ngôn ngữ ổn định nằm ngoài phạm vi và không được khẳng
+định. Ngoài văn bản, STT còn xuất các tín hiệu độ tin cậy và độ bất định ở mức nhận
+dạng, dùng để định hướng việc chấm điểm về sau. Cần nhấn mạnh rằng đây không phải
+phân tích phát âm ở mức âm học hay âm vị: các tín hiệu này có thể cho một ước lượng
+thô về mức độ người học được hiểu rõ, nhưng không đo cách phát âm từng âm, và hệ
+thống tránh trình bày chúng như thể làm được điều đó.
 
 \subsection{Mô hình ngôn ngữ lớn cho câu trả lời hội thoại}
 
-Các mô hình ngôn ngữ lớn (LLM) là các mô hình chuỗi có khả năng sinh văn bản ngôn
-ngữ tự nhiên trôi chảy dựa trên một đầu vào~\cite{brownGPT3}. Trong LUVE, một LLM
-được dùng ở mức kiến trúc để sinh các câu trả lời hội thoại của trợ giảng từ văn
-bản đã nhận dạng trong một phiên, để tương tác có thể tiếp diễn một cách tự
-nhiên. Điểm quan trọng đối với thiết kế là ranh giới quanh việc sử dụng này:
-đường sinh câu trả lời của trợ giảng bằng LLM theo thời gian thực chỉ chịu trách
-nhiệm tạo ra các câu trả lời hội thoại và được giữ tách biệt một cách có chủ đích
-khỏi khâu chấm điểm và cho điểm. Vì một mô hình như vậy sinh văn bản dựa trên đầu
-vào của nó, cùng một họ mô hình về nguyên tắc có thể được áp dụng hoặc để tạo một
-câu trả lời tức thời, hoặc, một cách riêng biệt, để giúp phân tích một phiên đã
-hoàn tất; LUVE giữ hai ứng dụng này trong các thành phần riêng biệt với thời điểm
-riêng biệt, sao cho việc dùng cho hội thoại không bao giờ bị chặn bởi hay bị lẫn
-lộn với việc dùng cho phân tích. Phân tích chấm điểm/cho điểm đầy đủ không được
-thực hiện trên đường thời gian thực; nó được giao cho grading-worker bất đồng bộ
-sau khi một phiên hoàn tất. Luận văn không đưa ra khẳng định nào về hiệu quả sư
-phạm của các câu trả lời được sinh ra và không báo cáo con số hiệu năng nào cho
-bất kỳ mô hình cụ thể nào; LLM được xem là một thành phần với trách nhiệm xác
-định và ranh giới xác định trong hệ thống.
+Mô hình ngôn ngữ lớn (LLM) là mô hình chuỗi sinh văn bản tự nhiên trôi chảy từ một
+đầu vào~\cite{brownGPT3}. Trong LUVE, LLM sinh câu trả lời hội thoại của trợ giảng
+từ văn bản đã nhận dạng trong phiên để cuộc trao đổi tiếp diễn. Ranh giới quanh
+việc dùng LLM là điểm cốt yếu của thiết kế: đường sinh câu trả lời thời gian thực
+chỉ tạo phản hồi hội thoại và được tách khỏi khâu chấm điểm. Về nguyên tắc, cùng
+một họ mô hình có thể vừa tạo câu trả lời tức thời, vừa hỗ trợ phân tích một phiên
+đã hoàn tất ở một bước riêng; LUVE đặt hai vai trò này ở các thành phần và thời
+điểm khác nhau để việc dùng cho hội thoại không bị chặn hay lẫn với việc dùng cho
+phân tích. Phân tích chấm điểm đầy đủ không chạy trên đường thời gian thực mà được
+giao cho grading-worker bất đồng bộ sau khi phiên kết thúc.
 
 \subsection{Xử lý bất đồng bộ và hàng đợi thông điệp}
 
-Không phải mọi công việc của hệ thống đều thuộc về đường thời gian thực. Việc
-chấm điểm và phân tích một phiên đã hoàn tất tương đối nặng và không cần chạy
-trong khi người học đang nói, nên việc chuyển chúng ra khỏi đường nóng nhạy với
-độ trễ và xử lý chúng một cách bất đồng bộ là điều mong muốn. Hàng đợi thông điệp
-là cơ chế tiêu chuẩn cho kiểu tách rời này: một bên sản xuất bàn giao một đơn vị
-công việc, và một bên tiêu thụ riêng biệt xử lý nó một cách độc lập, sao cho bên
-sản xuất không bị chặn bởi khối lượng công việc của bên tiêu
-thụ~\cite{rabbitmqDocs}. Ngoài việc tách rời, các bộ môi giới thông điệp thường
-cung cấp các tính chất vận hành hữu ích: bên tiêu thụ xác nhận một đơn vị công
-việc sau khi nó đã được xử lý, các đơn vị không thể xử lý có thể được định tuyến
-sang một bên để kiểm tra thay vì bị mất, và bên sản xuất cùng bên tiêu thụ có thể
-được mở rộng hoặc khởi động lại độc lập. Các tính chất này khiến hàng đợi là một
-lựa chọn tự nhiên cho công việc quan trọng nhưng không nhất thiết phải thực hiện
-đồng bộ với một tương tác của người dùng. LUVE dùng RabbitMQ làm kênh bất đồng bộ
-mang công việc chấm điểm từ thời điểm phiên hoàn tất đến grading-worker. Nhất
-quán với thiết kế độ tin cậy của hệ thống, sau khi commit cơ sở dữ liệu, một lần
-publish trực tiếp (inline) đơn vị công việc tới RabbitMQ được thực hiện; lần
-publish này không được xem là được bảo đảm, và do đó thiết kế không giả định rằng
-việc giao luôn thành công ở lần thử đầu. Việc giao thiên về at-least-once với xử
-lý bất biến (idempotent) ở mức phiên chứ không phải exactly-once, sao cho một đơn
-vị công việc được xử lý hơn một lần không tạo ra kết quả trùng lặp.
+Không phải mọi công việc đều thuộc đường thời gian thực. Việc chấm điểm và phân
+tích một phiên đã hoàn tất khá nặng và không cần chạy khi người học đang nói, nên
+nên đưa chúng ra khỏi đường nóng và xử lý bất đồng bộ. Hàng đợi thông điệp là cơ
+chế tiêu chuẩn cho việc tách rời này: bên sản xuất bàn giao một đơn vị công việc,
+bên tiêu thụ xử lý độc lập, nên bên sản xuất không bị chặn bởi khối lượng của bên
+tiêu thụ~\cite{rabbitmqDocs}. Các bộ môi giới thông điệp còn cho một số tính chất
+vận hành hữu ích: bên tiêu thụ xác nhận đơn vị công việc sau khi xử lý, các đơn vị
+không xử lý được có thể chuyển sang hàng đợi thư chết để kiểm tra thay vì mất, và
+hai bên có thể mở rộng hoặc khởi động lại độc lập. LUVE dùng RabbitMQ làm kênh bất
+đồng bộ chuyển công việc chấm điểm từ lúc phiên hoàn tất đến grading-worker. Sau
+khi commit cơ sở dữ liệu, hệ thống publish trực tiếp (inline) đơn vị công việc tới
+RabbitMQ; lần publish này không được coi là bảo đảm, nên thiết kế không giả định
+việc giao luôn thành công ngay lần đầu. Việc giao thiên về at-least-once với xử lý
+bất biến (idempotent) ở mức phiên, không phải exactly-once, nên một đơn vị bị xử lý
+nhiều lần cũng không tạo kết quả trùng.
 
 \subsection{Lưu trữ quan hệ và transactional outbox}
 
-Một hệ thống luyện nói cần lưu trữ bền vững cho dữ liệu có cấu trúc --- tài khoản,
-phiên và kết quả chấm điểm --- với các mối quan hệ được xác định rõ và các bảo
-đảm giao dịch. Một cơ sở dữ liệu quan hệ như PostgreSQL~\cite{postgresDocs} là
-một lựa chọn tự nhiên, vì nó cung cấp cả mô hình quan hệ lẫn khả năng commit
-nhiều thay đổi liên quan một cách nguyên tử. Tính nguyên tử đó là cốt lõi của một
-vấn đề độ tin cậy lặp lại: khi một phiên hoàn tất, hệ thống phải vừa ghi lại việc
-hoàn tất trong cơ sở dữ liệu vừa sắp xếp để gửi một thông điệp chấm điểm, và một
-cách hiện thực ngây thơ ghi vào cơ sở dữ liệu rồi publish tới một bộ môi giới
-riêng có thể thất bại giữa hai bước. Đây là vấn đề ghi-kép (dual-write) kinh
-điển: hai hệ thống độc lập --- cơ sở dữ liệu và bộ môi giới thông điệp --- đều
-phải được cập nhật, nhưng không có một giao dịch duy nhất bao trùm cả hai, nên
-một sự cố hoặc một lần publish thất bại sau khi commit cơ sở dữ liệu có thể để
-lại thay đổi trạng thái đã được ghi mà thông điệp tương ứng không bao giờ được
-gửi đi. Mẫu transactional outbox~\cite{transactionalOutbox} giải quyết điều này
-bằng cách ghi ý định gửi ra vào cùng cơ sở dữ liệu, trong cùng giao dịch với thay
-đổi trạng thái, sao cho ý định đó bền vững khi và chỉ khi thay đổi trạng thái bền
-vững. Một tiến trình chuyển tiếp riêng sau đó có thể đọc các mục outbox đang chờ
-và publish chúng tới bộ môi giới, thử lại khi cần, trong khi các bên tiêu thụ vẫn
-bất biến nên một đơn vị được publish lại là vô hại. Trong LUVE,
-\texttt{session\_outbox} là một bảng PostgreSQL thông thường chứ không phải một
-dịch vụ hàng đợi; trạng thái phiên và ý định outbox được commit cùng nhau, và một
-bộ chuyển tiếp sẽ giao các dòng đang chờ về sau. Ở mốc baseline, bộ chuyển tiếp
-đó mặc định tắt, nên việc khôi phục sau một lần publish thất bại là thủ công trừ
-khi bộ chuyển tiếp được bật tường minh.
+Hệ thống cần lưu trữ bền vững cho dữ liệu có cấu trúc (tài khoản, phiên, kết quả
+chấm điểm) với quan hệ rõ ràng và bảo đảm giao dịch. Một cơ sở dữ liệu quan hệ như
+PostgreSQL~\cite{postgresDocs} phù hợp vì nó vừa cung cấp mô hình quan hệ, vừa cho
+phép commit nhiều thay đổi liên quan một cách nguyên tử. Tính nguyên tử này là mấu
+chốt của một vấn đề độ tin cậy lặp lại: khi phiên hoàn tất, hệ thống vừa phải ghi
+việc hoàn tất vào cơ sở dữ liệu, vừa phải sắp xếp gửi một thông điệp chấm điểm;
+cách hiện thực ngây thơ là ghi cơ sở dữ liệu rồi publish tới một bộ môi giới riêng,
+và bước này có thể hỏng ở giữa. Đây là vấn đề ghi-kép (dual-write): hai hệ thống
+độc lập đều phải được cập nhật nhưng không có một giao dịch chung, nên một sự cố
+sau khi commit có thể để lại trạng thái đã ghi mà thông điệp tương ứng không bao
+giờ được gửi. Mẫu transactional outbox~\cite{transactionalOutbox} xử lý điều này
+bằng cách ghi ý định gửi vào cùng cơ sở dữ liệu, trong cùng giao dịch với thay đổi
+trạng thái, để ý định bền vững khi và chỉ khi trạng thái bền vững; một tiến trình
+chuyển tiếp riêng sau đó đọc các mục đang chờ và publish chúng, thử lại khi cần,
+còn bên tiêu thụ bất biến nên việc publish lại là vô hại. Trong LUVE,
+\texttt{session\_outbox} là một bảng PostgreSQL thông thường chứ không phải dịch vụ
+hàng đợi; trạng thái phiên và ý định outbox được commit cùng nhau. Ở mốc baseline,
+bộ chuyển tiếp mặc định tắt, nên khôi phục sau một lần publish hỏng là thủ công trừ
+khi bật bộ chuyển tiếp; một lần chạy thử bộ chuyển tiếp được trình bày ở Chương~4.
 
 \subsection{Kiến trúc và triển khai ứng dụng web}
 
-LUVE được cấu trúc theo một mẫu ứng dụng web phổ biến: một phía trước trang đơn
-(single-page), một backend phơi bày một giao diện lập trình ứng dụng, và các
-thành phần worker cùng hạ tầng riêng biệt. Trong mẫu này, trình duyệt chạy một
-máy khách phong phú vẽ giao diện và gọi các điểm cuối backend, backend tập trung
-logic ứng dụng phía sau một API, và công việc chạy lâu hoặc bị trì hoãn được xử
-lý bởi các tiến trình worker riêng thay vì bên trong đường yêu cầu. Sự tách biệt
-như vậy giữ mỗi tầng tập trung vào một mối quan tâm duy nhất và cho phép bề mặt
-tương tác, API và công việc nền tiến hóa cũng như thất bại độc lập. Trong LUVE,
-phía trước là một ứng dụng trang đơn xây bằng React, Vite và TypeScript; backend
-được hiện thực bằng Python với khung FastAPI; dữ liệu bền vững nằm trong
-PostgreSQL; RabbitMQ cung cấp truyền thông điệp bất đồng bộ; và một tiến trình
-worker riêng thực hiện việc chấm điểm. Thay vì được triển khai như một dịch vụ
-độc lập, phía trước được build thành các tài nguyên tĩnh do backend phục vụ. Các
-thành phần này được đóng gói và điều phối cho việc dùng cục bộ, mục đích trình
-diễn bằng Docker Compose, cho phép các dịch vụ hạ tầng và các dịch vụ ứng dụng
-được khởi động cùng
-nhau~\cite{fastapiDocs,reactDocs,viteDocs,dockerComposeDocs,postgresDocs,rabbitmqDocs}.
-Luận văn chỉ nêu tên các công nghệ này như các thành phần được dùng trong LUVE và
-không khẳng định các số phiên bản cụ thể hay bất kỳ tuyên bố nào về khả năng sẵn
-sàng triển khai sản xuất; việc triển khai là một cách đóng gói demo có kiểm soát
-chứ không phải một dịch vụ được lưu trữ ở cấp sản xuất.
+LUVE theo một mẫu ứng dụng web phổ biến: một phía trước trang đơn (single-page),
+một backend phơi bày API, và các tiến trình worker cùng hạ tầng tách biệt. Trình
+duyệt chạy máy khách vẽ giao diện và gọi các điểm cuối backend; backend tập trung
+logic ứng dụng phía sau API; còn công việc chạy lâu hoặc trì hoãn được giao cho
+worker riêng thay vì xử lý trong đường yêu cầu. Cách tách tầng này giữ mỗi tầng tập
+trung vào một mối quan tâm và cho phép bề mặt tương tác, API và công việc nền tiến
+hóa cũng như hỏng độc lập. Trong LUVE, phía trước được build thành tài nguyên tĩnh
+do backend phục vụ thay vì triển khai như một dịch vụ riêng, và toàn bộ được đóng
+gói cho việc dùng cục bộ, hướng trình diễn. Các công nghệ cụ thể hiện thực mẫu này
+cùng lý do lựa chọn được trình bày ở Mục Công nghệ sử dụng phía sau.
 
 \section{Tổng quan các công trình và sản phẩm liên quan}
 \label{sec:related-works}
