@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CatCompanion } from "../CatCompanion";
+import { CatFront } from "../ClaudeCat";
 
 interface Settings {
   sttOnly: boolean;
@@ -30,7 +30,7 @@ export function Home({
       <div className="p-wrap p-center">
         <div className="p-home">
           <div className="p-homecat">
-            <CatCompanion variant="idle" size={72} />
+            <CatFront width={184} height={184} />
           </div>
           <div
             className="p-eyebrow"

@@ -100,8 +100,37 @@ body {
   background: rgba(251,250,247,.92); backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--hairline);
 }
-.p-brand { font-family: var(--font-display); letter-spacing: .18em; font-weight: 600; font-size: 1.15rem; color: var(--ink); }
-.p-brand b { color: var(--brand); font-weight: 700; }
+.p-brand {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 152px; min-width: 152px; height: 80px; overflow: visible;
+  transform: translateY(-2.5mm);
+}
+.cat-sleepluve {
+  display: block;
+  filter: drop-shadow(0 8px 14px rgba(28,26,23,.13));
+}
+.p-brand-cat {
+  position: absolute;
+  left: calc(50% - 1mm);
+  top: -28px;
+  transform: translateX(-50%) scale(1.08);
+  transform-origin: 50% 50%;
+  opacity: .98;
+  z-index: 5;
+  pointer-events: none;
+}
+.p-brand-cat svg { overflow: visible !important; }
+.p-brand-word {
+  position: absolute; z-index: 4;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  font-family: var(--font-display); letter-spacing: .18em; font-weight: 600;
+  font-size: 1.2rem; color: var(--ink);
+  text-shadow: 0 1px 0 rgba(251,250,247,.96), 0 2px 10px rgba(251,250,247,.88);
+}
+.p-brand-word b { color: var(--brand); font-weight: 700; }
 .p-top__right { display: flex; align-items: center; gap: 14px; }
 .p-user { display: flex; align-items: center; gap: 9px; font-size: var(--t-sm); color: var(--ink-2); }
 .p-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--brand-tint); color: var(--brand-ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
@@ -433,6 +462,15 @@ body {
   filter: drop-shadow(0 8px 16px rgba(28,26,23,.08));
 }
 
+.cat-front {
+  border-radius: 50%;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 88%, var(--brand-tint));
+  box-shadow: 0 12px 26px rgba(28,26,23,.10);
+  vertical-align: middle;
+}
+.cat-front svg { border-radius: inherit; }
+
 /* theme-driven fills (in CSS so the SVG picks up the warm LUVE palette) */
 .cat__body, .cat__face, .cat__ear { fill: var(--brand-tint); stroke: var(--clay); stroke-width: 2.5; stroke-linejoin: round; }
 .cat__ear-inner { fill: var(--clay-tint); }
@@ -476,9 +514,10 @@ body {
   .cat, .cat * { animation: none !important; }
 }
 
-/* placement helpers — decorative, never over a CTA */
-.p-homecat { display: flex; justify-content: center; margin-bottom: 2px; }
-.p-authcat { display: flex; justify-content: center; margin: -2px 0 8px; }
+/* placement helpers - decorative, never over a CTA */
+.p-homecat { display: flex; justify-content: center; margin: -4px 0 10px; }
+.p-authcat { display: flex; justify-content: center; margin: -4px 0 12px; }
+.p-authcat .cat-front { box-shadow: 0 9px 20px rgba(28,26,23,.09); }
 
 /* C7d: compact, secondary realtime timing strip (diagnostic, never prominent) */
 .p-timing {

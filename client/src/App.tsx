@@ -13,6 +13,14 @@ import type { DiagState, LogLine } from "./lib/mock";
 type AuthMode = "login" | "register";
 
 /**
+ * The Developer diagnostics drawer is an operator-only tool (demo controls + raw
+ * event log) and is not part of the learner experience, so it is hidden in this
+ * build. The top-bar diagnostics button is intentionally kept; flip this flag to
+ * `true` to restore the drawer.
+ */
+const DIAGNOSTICS_DRAWER_ENABLED = false;
+
+/**
  * App shell — top-level view machine (intro -> auth -> practice; no React Router).
  * Email/password auth uses core_api; practice, realtime, history, and grading
  * views are delegated to the configured demo flow. Google sign-in remains
@@ -148,14 +156,16 @@ export function App() {
         />
       )}
 
-      <DiagnosticsDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        state={diag}
-        set={setDiagPart}
-        log={log}
-        sessionId={sessionId}
-      />
+      {DIAGNOSTICS_DRAWER_ENABLED && (
+        <DiagnosticsDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          state={diag}
+          set={setDiagPart}
+          log={log}
+          sessionId={sessionId}
+        />
+      )}
     </div>
   );
 }
