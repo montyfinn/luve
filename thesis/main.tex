@@ -903,8 +903,9 @@ phần chính sau:
 như sau. Trước tiên, người học nói vào micro trong trình duyệt; luồng âm thanh
 thời gian thực được truyền tới cổng TEN/WebRTC qua kết nối WebRTC. Tại đó, thành
 phần STT chuyển âm thanh thành văn bản đã nhận dạng. Văn bản này được chuyển tới
-thành phần trợ giảng LLM để sinh một câu trả lời hội thoại phù hợp với ngữ cảnh,
-rồi được phát lại cho người học. Các sự kiện phiên được thu thập trong quá trình
+thành phần trợ giảng LLM --- kèm một cửa sổ ngữ cảnh giới hạn gồm vài lượt hội
+thoại gần nhất --- để sinh một câu trả lời hội thoại mạch lạc theo phiên, rồi được
+phát lại cho người học. Các sự kiện phiên được thu thập trong quá trình
 tương tác và được lưu trữ khi phiên kết thúc. Tại thời điểm phiên hoàn tất, hệ
 thống ghi bản ghi phiên và một bản ghi \texttt{session\_outbox} trong cùng một
 giao dịch cơ sở dữ liệu, sau đó một lần publish trực tiếp đơn vị công việc
@@ -2638,6 +2639,17 @@ khiển được mô tả trong Chương~3 và~4. Cụ thể, hỗ trợ thời 
 được trộn vào \codepath{main} (PR~\#5), nên mã đã nộp khớp với thời gian chạy
 Docker Compose có bật GPU được tham chiếu trong Chương~4. Các ảnh chụp giao diện
 sau này chỉ được dùng làm bằng chứng trình bày/giao diện.
+
+\textbf{Cải tiến cửa sổ ngữ cảnh cho trợ giảng.} Trên nền baseline đã nộp
+\codepath{6640171}, một cải tiến được bổ sung ở nhánh \codepath{feat/tutor-context}
+(commit \codepath{f044c95}): trợ giảng LLM thời gian thực, vốn trước đó chỉ nhận
+lượt nói hiện tại, nay nhận thêm một \emph{cửa sổ ngữ cảnh giới hạn} gồm các lượt
+hội thoại gần nhất (mặc định 6 lượt, cấu hình qua thuộc tính
+\texttt{tutor\_context\_turns}; đặt 0 để tắt). Cửa sổ được ghép vào prompt một cách
+độc lập với nhà cung cấp (Groq hoặc Gemini) và bị giới hạn kích thước để kiểm soát
+token và độ trễ. Cải tiến này được kiểm chứng bằng năm kiểm thử đơn vị (định dạng
+lịch sử, thứ tự lượt, xử lý chuỗi rỗng, và việc ghép vào prompt); việc đánh giá
+hội thoại đầu-cuối qua nhiều lượt nói thật vẫn là công việc tiếp theo.
 
 \chapter{Ghi chú về khảo sát và đánh giá người dùng chưa thực hiện}
 \textbf{Không có khảo sát người dùng chính thức nào được tiến hành} như một phần
