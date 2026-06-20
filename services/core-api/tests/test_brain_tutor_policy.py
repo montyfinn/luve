@@ -37,3 +37,20 @@ def test_system_prompt_keeps_english_and_output_contract():
     # parser depends on the 2-line output labels — must not break
     assert "RESPONSE_TEXT:" in p
     assert "PEDAGOGICAL_FEEDBACK:" in p
+
+
+def test_system_prompt_avoids_overconfident_local_claims():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    # warn against asserting local/cultural facts unless confident
+    assert "local" in p or "cultural" in p
+    assert "confident" in p or "unsure" in p or "uncertain" in p
+    # the specific risky pattern that caused a hallucination ("X popular in <place>")
+    assert "popular in" in p
+
+
+def test_system_prompt_uses_soft_wording_when_unsure():
+    p = LLMProcessor.SYSTEM_PROMPT
+    # at least one hedging phrase is offered for uncertain recommendations
+    assert "You could try" in p or "A safe idea is" in p
+    # prefer suggestions grounded in the conversation over risky factual claims
+    assert "grounded" in p.lower()
