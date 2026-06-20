@@ -1096,6 +1096,7 @@ class LUVEExtension(ten.Extension):
                             "audio": job.audio_stats,
                         },
                     )
+                    self._log_stt_suppression("stt_runtime_error", job=job)
                     logger.warning("ten.stt.runtime_error reason=%s", exc)
                     if job.is_final:
                         self._reset_current_utterance()
@@ -1125,6 +1126,9 @@ class LUVEExtension(ten.Extension):
                                 "confidence": self._stt_confidence_metrics(analysis),
                             },
                         )
+                        self._log_stt_suppression(
+                            "mixed_non_english", job=job, analysis=analysis
+                        )
                         if job.is_final:
                             self._reset_current_utterance()
                         continue
@@ -1147,6 +1151,9 @@ class LUVEExtension(ten.Extension):
                             "text": analysis.raw_text,
                             "audio": job.audio_stats,
                         },
+                    )
+                    self._log_stt_suppression(
+                        "probable_hallucination", job=job, analysis=analysis
                     )
                     if job.is_final:
                         self._reset_current_utterance()
@@ -1186,6 +1193,11 @@ class LUVEExtension(ten.Extension):
                                 ),
                             },
                         )
+                        self._log_stt_suppression(
+                            "non_english_verification_failed",
+                            job=job,
+                            confidence=confidence,
+                        )
                         if job.is_final:
                             self._reset_current_utterance()
                         continue
@@ -1208,6 +1220,7 @@ class LUVEExtension(ten.Extension):
                             "confidence": self._stt_confidence_metrics(analysis),
                         },
                     )
+                    self._log_stt_suppression(stt_rejection, job=job, analysis=analysis)
                     if job.is_final:
                         self._reset_current_utterance()
                     continue
@@ -1249,6 +1262,9 @@ class LUVEExtension(ten.Extension):
                                     "stt_inference_ms": round(inference_ms, 2),
                                 },
                             },
+                        )
+                        self._log_stt_suppression(
+                            final_rejection, job=job, analysis=analysis
                         )
                         self._reset_current_utterance()
                         continue
@@ -1679,6 +1695,48 @@ class LUVEExtension(ten.Extension):
                         return
                     except TypeError:
                         continue
+
+    def _log_stt_suppression(
+        self,
+        reason: str,
+        *,
+        job: Any = None,
+        analysis: STTAnalysis | None = None,
+        confidence: dict[str, Any] | None = None,
+    ) -> None:
+        """Server-side diagnostic log for an STT suppression decision.
+
+        Logs the suppression reason plus non-sensitive acoustic/confidence
+        metrics only — never transcript text or audio — so the existing
+        redaction guarantee is preserved. Purely observational: it does not
+        change the accept/reject decision or any emitted frontend event.
+        """
+        if confidence is None and analysis is not None:
+            try:
+                confidence = self._stt_confidence_metrics(analysis)
+            except Exception:
+                confidence = None
+        metrics = confidence or {}
+        audio_stats = getattr(job, "audio_stats", None)
+        speech_ms = (
+            audio_stats.get("speech_ms") if isinstance(audio_stats, dict) else None
+        )
+        logger.info(
+            "stt.result.suppressed reason=%s session_id=%s is_final=%s trigger=%s "
+            "speech_ms=%s word_count=%s avg_logprob=%s no_speech_prob=%s "
+            "compression_ratio=%s low_confidence_word_ratio=%s segment_count=%s",
+            reason,
+            self._session_id,
+            getattr(job, "is_final", None),
+            getattr(job, "trigger", None),
+            speech_ms,
+            metrics.get("word_count"),
+            metrics.get("avg_logprob"),
+            metrics.get("no_speech_prob"),
+            metrics.get("compression_ratio"),
+            metrics.get("low_confidence_word_ratio"),
+            metrics.get("segment_count"),
+        )
 
     def _emit_log(self, text: str) -> None:
         if self._ten_env is None:
