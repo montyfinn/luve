@@ -126,6 +126,10 @@ export function Live({
             <div className="p-statehelp">{meta.help}</div>
           </div>
 
+          <p className="p-langnote">
+            LUVE tập trung luyện nói tiếng Anh. Vui lòng nói tiếng Anh; đầu vào tiếng Việt hoặc ngôn ngữ khác có thể không được nhận dạng chính xác.
+          </p>
+
           {error && (
             <p className="p-note" style={{ color: "var(--err-ink)", textAlign: "center" }} role="alert">
               {error}
