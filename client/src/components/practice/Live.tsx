@@ -51,6 +51,32 @@ export function Live({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [transcript, partial, assistantPartial]);
 
+  // Space toggles the mic from anywhere in the live screen — not only when the
+  // mute button happens to be focused — so it works immediately once a session
+  // is active. preventDefault stops page scroll and the native button
+  // activation, so the mute button never double-toggles.
+  useEffect(() => {
+    function isTypingTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return (
+        el.isContentEditable ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT"
+      );
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (e.repeat) return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      onMute();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onMute]);
+
   const orbClass =
     "p-orb " + (muted && phase !== "thinking" && phase !== "aispeaking" ? "muted " : "") + meta.orb;
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
@@ -126,6 +152,11 @@ export function Live({
             <div className="p-statehelp">{meta.help}</div>
           </div>
 
+          <p className="p-langnote">
+            LUVE focuses on English speaking practice. Please speak English; Vietnamese or other
+            languages may be misrecognized as English.
+          </p>
+
           {error && (
             <p className="p-note" style={{ color: "var(--err-ink)", textAlign: "center" }} role="alert">
               {error}
@@ -191,6 +222,8 @@ export function Live({
               <InterruptIcon size={16} /> Interrupt
             </button>
           </div>
+
+          <p className="p-kbd-hint">Tip: press Space to mute or unmute the mic.</p>
         </div>
       </div>
     </div>
