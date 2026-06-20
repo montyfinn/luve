@@ -504,26 +504,6 @@ export function PracticeScreen({
     return () => window.clearInterval(iv);
   }, [stage]);
 
-  const handleInterrupt = useCallback(() => {
-    if (phase === "aispeaking" || phase === "thinking") {
-      void realtimeRef.current?.sendCommand({ cmd: "BARGE_IN", source: "button" });
-      addLog("BARGE_IN");
-    }
-  }, [phase, addLog]);
-
-  // spacebar = barge-in while live
-  useEffect(() => {
-    if (stage !== "live") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.target === document.body) {
-        e.preventDefault();
-        handleInterrupt();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [stage, handleInterrupt]);
-
   const handleMute = useCallback(() => {
     setMuted((m) => {
       const next = !m;
@@ -620,7 +600,6 @@ export function PracticeScreen({
         speechHint={speechHint}
         authExpiryWarning={authExpiryWarning}
         onMute={handleMute}
-        onInterrupt={handleInterrupt}
         onEnd={endSession}
       />
     );

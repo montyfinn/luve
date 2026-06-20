@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { PHASE_META, type Phase } from "../../lib/mock";
 import { hasTimings, type RealtimeTimingView } from "../../lib/realtimeTimeline";
-import { MicIcon, MicOffIcon, InterruptIcon, PowerIcon } from "../icons";
+import { MicIcon, MicOffIcon, PowerIcon } from "../icons";
 
 export interface Turn {
   who: "ai" | "you";
@@ -23,7 +23,6 @@ interface LiveProps {
   speechHint?: string | null;
   authExpiryWarning?: "soon" | "urgent" | null;
   onMute: () => void;
-  onInterrupt: () => void;
   onEnd: () => void;
 }
 
@@ -42,7 +41,6 @@ export function Live({
   speechHint = null,
   authExpiryWarning = null,
   onMute,
-  onInterrupt,
   onEnd,
 }: LiveProps) {
   const meta = PHASE_META[phase] ?? PHASE_META.listening;
@@ -51,10 +49,12 @@ export function Live({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [transcript, partial, assistantPartial]);
 
-  // Space toggles the mic from anywhere in the live screen — not only when the
-  // mute button happens to be focused — so it works immediately once a session
-  // is active. preventDefault stops page scroll and the native button
-  // activation, so the mute button never double-toggles.
+  // Space toggles the mic from anywhere in the live screen so it works
+  // immediately once a session is active — no need to click the mic button
+  // first. Typing targets and focused buttons/links keep their native Space
+  // behavior (the Mute button still toggles on its own Space press; other
+  // buttons stay activatable), so we never hijack or double-fire; only when
+  // nothing interactive is focused do we handle Space and stop page scroll.
   useEffect(() => {
     function isTypingTarget(el: EventTarget | null): boolean {
       if (!(el instanceof HTMLElement)) return false;
@@ -66,10 +66,18 @@ export function Live({
         tag === "SELECT"
       );
     }
+    function isButtonLikeTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      return (
+        el.tagName === "BUTTON" ||
+        el.tagName === "A" ||
+        el.getAttribute("role") === "button"
+      );
+    }
     function onKeyDown(e: KeyboardEvent) {
       if (e.code !== "Space" && e.key !== " ") return;
       if (e.repeat) return;
-      if (isTypingTarget(e.target)) return;
+      if (isTypingTarget(e.target) || isButtonLikeTarget(e.target)) return;
       e.preventDefault();
       onMute();
     }
@@ -213,13 +221,6 @@ export function Live({
               style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
             >
               {muted ? <MicOffIcon size={16} /> : <MicIcon size={16} />} {muted ? "Unmute" : "Mute"}
-            </button>
-            <button
-              className="btn btn--ghost"
-              onClick={onInterrupt}
-              style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
-            >
-              <InterruptIcon size={16} /> Interrupt
             </button>
           </div>
 

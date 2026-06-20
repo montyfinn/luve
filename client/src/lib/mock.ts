@@ -24,11 +24,11 @@ export interface PhaseMeta {
 
 export const PHASE_META: Record<Phase, PhaseMeta> = {
   connecting: { label: "Connecting…", help: "Setting up your session", chip: ["info", "Connecting"], orb: "" },
-  listening: { label: "Listening…", help: "Speak naturally — press space to interrupt", chip: ["ok", "Connected"], orb: "listening" },
+  listening: { label: "Listening…", help: "Speak naturally — I'm listening", chip: ["ok", "Connected"], orb: "listening" },
   speaking: { label: "You're speaking", help: "Keep going — I'm following along", chip: ["ok", "Connected"], orb: "speaking" },
   stt: { label: "Got it…", help: "Finishing what you said", chip: ["busy", "Processing"], orb: "speaking" },
   thinking: { label: "Thinking…", help: "Your tutor is forming a reply", chip: ["busy", "Thinking"], orb: "thinking" },
-  aispeaking: { label: "Your tutor is speaking", help: "Press space to jump in", chip: ["ok", "Connected"], orb: "aispeaking" },
+  aispeaking: { label: "Your tutor is speaking", help: "Your tutor is replying — listen along", chip: ["ok", "Connected"], orb: "aispeaking" },
 };
 
 export const AI_LINES = [
