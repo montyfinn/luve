@@ -395,13 +395,16 @@ TEN/WebRTC, mô-đun STT, trợ giảng LLM thời gian thực, PostgreSQL, Rabb
 kết nối chúng. Điểm tham chiếu duy nhất cho các khẳng định về backend, kiến trúc
 và hiện thực trong luận văn này là mốc thiết kế/hệ thống được cố định
 \texttt{main@6a61bc8}; các ảnh chụp giao diện hiện tại được xem riêng như bằng
-chứng trình bày. Để tránh nhầm lẫn về mốc tham chiếu: trong bản nộp cuối, mã nguồn
-được tham chiếu theo nhánh \texttt{main} tại commit \texttt{6640171}. Các nhắc đến
-\texttt{6a61bc8} chỉ dùng để giải thích mốc thiết kế/hệ thống trước đó (nơi mọi
-khẳng định về kiến trúc và luồng xử lý được neo vào), chứ không thay thế và không
-mâu thuẫn với mốc mã nguồn nộp cuối; như giải thích ở Phụ lục~A, các commit từ
-\texttt{6a61bc8} đến \texttt{6640171} chỉ gồm rà soát mã, tài liệu và hỗ trợ thời
-gian chạy GPU, không thay đổi kiến trúc cốt lõi.
+chứng trình bày. Để tránh nhầm lẫn về mốc tham chiếu: mốc mã nguồn ứng dụng nộp
+cuối cùng trên GitHub là \texttt{main@0aa3a8a}. Một số bằng chứng thực nghiệm ở
+Chương~4 (log chạy thử, ảnh chụp màn hình, kiểm tra runtime) được thu ở các mốc
+trước đó --- chủ yếu \texttt{6640171} --- và được ghi theo đúng commit tương ứng.
+Các nhắc đến \texttt{6a61bc8} chỉ dùng để giải thích mốc thiết kế/hệ thống trước đó
+(nơi mọi khẳng định về kiến trúc và luồng xử lý được neo vào). Vì vậy, các mốc như
+\texttt{6640171} hay \texttt{6a61bc8} là mốc bằng chứng/lịch sử thiết kế, không
+thay thế và không mâu thuẫn với mốc mã nguồn nộp cuối; như giải thích ở Phụ lục~A,
+các commit dẫn tới bản nộp cuối chỉ gồm rà soát mã, tài liệu, hỗ trợ thời gian chạy
+GPU và tinh chỉnh ứng dụng/giao diện, không thay đổi kiến trúc cốt lõi.
 
 \subsection{Phạm vi nghiên cứu}
 
@@ -891,7 +894,7 @@ phần chính sau:
     Trợ giảng LLM thời gian thực & Sinh các câu trả lời hội thoại của trợ giảng trong phiên & Chỉ trả lời; việc chấm điểm được giao đi, không thực hiện ở đây \\
     PostgreSQL & Lưu trữ bền vững người dùng, bài học, phiên, kết quả chấm điểm và outbox & Kho trạng thái bền vững (không phải hàng đợi) \\
     RabbitMQ & Kênh bất đồng bộ mang công việc chấm điểm \texttt{session.completed} & Ranh giới chấm điểm bất đồng bộ; publish được thực hiện, không được bảo đảm \\
-    grading-worker & Tiêu thụ công việc phiên đã hoàn tất; ghi \texttt{grading\_results} hoặc \texttt{grading\_skip\_log} & Nằm ngoài đường thời gian thực; chấm điểm fake (mặc định) hoặc LLM thật tùy chọn \\
+    grading-worker & Tiêu thụ công việc phiên đã hoàn tất; ghi \texttt{grading\_results} hoặc \texttt{grading\_skip\_log} & Nằm ngoài đường thời gian thực; chấm điểm theo quy tắc (mặc định) hoặc LLM thật tùy chọn \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -1257,7 +1260,7 @@ ra một kết quả chấm điểm. Khi việc chấm điểm thành công, nó
 \texttt{grading\_results}; khi việc chấm điểm không thể tiến hành hoặc bị bỏ qua
 có chủ ý (ví dụ, khi các điều kiện đủ tư cách không được thỏa mãn), nó
 ghi một mục \texttt{grading\_skip\_log} thay thế. Hệ thống hỗ trợ hai chế độ chấm
-điểm: một bộ chấm \emph{fake} (xem trước khi phát triển) ngoại tuyến, vốn là mặc
+điểm: một bộ chấm theo quy tắc, ngoại tuyến (xem trước khi phát triển), vốn là mặc
 định, và một bộ chấm thật dựa trên LLM có thể được bật qua cấu hình. Trong số các
 kỹ năng được báo cáo, điểm phát âm là một ước lượng độ rõ ràng suy ra từ các tín
 hiệu độ tin cậy và độ bất định của STT, không phải một phân tích phát âm ở mức âm
@@ -1764,8 +1767,8 @@ các lưu ý của chúng.
     \bottomrule
   \end{tabular}
 \end{table}
-Không có kết quả về độ trễ, độ chính xác, thông lượng, hiệu quả học tập, hay khả
-năng sẵn sàng triển khai sản xuất nào được khẳng định từ các quan sát này.
+Không có kết quả định lượng nào được khẳng định từ các quan sát này; các giới hạn
+đánh giá được tổng hợp ở Chương~5.
 
 \subsection{Đánh giá kết quả}
 
@@ -2022,9 +2025,8 @@ trong lần chạy demo có kiểm soát; để ngắn gọn, cột kết quả 
 tắt hai bản chụp nhật ký là \emph{GW log} (\codepath{gateway-live-gpu-demo.log}) và
 \emph{W log} (\codepath{grading-worker-tail.log}), bên cạnh các bản chụp JSON sẵn
 sàng/kiểm tra và văn bản. Trạng thái \emph{Pass} (Đậu) nghĩa là hành vi chức năng
-kỳ vọng đã được quan sát trong bản demo có kiểm soát; nó \emph{không} phải một phép
-đo kiểm chuẩn, một kết quả độ chính xác nhận dạng đã kiểm chứng, hay một kết quả
-chất lượng chấm điểm đã kiểm chứng.
+kỳ vọng đã được quan sát trong bản demo có kiểm soát; như ghi trong chú thích bảng,
+nó \emph{không} phải một bằng chứng đã được kiểm chứng.
 
 {\footnotesize
 \setlength{\tabcolsep}{3pt}
@@ -2187,7 +2189,8 @@ thay vì sao chép hàng loạt:
   \item Bản kiểm kê kiểm thử tự động (24 tệp kiểm thử, hơn 300 hàm kiểm thử, theo
         quét tĩnh; không chạy lại): Bảng~\ref{tab:test-inventory}.
   \item Sự sẵn có của mã nguồn: kho dự án
-        \url{https://github.com/montyfinn/luve} tại \codepath{main@6640171}
+        \url{https://github.com/montyfinn/luve} (mốc nộp cuối
+        \codepath{main@0aa3a8a}; bằng chứng vận hành ở \codepath{6640171})
         (Phụ lục~A, Mã nguồn).
 \end{itemize}
 Danh sách này ghi lại bằng chứng nào \emph{tồn tại}; nó không nâng cấp bất kỳ mục
@@ -2705,15 +2708,20 @@ cần thiết.
 Mã nguồn LUVE được duy trì trong kho GitHub của dự án:
 \url{https://github.com/montyfinn/luve}. Kho chứa máy khách React/Vite, backend
 FastAPI, các thành phần cổng thời gian thực, các dịch vụ worker bất đồng bộ, mã
-liên quan đến cơ sở dữ liệu, cấu hình Docker Compose, và tài liệu luận văn. Trạng
-thái đã nộp cuối cùng tương ứng với nhánh \codepath{main} tại commit
-\codepath{6640171}. Phần thảo luận thiết kế hệ thống trong luận văn này được neo
-vào commit baseline đã được xem xét trước đó \codepath{6a61bc8}; các commit giữa
-\codepath{6a61bc8} và \codepath{6640171} gồm việc xem xét mã, tài liệu và chú
-thích, cùng việc trau chuốt bản sao tĩnh, kèm theo hỗ trợ thời gian chạy GPU (chuyển
-giọng nói thành văn bản có bật CUDA), và chúng không thay đổi kiến trúc cốt lõi,
-các ranh giới thành phần, lược đồ cơ sở dữ liệu, hay các luồng dữ liệu và điều
-khiển được mô tả trong Chương~3 và~4. Cụ thể, hỗ trợ thời gian chạy GPU CUDA đã
+liên quan đến cơ sở dữ liệu, cấu hình Docker Compose, và tài liệu luận văn. Mốc mã
+nguồn ứng dụng nộp cuối cùng trên GitHub là \codepath{main@0aa3a8a}. Một số bằng
+chứng thực nghiệm trong Chương~4 --- bao gồm log chạy thử, ảnh chụp màn hình và
+kiểm tra runtime --- được thu ở các mốc trước đó (chủ yếu \codepath{6640171}, là
+HEAD của cây làm việc dùng để chạy demo và chụp bằng chứng) và được ghi theo đúng
+commit tương ứng. Phần thảo luận thiết kế hệ thống trong luận văn này được neo vào
+commit baseline đã được xem xét trước đó \codepath{6a61bc8}. Vì vậy, các mốc như
+\codepath{6640171} hoặc \codepath{6a61bc8} là mốc bằng chứng/lịch sử thiết kế,
+không phải mâu thuẫn với mốc mã nguồn nộp cuối cùng. Các commit dẫn tới
+\codepath{0aa3a8a} gồm việc xem xét mã, tài liệu và chú thích, trau chuốt bản sao
+tĩnh, hỗ trợ thời gian chạy GPU (chuyển giọng nói thành văn bản có bật CUDA), và
+các tinh chỉnh ứng dụng/giao diện; chúng không thay đổi kiến trúc cốt lõi, các ranh
+giới thành phần, lược đồ cơ sở dữ liệu, hay các luồng dữ liệu và điều khiển được mô
+tả trong Chương~3 và~4. Cụ thể, hỗ trợ thời gian chạy GPU CUDA đã
 được trộn vào \codepath{main} (PR~\#5), nên mã đã nộp khớp với thời gian chạy
 Docker Compose có bật GPU được tham chiếu trong Chương~4. Các ảnh chụp giao diện
 sau này chỉ được dùng làm bằng chứng trình bày/giao diện.
