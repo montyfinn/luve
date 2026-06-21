@@ -861,6 +861,73 @@ def test_verification_unavailable_marks_turn_uncertain(
     assert "verification_unavailable" in metadata["uncertainty_reasons"]
 
 
+def test_clean_ascii_english_midband_finalizes(extension: MockLUVEExtension) -> None:
+    # Regression: clean, multi-word English whose content words are not in
+    # COMMON_ENGLISH_WORDS and whose avg_logprob sits in the [-0.65, -0.50)
+    # band (passes strict acoustics but misses the ASCII shortcut) was wrongly
+    # dropped as "no_english_evidence" — e.g. "I'm tired. Goodbye!".
+    for text, avg_logprob in (
+        ("I'm tired. Goodbye!", -0.59),
+        ("Goodbye, nice talking.", -0.61),
+        ("Tired, sleepy, goodbye.", -0.58),
+    ):
+        analysis = _make_analysis(
+            text,
+            no_speech_prob=0.02,
+            avg_logprob=avg_logprob,
+        )
+        reason = extension._stt_rejection_reason(
+            analysis,
+            is_final=True,
+            audio_stats={"speech_ms": 2500},
+        )
+        assert reason is None, (text, reason)
+
+
+def test_midband_acceptance_still_blocks_vietnamese_and_weak_audio(
+    extension: MockLUVEExtension,
+) -> None:
+    # Vietnamese (accented) is not ASCII and is detected → still suppressed.
+    vi_accented = _make_analysis(
+        "hôm nay trời đẹp quá",
+        no_speech_prob=0.02,
+        avg_logprob=-0.55,
+    )
+    assert (
+        extension._stt_rejection_reason(
+            vi_accented, is_final=True, audio_stats={"speech_ms": 2500}
+        )
+        is not None
+    )
+
+    # Unaccented Vietnamese phonetic tokens are ASCII but still detected as VN.
+    vi_phonetic = _make_analysis(
+        "hom nay troi dep qua",
+        no_speech_prob=0.02,
+        avg_logprob=-0.55,
+    )
+    assert (
+        extension._stt_rejection_reason(
+            vi_phonetic, is_final=True, audio_stats={"speech_ms": 2500}
+        )
+        is not None
+    )
+
+    # The new clause runs AFTER the acoustic gates: genuinely weak audio
+    # (avg_logprob below the strict -0.65 floor) is still rejected acoustically.
+    weak = _make_analysis(
+        "Goodbye, nice talking.",
+        no_speech_prob=0.02,
+        avg_logprob=-0.90,
+    )
+    assert (
+        extension._stt_rejection_reason(
+            weak, is_final=True, audio_stats={"speech_ms": 2500}
+        )
+        == "low_average_logprob"
+    )
+
+
 def test_whisper_hallucination_suppression(extension: MockLUVEExtension) -> None:
     assert (
         extension._is_probable_stt_hallucination(

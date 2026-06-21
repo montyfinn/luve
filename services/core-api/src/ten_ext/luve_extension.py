@@ -3080,6 +3080,19 @@ class LUVEExtension(ten.Extension):
 
         # 5. Semantic Gate: If it contains absolutely zero English evidence, reject it.
         if not is_eligible_learner_english:
+            # By this point the transcript has cleared Vietnamese detection,
+            # mixed-language filtering, hallucination, and the (strict) acoustic
+            # gates above. Clean, multi-word ASCII text that is not Vietnamese is
+            # real English even when its content words are outside
+            # COMMON_ENGLISH_WORDS (e.g. "I'm tired. Goodbye!"). Accept it rather
+            # than dropping a valid utterance whose avg_logprob merely sits below
+            # the -0.50 ASCII shortcut. Vietnamese / noise are already blocked above.
+            if (
+                not has_vietnamese
+                and analysis.raw_text.isascii()
+                and word_count >= 2
+            ):
+                return None
             return "no_english_evidence"
 
         return None
