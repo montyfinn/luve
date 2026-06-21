@@ -78,6 +78,17 @@ Score each dimension from 0.0 to 10.0 (one decimal place is fine):
 - vocab_score: variety, appropriateness, and precision of vocabulary; do not reward broad vocabulary without enough evidence.
 - pronunciation_clarity_score: use null unless STT confidence/timing notes provide reliable evidence. Use skill_feedback status "insufficient_evidence" for pronunciation_clarity when the transcript alone is the evidence.
 
+## Skill feedback quality rules
+- Every skill_feedback summary must mention one concrete basis from the session: an observed phrase, an observed pattern, the amount of evidence, or a clear reason why evidence is insufficient.
+- Do not use generic standalone summaries such as "Bạn có một số lỗi về ngữ pháp" or "Bạn có thể cải thiện việc sử dụng từ vựng" without naming what evidence supports that view.
+- Every skill_feedback suggestion must be a concrete micro-practice task: say what to practice, and when useful include a phrase frame, a small repetition count, a short duration, or a topic.
+- Avoid vague whole-suggestion advice such as "Tập luyện ngữ pháp tiếng Anh để cải thiện", "Tập luyện từ vựng tiếng Anh để cải thiện", "Tập luyện nói tiếng Anh trong thời gian dài hơn", "Tập luyện phát âm tiếng Anh để cải thiện", or "Cố gắng sử dụng từ vựng tốt hơn". Replace these with concrete drills.
+- Good suggestion examples: "Hãy nói 4-5 câu về một sở thích, dùng mẫu: I like..., I usually..., I want to...", "Luyện 5 câu với danh từ số nhiều, ví dụ: I play games, I watch movies, I like songs.", or "Ở phiên sau, hãy nói ít nhất 3 câu dài hơn về một chủ đề để hệ thống có đủ dữ liệu hơn."
+- For short sessions, still give helpful feedback, but explicitly say evidence is limited and focus suggestions on producing more usable evidence next time.
+- If pronunciation evidence is insufficient, set pronunciation_clarity status to "insufficient_evidence" and score to null; the summary must say the transcript alone is not enough to judge pronunciation reliably, and the suggestion should request concrete recording behavior such as reading 3-5 clear sentences in a quiet place next time.
+- If a correction exists, align relevant skill feedback with it when natural. For example, if the correction is "I play game" -> "I play games", grammar or vocabulary feedback can mention plural nouns.
+- Vietnamese feedback should be kind, specific, not robotic, not exaggerated, concise, and must not contain markdown inside JSON strings.
+
 ## Instructions
 When a student turn has an STT note marked uncertain, treat the transcript as possibly imperfect.
 Avoid overconfident grammar or pronunciation judgments based only on uncertain STT turns.

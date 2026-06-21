@@ -135,6 +135,50 @@ def test_prompt_contains_stt_pronunciation_and_correction_safety_rules():
     assert "high-impact, high-confidence corrections" in lower
 
 
+def test_prompt_requires_evidence_based_skill_feedback():
+    ei = _make_input(student_texts=["I play game."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "every skill_feedback summary must mention one concrete basis" in lower
+    assert "observed phrase" in lower
+    assert "observed pattern" in lower
+    assert "amount of evidence" in lower
+    assert "clear reason why evidence is insufficient" in lower
+    assert "without naming what evidence supports that view" in lower
+    assert "bạn có một số lỗi về ngữ pháp" in lower
+
+
+def test_prompt_requires_concrete_micro_practice_and_bans_generic_advice():
+    ei = _make_input(student_texts=["I play game."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "concrete micro-practice task" in lower
+    assert "phrase frame" in lower
+    assert "small repetition count" in lower
+    assert "tập luyện ngữ pháp tiếng anh để cải thiện" in lower
+    assert "tập luyện từ vựng tiếng anh để cải thiện" in lower
+    assert "tập luyện nói tiếng anh trong thời gian dài hơn" in lower
+    assert "tập luyện phát âm tiếng anh để cải thiện" in lower
+    assert "cố gắng sử dụng từ vựng tốt hơn" in lower
+    assert "hãy nói 4-5 câu" in lower
+    assert "i like..." in lower
+
+
+def test_prompt_handles_short_sessions_and_pronunciation_insufficiency_carefully():
+    ei = _make_input(student_texts=["Hello."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "for short sessions" in lower
+    assert "evidence is limited" in lower
+    assert "producing more usable evidence next time" in lower
+    assert "transcript alone is not enough to judge pronunciation reliably" in lower
+    assert "reading 3-5 clear sentences in a quiet place" in lower
+    assert "align relevant skill feedback" in lower
+
+
 def test_prompt_contains_json_robustness_rules():
     ei = _make_input(student_texts=["Hello."])
     prompt = build_grading_prompt(ei)
