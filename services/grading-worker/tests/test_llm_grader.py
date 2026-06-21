@@ -102,6 +102,51 @@ def test_prompt_contains_rubric_fields():
     assert "vocab_score" in prompt
 
 
+def test_prompt_contains_evidence_boundaries_and_score_anchors():
+    ei = _make_input(student_texts=["Hello."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "approximate practice feedback" in lower
+    assert "not a cefr" in lower
+    assert "ielts" in lower
+    assert "not a validated proficiency assessment" in lower
+    assert "limited evidence" in lower
+    assert "do not infer broad english ability" in lower
+    assert "0-2: no reliable evidence" in lower
+    assert "3-4: very limited" in lower
+    assert "5-6: basic communication" in lower
+    assert "7-8: generally clear" in lower
+    assert "9-10: strong" in lower
+
+
+def test_prompt_contains_stt_pronunciation_and_correction_safety_rules():
+    ei = _make_input(student_texts=["Hello."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "do not over-penalize possible stt errors" in lower
+    assert "skip the correction" in lower
+    assert "uncertain turns" in lower
+    assert "pronunciation_clarity_score: use null unless" in lower
+    assert "insufficient_evidence" in prompt
+    assert "do not claim exact pronunciation errors" in lower
+    assert "return at most 3 corrections" in lower
+    assert "high-impact, high-confidence corrections" in lower
+
+
+def test_prompt_contains_json_robustness_rules():
+    ei = _make_input(student_texts=["Hello."])
+    prompt = build_grading_prompt(ei)
+    lower = prompt.lower()
+
+    assert "return only a json object" in lower
+    assert "no markdown" in lower
+    assert "no extra keys" in lower
+    assert "all four skill_feedback items must appear exactly once" in lower
+    assert "valid json with no trailing commas" in lower
+
+
 def test_prompt_includes_uncertain_stt_note_but_preserves_transcript_text():
     ei = EvaluationInput(
         session_id=SESSION_ID,

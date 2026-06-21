@@ -46,7 +46,9 @@ def build_grading_prompt(input_data: EvaluationInput) -> str:
         quality_notes.append(f"Uncertain student turns: {uncertain_turns}")
 
     return f"""\
-You are an experienced English language teacher evaluating a student's spoken English practice session.
+You are an experienced English language teacher giving approximate practice feedback for one short spoken English practice session.
+These scores are not a CEFR/IELTS score and not a validated proficiency assessment.
+Use only the evidence in this session. If evidence is limited, be conservative and say in Vietnamese that the feedback is based on limited session evidence.
 
 ## Transcript
 {transcript_section}
@@ -54,19 +56,34 @@ You are an experienced English language teacher evaluating a student's spoken En
 ## Session quality signals
 {chr(10).join(quality_notes)}
 
-## Scoring rubric
+## Evidence boundaries
+- Treat all top-level scores as approximate practice feedback from this session only.
+- Do not infer broad English ability from one or two short sentences.
+- For very few student turns or very low student word count, keep fluency_score, grammar_score, and vocab_score conservative and mention limited evidence in the Vietnamese summary or suggestions.
+- Do not over-penalize possible STT errors. If a phrase may be an STT artifact, skip the correction.
+- Do not make grammar or vocabulary corrections from uncertain turns unless the error is obvious and high-confidence.
+- Do not claim exact pronunciation errors from the plain transcript.
+
+## Score anchors for fluency_score, grammar_score, and vocab_score
 Score each dimension from 0.0 to 10.0 (one decimal place is fine):
-- fluency_score: naturalness, rhythm, pace, minimal hesitation
-- grammar_score: correctness of tenses, agreement, sentence structure
-- vocab_score: variety, appropriateness, and precision of vocabulary
-- pronunciation_clarity_score: clarity evidence from STT confidence/timing notes only; use null if evidence is insufficient
+- 0-2: no reliable evidence or mostly unusable evidence
+- 3-4: very limited output, frequent issues, hard to sustain communication
+- 5-6: basic communication with noticeable limitations
+- 7-8: generally clear communication with minor issues
+- 9-10: strong, consistent, rich evidence across multiple turns
+
+## Skill-specific guidance
+- fluency_score: naturalness, rhythm, pace, ability to sustain answers; be conservative for short sessions.
+- grammar_score: correctness of tenses, agreement, and sentence structure; skip uncertain STT artifacts.
+- vocab_score: variety, appropriateness, and precision of vocabulary; do not reward broad vocabulary without enough evidence.
+- pronunciation_clarity_score: use null unless STT confidence/timing notes provide reliable evidence. Use skill_feedback status "insufficient_evidence" for pronunciation_clarity when the transcript alone is the evidence.
 
 ## Instructions
 When a student turn has an STT note marked uncertain, treat the transcript as possibly imperfect.
 Avoid overconfident grammar or pronunciation judgments based only on uncertain STT turns.
 Write learner-facing summary, observations, and suggestions in concise Vietnamese.
 Keep original and corrected phrases in English.
-Return ONLY a JSON object with these exact keys — no markdown, no prose, no extra keys:
+Return ONLY a JSON object with these exact keys - no markdown, no prose, no extra keys:
 {{
   "fluency_score": <number 0–10>,
   "grammar_score": <number 0–10>,
@@ -92,8 +109,18 @@ Return ONLY a JSON object with these exact keys — no markdown, no prose, no ex
     }}
   ]
 }}
-If there are no corrections, return an empty list for "corrections".
-Return exactly one skill_feedback item per skill. For pronunciation_clarity, use status "insufficient_evidence" and score null when the transcript does not provide reliable pronunciation evidence.
+Corrections rules:
+- Return at most 3 corrections.
+- Prefer high-impact, high-confidence corrections.
+- Keep "original" and "corrected" in English.
+- Keep the Vietnamese explanation brief.
+- Do not correct every minor phrase in a very short session.
+- If there are no corrections, return an empty list for "corrections".
+JSON robustness rules:
+- Return exactly one skill_feedback item for each skill: fluency, grammar, vocabulary, pronunciation_clarity.
+- All four skill_feedback items must appear exactly once.
+- For pronunciation_clarity, use status "insufficient_evidence" and score null when STT confidence/timing notes do not provide reliable pronunciation evidence.
+- Return valid JSON with no trailing commas.
 Do not include any text before or after the JSON object.
 """
 
