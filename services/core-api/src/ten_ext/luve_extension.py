@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from src.media.stt_worker import STTProcessingError, WhisperInference
 from src.media.tts import TTSAudioChunk, TTSProcessor
 from src.schemas.ai_logic import STTAnalysis
 from src.services.session_event_publisher import publish_session_completed
+from src.ten_ext.tutor_opener import OPENERS, pick_opener
 
 try:
     import ten  # type: ignore
@@ -39,6 +41,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 PCM16_MONO_16KHZ_BYTES_PER_SECOND = 32000
+
+# Small lead-in before the proactive opening greeting so the client's WebRTC
+# audio/data channel is ready to receive it once the session becomes ready.
+OPENER_LEAD_IN_SECONDS = 0.4
 
 
 # Adaptive STT Rejection thresholds for learner English attempts
@@ -249,6 +255,13 @@ class LUVEExtension(ten.Extension):
         # the LLM so replies stay coherent across turns. 0 disables it.
         self._dialogue_history: list[dict[str, str]] = []
         self._tutor_context_turns = 6
+        # Proactive opening greeting: the tutor (Lucy) speaks first once the
+        # session is ready so the learner does not have to start. One-shot per
+        # session (reset in _reset_session_runtime_state); the rotation index
+        # persists across sessions (random start) so successive openers vary.
+        self._opener_sent = False
+        self._opener_rotation = random.randrange(len(OPENERS))
+        self._opener_lead_in_seconds = OPENER_LEAD_IN_SECONDS
         self._session_id: str | None = None
 
         self._utterance_pcm = bytearray()
@@ -596,6 +609,11 @@ class LUVEExtension(ten.Extension):
                 "model_size": self._stt_model_size,
             },
         )
+
+        try:
+            await self._maybe_send_opening_greeting(session_id)
+        except Exception:
+            logger.exception("ten.opener.failed session_id=%s", session_id)
 
     async def _async_stop(self) -> None:
         async with self._cleanup_lock or asyncio.Lock():
@@ -1389,6 +1407,78 @@ class LUVEExtension(ten.Extension):
                 "ten.llm.finished source=local_fallback duration_ms=%.2f",
                 (time.perf_counter() - started) * 1000,
             )
+            self._is_assistant_speaking = False  # ALWAYS unblock mic input
+
+    async def _maybe_send_opening_greeting(self, session_id: str) -> None:
+        """Have the tutor (Lucy) greet first, once, when the session is ready.
+
+        Fires at most once per session (``_opener_sent`` one-shot, reset in
+        ``_reset_session_runtime_state``) so reconnect/retry STARTs do not
+        repeat it. Reuses the normal assistant/TTS emit path so echo protection
+        applies, records the greeting only as an assistant turn (never a
+        USER_TURN, so grading and the student word count are untouched), and
+        seeds the dialogue history so the first learner reply stays coherent and
+        Lucy does not greet again.
+        """
+        if self._opener_sent:
+            return
+        if not self._responses_enabled() or self._session_id != session_id:
+            return
+        # Claim the one-shot before awaiting so a concurrent START cannot
+        # double-fire while we wait for the client to settle.
+        self._opener_sent = True
+
+        if self._opener_lead_in_seconds > 0:
+            await asyncio.sleep(self._opener_lead_in_seconds)
+        if not self._responses_enabled() or self._session_id != session_id:
+            return
+
+        opener = pick_opener(self._opener_rotation)
+        self._opener_rotation += 1
+
+        self._reset_tts_timing()
+        try:
+            if self._tts_output_enabled:
+                self._is_assistant_speaking = True  # Block mic only for audible output.
+            self._emit_json(
+                "assistant_stream",
+                {"delta": opener, "source": "opener"},
+            )
+            if self._tts_processor is not None and self._tts_output_enabled:
+                self._mark_tts_feed_started()
+                await self._tts_processor.feed_text(opener, is_final=False)
+                await self._tts_processor.feed_text("", is_final=True)
+            self._emit_json(
+                "assistant_final",
+                {
+                    "response_text": opener,
+                    "pedagogical_feedback": None,
+                    "source": "opener",
+                },
+            )
+            # Assistant turn only: never a USER_TURN, so the student word count
+            # and saved-session filter still treat an opener-only session as empty.
+            self._event_log.append(
+                {
+                    "type": "AI_TURN",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "payload": {
+                        "text": opener,
+                        "pedagogical_feedback": None,
+                        "source": "opener",
+                    },
+                }
+            )
+            if self._tutor_context_turns > 0:
+                self._dialogue_history.append(
+                    {"speaker": "tutor", "text": opener}
+                )
+            logger.info(
+                "ten.opener.sent session_id=%s rotation=%s",
+                session_id,
+                self._opener_rotation - 1,
+            )
+        finally:
             self._is_assistant_speaking = False  # ALWAYS unblock mic input
 
     async def _run_llm_pipeline(
@@ -3250,6 +3340,7 @@ class LUVEExtension(ten.Extension):
         self._session_id = None
         self._audio_sequence = 0
         self._is_assistant_speaking = False
+        self._opener_sent = False
         self._reset_tts_timing()
         self._stt_inference_busy = False
         self._stt_only_mode = False
