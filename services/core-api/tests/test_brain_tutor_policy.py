@@ -23,6 +23,32 @@ def test_system_prompt_uses_recent_context_and_avoids_repeats():
     assert "already" in p
 
 
+def test_system_prompt_respects_topic_boundaries_and_switches():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    assert "latest learner message controls" in p
+    assert "do not force the old topic back" in p
+    assert "don't talk about" in p
+    assert "change topic" in p
+    assert "do not talk about or mention the avoided topic again" in p
+    assert "new topic" in p
+
+
+def test_system_prompt_handles_direct_meta_question_briefly():
+    p = LLMProcessor.SYSTEM_PROMPT
+    assert "What can you do?" in p
+    assert "What do you do?" in p
+    assert "How can you help me?" in p
+    assert "I can help you practice English conversation" in p
+    assert "What would you like to practice?" in p
+    assert "no more than 2 short sentences" in p
+
+
+def test_system_prompt_avoids_long_recaps():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    assert "avoid long recaps" in p
+    assert "do not summarize many past turns" in p
+
+
 def test_system_prompt_limits_followups_and_adapts_level():
     p = LLMProcessor.SYSTEM_PROMPT.lower()
     assert "follow-up" in p or "follow up" in p

@@ -47,6 +47,13 @@ def test_persona_intro_uses_existing_lucy_name_not_luve() -> None:
     assert not any("LUVE" in opener for opener in OPENERS)
 
 
+def test_openers_include_neutral_topic_choices() -> None:
+    joined = " ".join(OPENERS).lower()
+    assert "what would you like to practice" in joined
+    assert "what do you want to talk about" in joined
+    assert "music" not in joined
+
+
 def test_pick_opener_rotates_deterministically_and_wraps() -> None:
     assert pick_opener(0) == OPENERS[0]
     assert pick_opener(1) == OPENERS[1]

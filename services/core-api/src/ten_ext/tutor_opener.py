@@ -11,12 +11,12 @@ from __future__ import annotations
 # Each opener: English only, short (<= 12 words), exactly one question, A1 level.
 # "Lucy" matches the tutor persona defined in src/media/brain.py.
 OPENERS: tuple[str, ...] = (
-    "Hi, I'm Lucy. What is your name?",
+    "Hi, I'm Lucy. What would you like to practice?",
     "Hello! How are you today?",
     "Hi! Where are you from?",
-    "Hello! What food do you like?",
-    "Hi! What color do you like?",
-    "Hello! Do you like music?",
+    "Hello! What do you want to talk about?",
+    "Hi! How was your day?",
+    "Hello! What topic do you like?",
     "Hi! Are you ready to practice?",
 )
 
