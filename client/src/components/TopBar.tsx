@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUiLanguage } from "../lib/uiLanguage";
 import { ClaudeCat } from "./ClaudeCat";
 import { GearIcon, HistoryIcon } from "./icons";
 
@@ -24,6 +25,7 @@ export function TopBar({
   onOpenDiagnostics,
 }: TopBarProps) {
   const [signOutHelp, setSignOutHelp] = useState(false);
+  const { lang, toggle, t } = useUiLanguage();
 
   const handleSignOut = () => {
     setSignOutHelp(false);
@@ -36,10 +38,18 @@ export function TopBar({
         L<b>U</b>VE
       </div>
       <div className="p-top__right">
+        <button
+          className="p-linkbtn"
+          onClick={toggle}
+          aria-label={t("lang.switchAria")}
+          title={t("lang.switchAria")}
+        >
+          {lang === "en" ? "Tiếng Việt" : "English"}
+        </button>
         {showSession && (
           <span className="p-chip p-chip--ok">
             <span className="d" />
-            Ready
+            {t("nav.ready")}
           </span>
         )}
         {showSession && (
@@ -57,17 +67,17 @@ export function TopBar({
             onBlur={() => setSignOutHelp(false)}
           >
             <button className="p-linkbtn" onClick={handleSignOut}>
-              Sign out
+              {t("nav.signOut")}
             </button>
             {signOutHelp && <ClaudeCat width={74} height={74} className="p-signout-cat" />}
           </span>
         )}
         {showSession && showHistory && onOpenHistory && (
-          <button className="p-iconbtn" aria-label="Past sessions" onClick={onOpenHistory}>
+          <button className="p-iconbtn" aria-label={t("nav.pastSessions")} onClick={onOpenHistory}>
             <HistoryIcon size={17} />
           </button>
         )}
-        <button className="p-iconbtn" aria-label="Developer diagnostics" onClick={onOpenDiagnostics}>
+        <button className="p-iconbtn" aria-label={t("nav.diagnostics")} onClick={onOpenDiagnostics}>
           <GearIcon size={17} />
         </button>
       </div>

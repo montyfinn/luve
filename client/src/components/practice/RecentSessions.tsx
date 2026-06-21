@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../../lib/authApi";
 import { listSessions, type SessionHistoryItem } from "../../lib/sessionApi";
+import { useUiLanguage } from "../../lib/uiLanguage";
+import type { TKey, TParams } from "../../lib/i18n";
 import { CatCompanion } from "../CatCompanion";
 import { CloseIcon } from "../icons";
+
+type Translate = (key: TKey, params?: TParams) => string;
 
 type LoadState = "loading" | "empty" | "error" | "loaded";
 
@@ -36,13 +40,13 @@ function compactNumber(value: number): string {
   return new Intl.NumberFormat(undefined, { notation: value >= 1000 ? "compact" : "standard" }).format(value);
 }
 
-function sessionSubtitle(session: SessionHistoryItem): string {
+function sessionSubtitle(session: SessionHistoryItem, t: Translate): string {
   const parts = [
     formatStatus(session.status),
-    `${compactNumber(session.total_tokens)} tokens`,
-    `${session.manual_stops_count} manual stops`,
+    t("history.tokens", { n: compactNumber(session.total_tokens) }),
+    t("history.manualStops", { n: session.manual_stops_count }),
   ];
-  if (session.ended_at) parts.push(`Ended ${formatSessionTime(session.ended_at)}`);
+  if (session.ended_at) parts.push(t("history.ended", { time: formatSessionTime(session.ended_at) }));
   return parts.join(" · ");
 }
 
@@ -55,6 +59,7 @@ function focusableElements(root: HTMLElement): HTMLElement[] {
 }
 
 export function RecentSessions({ open, currentId, selectedId, onClose, onSelect, onLog }: RecentSessionsProps) {
+  const { t } = useUiLanguage();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const [state, setState] = useState<LoadState>("loading");
@@ -126,23 +131,23 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
 
   const countLabel =
     state === "loaded"
-      ? `${items.length} of ${total} practice ${total === 1 ? "session" : "sessions"}`
+      ? t("history.countLoaded", { n: items.length, total })
       : state === "empty"
-        ? "No practice sessions yet"
+        ? t("history.countEmpty")
         : state === "error"
-          ? "History unavailable"
-          : "Loading practice sessions";
+          ? t("history.countError")
+          : t("history.countLoading");
 
   return (
     <>
       <div className="p-history-scrim" onClick={onClose} />
-      <div ref={panelRef} className="p-history-panel" role="dialog" aria-modal="true" aria-label="Your past sessions">
+      <div ref={panelRef} className="p-history-panel" role="dialog" aria-modal="true" aria-label={t("history.ariaPanel")}>
         <div className="p-history-head">
           <div>
-            <h3>Your sessions</h3>
+            <h3>{t("history.title")}</h3>
             <div className="sub">{countLabel}</div>
           </div>
-          <button ref={closeRef} className="p-iconbtn" type="button" onClick={onClose} aria-label="Close history">
+          <button ref={closeRef} className="p-iconbtn" type="button" onClick={onClose} aria-label={t("history.ariaClose")}>
             <CloseIcon size={16} />
           </button>
         </div>
@@ -158,8 +163,8 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
         {state === "empty" && (
           <div className="p-history-state">
             <CatCompanion variant="sleepy" size={64} />
-            <strong>No sessions yet.</strong>
-            <span>Start a practice session and it will appear here when the backend stores it.</span>
+            <strong>{t("history.emptyTitle")}</strong>
+            <span>{t("history.emptyBody")}</span>
           </div>
         )}
 
@@ -167,7 +172,7 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
           <div className="p-history-state p-history-state--err" role="alert">
             <strong>{error}</strong>
             <button className="p-linkbtn" type="button" onClick={() => void load()}>
-              Retry
+              {t("history.retry")}
             </button>
           </div>
         )}
@@ -191,9 +196,9 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
                   <span className="sr-main">
                     <span className="sr-date">
                       {formatSessionTime(session.started_at)}
-                      {current && <span className="p-cur-tag">Current</span>}
+                      {current && <span className="p-cur-tag">{t("history.current")}</span>}
                     </span>
-                    <span className="sr-sub">{sessionSubtitle(session)}</span>
+                    <span className="sr-sub">{sessionSubtitle(session, t)}</span>
                   </span>
                   <svg
                     className="p-sr-chev"
@@ -215,9 +220,7 @@ export function RecentSessions({ open, currentId, selectedId, onClose, onSelect,
           </div>
         )}
 
-        <div className="p-history-foot">
-          Select a session to open its saved summary and grading status. Transcript replay is coming later.
-        </div>
+        <div className="p-history-foot">{t("history.foot")}</div>
       </div>
     </>
   );

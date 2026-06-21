@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SessionGradingResult, SessionGradingStatus } from "../../lib/gradingApi";
 import type { SessionHistoryItem } from "../../lib/sessionApi";
+import { useUiLanguage } from "../../lib/uiLanguage";
 
 type Status = "loading" | "pending" | "ready" | "insufficient" | "failed" | "unavailable" | "history";
 
@@ -55,19 +56,20 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
 }
 
 function HistorySummaryBanner({ session }: { session?: SessionHistoryItem | null }) {
+  const { t } = useUiLanguage();
   if (!session) return null;
   return (
     <div className="p-history-summary">
       <div>
-        <strong>Selected past session</strong>
+        <strong>{t("analysis.selectedPast")}</strong>
         <p>
           {formatSessionTime(session.started_at)} · {formatStatus(session.status)}
         </p>
       </div>
       <div className="p-history-metrics p-history-metrics--mini">
-        <SummaryMetric label="Ended" value={formatSessionTime(session.ended_at)} />
-        <SummaryMetric label="Tokens" value={compactNumber(session.total_tokens)} />
-        <SummaryMetric label="Stops" value={String(session.manual_stops_count)} />
+        <SummaryMetric label={t("analysis.metricEnded")} value={formatSessionTime(session.ended_at)} />
+        <SummaryMetric label={t("analysis.metricTokens")} value={compactNumber(session.total_tokens)} />
+        <SummaryMetric label={t("analysis.metricStops")} value={String(session.manual_stops_count)} />
       </div>
     </div>
   );
@@ -119,6 +121,7 @@ export function Analysis({
   onHistory,
   onRefreshGrading,
 }: AnalysisProps) {
+  const { t } = useUiLanguage();
   const [showDetails, setShowDetails] = useState(false);
 
   if (status === "loading") {
@@ -127,15 +130,15 @@ export function Analysis({
         <div className="p-wrap">
           <div className="p-analysis">
             <div className="p-analysis__head">
-              <h2>{historySession ? "Saved session analysis" : "Your session analysis"}</h2>
+              <h2>{historySession ? t("analysis.titleSaved") : t("analysis.titleYours")}</h2>
               <span className="p-chip p-chip--busy">
                 <span className="d" />
-                Loading grading…
+                {t("analysis.chipLoading")}
               </span>
             </div>
             <HistorySummaryBanner session={historySession} />
             <p style={{ fontSize: "var(--t-sm)", color: "var(--ink-3)", margin: "0 0 14px" }}>
-              This usually takes a few seconds.
+              {t("analysis.loadingHint")}
             </p>
             <div className="p-scores">
               <div className="p-skel p-skel--card" />
@@ -156,7 +159,7 @@ export function Analysis({
   }
 
   if (status === "pending") {
-    const label = gradingStatus?.status === "processing" ? "Grading is running" : "Grading pending";
+    const label = gradingStatus?.status === "processing" ? t("analysis.pendingRunning") : t("analysis.pendingQueued");
     return (
       <div className="p-view p-main">
         <div className="p-wrap p-center">
@@ -165,21 +168,20 @@ export function Analysis({
             <div className="p-panel p-evidence">
               <div className="p-spinner p-spinner--sm" style={{ margin: "0 auto 14px" }} />
               <h3>{label}</h3>
-              <p>
-                This session has ended and LUVE is waiting for the grading worker to finish. No score is
-                shown until the real grading result is available.
-              </p>
+              <p>{t("analysis.pendingBody")}</p>
               {gradingStatus?.student_word_count != null && (
-                <p className="p-note">Detected student words: {gradingStatus.student_word_count}</p>
+                <p className="p-note">
+                  {t("analysis.detectedWords")}: {gradingStatus.student_word_count}
+                </p>
               )}
               <div className="p-analysis__actions" style={{ justifyContent: "center" }}>
                 {onRefreshGrading && (
                   <button className="btn btn--primary" onClick={onRefreshGrading}>
-                    Check again
+                    {t("analysis.checkAgain")}
                   </button>
                 )}
                 <button className="btn btn--ghost" onClick={onHistory}>
-                  Past sessions
+                  {t("analysis.pastSessions")}
                 </button>
               </div>
             </div>
@@ -198,21 +200,24 @@ export function Analysis({
             <HistorySummaryBanner session={historySession} />
             <div className="p-panel p-evidence">
               <div className="em">🌱</div>
-              <h3>Not enough for full grading yet</h3>
-              <p>
-                We caught some speech, but not enough reliable English for a full score. Short phrases are
-                still useful practice; try one longer answer so LUVE can give real feedback.
-              </p>
+              <h3>{t("analysis.insufficientTitle")}</h3>
+              <p>{t("analysis.insufficientBody")}</p>
               {gradingStatus?.student_word_count != null && (
-                <p className="p-note">Detected student words: {gradingStatus.student_word_count}</p>
+                <p className="p-note">
+                  {t("analysis.detectedWords")}: {gradingStatus.student_word_count}
+                </p>
               )}
-              {reason && <p className="p-note">Reason: {reason}</p>}
+              {reason && (
+                <p className="p-note">
+                  {t("analysis.reason")}: {reason}
+                </p>
+              )}
               <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
                 <button className="btn btn--primary" onClick={onAgain}>
-                  Try one longer answer
+                  {t("analysis.tryLonger")}
                 </button>
                 <button className="btn btn--ghost" onClick={onHistory}>
-                  Past sessions
+                  {t("analysis.pastSessions")}
                 </button>
               </div>
             </div>
@@ -230,19 +235,19 @@ export function Analysis({
             <HistorySummaryBanner session={historySession} />
             <div className="p-panel p-evidence">
               <div className="em">!</div>
-              <h3>{status === "failed" ? "Grading failed" : "Grading unavailable"}</h3>
-              <p>{gradingError || "LUVE couldn't load a grading result for this session yet."}</p>
+              <h3>{status === "failed" ? t("analysis.failedTitle") : t("analysis.unavailableTitle")}</h3>
+              <p>{gradingError || t("analysis.unavailableBody")}</p>
               <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
                 {onRefreshGrading && (
                   <button className="btn btn--primary" onClick={onRefreshGrading}>
-                    Retry
+                    {t("analysis.retry")}
                   </button>
                 )}
                 <button className="btn btn--ghost" onClick={onAgain}>
-                  Practice again
+                  {t("analysis.practiceAgain")}
                 </button>
                 <button className="btn btn--ghost" onClick={onHistory}>
-                  Past sessions
+                  {t("analysis.pastSessions")}
                 </button>
               </div>
             </div>
@@ -259,46 +264,39 @@ export function Analysis({
           <div className="p-analysis">
             <div className="p-analysis__head">
               <div>
-                <h2>Session summary</h2>
+                <h2>{t("analysis.titleSummary")}</h2>
                 <p className="p-analysis__cap">
                   {formatSessionTime(historySession.started_at)} · {formatStatus(historySession.status)}
                 </p>
               </div>
               <span className="p-chip p-chip--info">
                 <span className="d" />
-                History
+                {t("analysis.chipHistory")}
               </span>
             </div>
 
             <div className="p-preview-banner">
               <span className="ic">i</span>
               <span className="tx">
-                <strong>Checking saved-session grading</strong> — this view starts from the real saved
-                session summary, then loads any real grading status or result for the selected session.
-                Transcript replay is still deferred.
+                <strong>{t("analysis.historyBannerTitle")}</strong> — {t("analysis.historyBannerBody")}
               </span>
             </div>
 
             <div className="p-history-metrics">
-              <SummaryMetric label="Started" value={formatSessionTime(historySession.started_at)} />
-              <SummaryMetric label="Ended" value={formatSessionTime(historySession.ended_at)} />
-              <SummaryMetric label="Tokens" value={compactNumber(historySession.total_tokens)} />
-              <SummaryMetric label="Manual stops" value={String(historySession.manual_stops_count)} />
+              <SummaryMetric label={t("analysis.metricStarted")} value={formatSessionTime(historySession.started_at)} />
+              <SummaryMetric label={t("analysis.metricEnded")} value={formatSessionTime(historySession.ended_at)} />
+              <SummaryMetric label={t("analysis.metricTokens")} value={compactNumber(historySession.total_tokens)} />
+              <SummaryMetric label={t("analysis.metricManualStops")} value={String(historySession.manual_stops_count)} />
             </div>
 
             <div className="p-analysis__grid">
               <div className="p-panel">
-                <h4>Available now</h4>
-                <p>
-                  LUVE can show the saved session summary now and will load real grading status or result
-                  from the authenticated grading endpoint when it is available.
-                </p>
+                <h4>{t("analysis.availableNow")}</h4>
+                <p>{t("analysis.availableNowBody")}</p>
               </div>
               <div className="p-panel">
-                <h4>Deferred</h4>
-                <p>
-                  Transcript replay is still deferred because the history list intentionally stays lean.
-                </p>
+                <h4>{t("analysis.deferred")}</h4>
+                <p>{t("analysis.deferredBody")}</p>
               </div>
             </div>
 
@@ -311,7 +309,7 @@ export function Analysis({
                 <span style={{ transform: showDetails ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
                   ⌄
                 </span>{" "}
-                Session details
+                {t("analysis.sessionDetails")}
               </button>
               {showDetails && (
                 <div className="p-details__readout">
@@ -334,10 +332,10 @@ export function Analysis({
 
             <div className="p-analysis__actions">
               <button className="btn btn--primary" onClick={onAgain}>
-                Practice again
+                {t("analysis.practiceAgain")}
               </button>
               <button className="btn btn--ghost" onClick={onHistory}>
-                Past sessions
+                {t("analysis.pastSessions")}
               </button>
             </div>
           </div>
@@ -356,7 +354,7 @@ export function Analysis({
         <div className="p-analysis">
           <div className="p-analysis__head">
             <div>
-              <h2>{historySession ? "Saved session analysis" : "Your session analysis"}</h2>
+              <h2>{historySession ? t("analysis.titleSaved") : t("analysis.titleYours")}</h2>
               <p className="p-analysis__cap">
                 {historySession
                   ? `${formatSessionTime(historySession.started_at)} · graded at ${formatSessionTime(result.graded_at)}`
@@ -366,12 +364,12 @@ export function Analysis({
             {preview ? (
               <span className="p-chip p-chip--clay">
                 <span className="d" />
-                Preview
+                {t("analysis.chipPreview")}
               </span>
             ) : (
               <span className="p-chip p-chip--ok">
                 <span className="d" />
-                Graded
+                {t("analysis.chipGraded")}
               </span>
             )}
           </div>
@@ -382,31 +380,30 @@ export function Analysis({
             <div className="p-preview-banner">
               <span className="ic">◍</span>
               <span className="tx">
-                <strong>Preview feedback</strong> — automatically generated for the demo, not final
-                pedagogical grading. This warning comes from the grading API.
+                <strong>{t("analysis.previewTitle")}</strong> — {t("analysis.previewBody")}
               </span>
             </div>
           )}
 
           <div className="p-scores">
-            <ScoreCard k="Overall" v={result.overall_score} overall />
-            <ScoreCard k="Fluency" v={result.fluency_score} />
-            <ScoreCard k="Grammar" v={result.grammar_score} />
-            <ScoreCard k="Vocabulary" v={result.vocab_score} />
+            <ScoreCard k={t("analysis.scoreOverall")} v={result.overall_score} overall />
+            <ScoreCard k={t("analysis.scoreFluency")} v={result.fluency_score} />
+            <ScoreCard k={t("analysis.scoreGrammar")} v={result.grammar_score} />
+            <ScoreCard k={t("analysis.scoreVocab")} v={result.vocab_score} />
             {result.pronunciation_score != null && (
-              <ScoreCard k="Pronunciation" v={result.pronunciation_score} />
+              <ScoreCard k={t("analysis.scorePronunciation")} v={result.pronunciation_score} />
             )}
           </div>
 
           <div className="p-analysis__grid">
             <div className="p-panel">
-              <h4>Coach's summary</h4>
-              <p>{result.ai_summary_feedback || "The grader returned no written summary."}</p>
+              <h4>{t("analysis.coachSummary")}</h4>
+              <p>{result.ai_summary_feedback || t("analysis.noSummary")}</p>
             </div>
             <div className="p-panel">
-              <h4>Corrections</h4>
+              <h4>{t("analysis.corrections")}</h4>
               {result.detailed_corrections.length === 0 ? (
-                <p>No specific corrections were returned.</p>
+                <p>{t("analysis.noCorrections")}</p>
               ) : (
                 result.detailed_corrections.map((item, i) => (
                   <div className="p-correction" key={i}>
@@ -419,7 +416,7 @@ export function Analysis({
 
           {result.skill_feedback.length > 0 && (
             <div className="p-panel p-skill-feedback">
-              <h4>Skill feedback</h4>
+              <h4>{t("analysis.skillFeedback")}</h4>
               {result.skill_feedback.map((item, i) => (
                 <div className="p-skill-feedback__item" key={i}>
                   <div>
@@ -442,7 +439,7 @@ export function Analysis({
               <span style={{ transform: showDetails ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
                 ⌄
               </span>{" "}
-              Session details
+              {t("analysis.sessionDetails")}
             </button>
             {showDetails && (
               <div className="p-details__readout">

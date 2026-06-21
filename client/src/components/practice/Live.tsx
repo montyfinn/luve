@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { PHASE_META, type Phase } from "../../lib/mock";
 import { hasTimings, type RealtimeTimingView } from "../../lib/realtimeTimeline";
+import { useUiLanguage } from "../../lib/uiLanguage";
 import { MicIcon, MicOffIcon, PowerIcon } from "../icons";
 
 export interface Turn {
@@ -43,7 +44,9 @@ export function Live({
   onMute,
   onEnd,
 }: LiveProps) {
+  const { t } = useUiLanguage();
   const meta = PHASE_META[phase] ?? PHASE_META.listening;
+  const metaPhase: Phase = PHASE_META[phase] ? phase : "listening";
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -98,14 +101,14 @@ export function Live({
           <div className="p-live__bar">
             <span className={"p-chip p-chip--" + meta.chip[0]}>
               <span className="d" />
-              {meta.chip[1]}
+              {t(`phase.${metaPhase}.chip`)}
             </span>
             <span style={{ fontSize: "var(--t-sm)", color: "var(--ink-3)" }}>
-              Practice session · {mm}:{ss}
+              {t("live.session")} · {mm}:{ss}
             </span>
             <button className="btn btn--danger" onClick={onEnd}>
               <PowerIcon size={15} />
-              End session
+              {t("live.end")}
             </button>
           </div>
 
@@ -115,9 +118,9 @@ export function Live({
               role="alert"
               aria-live={authExpiryWarning === "urgent" ? "assertive" : "polite"}
             >
-              <span>Your sign-in session is ending soon. End now to save and grade this practice.</span>
+              <span>{t("live.authWarn")}</span>
               <button className="btn btn--primary" onClick={onEnd}>
-                End and grade now
+                {t("live.endGradeNow")}
               </button>
             </div>
           )}
@@ -156,14 +159,11 @@ export function Live({
           )}
 
           <div className="p-statewrap" role="status" aria-live="polite">
-            <div className="p-statelabel">{mutedLabel ? "Microphone muted" : meta.label}</div>
-            <div className="p-statehelp">{meta.help}</div>
+            <div className="p-statelabel">{mutedLabel ? t("live.micMuted") : t(`phase.${metaPhase}.label`)}</div>
+            <div className="p-statehelp">{t(`phase.${metaPhase}.help`)}</div>
           </div>
 
-          <p className="p-langnote">
-            LUVE focuses on English speaking practice. Please speak English; Vietnamese or other
-            languages may be misrecognized as English.
-          </p>
+          <p className="p-langnote">{t("live.langNote")}</p>
 
           {error && (
             <p className="p-note" style={{ color: "var(--err-ink)", textAlign: "center" }} role="alert">
@@ -186,14 +186,14 @@ export function Live({
           )}
 
           <div className="p-card p-transcript" ref={scrollRef}>
-            <div className="p-transcript__label">Transcript</div>
+            <div className="p-transcript__label">{t("live.transcript")}</div>
             {transcript.length === 0 && !partial && !assistantPartial && (
-              <div className="p-empty">Your conversation will appear here as you speak…</div>
+              <div className="p-empty">{t("live.emptyTranscript")}</div>
             )}
-            {transcript.map((t, i) => (
+            {transcript.map((turn, i) => (
               <div className="p-turn" key={i}>
-                <span className={"p-turn__who " + t.who}>{t.who === "ai" ? "AI" : "You"}</span>
-                <div className="p-turn__text">{t.text}</div>
+                <span className={"p-turn__who " + turn.who}>{turn.who === "ai" ? "AI" : t("live.you")}</span>
+                <div className="p-turn__text">{turn.text}</div>
               </div>
             ))}
             {assistantPartial && (
@@ -206,7 +206,7 @@ export function Live({
             )}
             {partial && (
               <div className="p-turn">
-                <span className="p-turn__who you">You</span>
+                <span className="p-turn__who you">{t("live.you")}</span>
                 <div className="p-turn__text">
                   <span className="partial">{partial}…</span>
                 </div>
@@ -220,11 +220,11 @@ export function Live({
               onClick={onMute}
               style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
             >
-              {muted ? <MicOffIcon size={16} /> : <MicIcon size={16} />} {muted ? "Unmute" : "Mute"}
+              {muted ? <MicOffIcon size={16} /> : <MicIcon size={16} />} {muted ? t("live.unmute") : t("live.mute")}
             </button>
           </div>
 
-          <p className="p-kbd-hint">Tip: press Space to mute or unmute the mic.</p>
+          <p className="p-kbd-hint">{t("live.kbdHint")}</p>
         </div>
       </div>
     </div>

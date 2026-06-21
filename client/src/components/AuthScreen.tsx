@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUiLanguage } from "../lib/uiLanguage";
 import { CatCompanion } from "./CatCompanion";
 import { BackIcon, CloseIcon } from "./icons";
 
@@ -26,6 +27,7 @@ interface AuthScreenProps {
  * shown inline in the existing design. Google sign-in stays disabled.
  */
 export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, onBack }: AuthScreenProps) {
+  const { t } = useUiLanguage();
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
   const [uname, setUname] = useState("");
@@ -40,15 +42,15 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
   async function submit() {
     if (busy) return;
     if (!email.trim()) {
-      setErr("Enter your email address.");
+      setErr(t("auth.errEmail"));
       return;
     }
     if (pwd.length < 8) {
-      setErr("Password must be at least 8 characters.");
+      setErr(t("auth.errPwd"));
       return;
     }
     if (mode === "register" && uname.trim().length < 3) {
-      setErr("Choose a username with at least 3 characters.");
+      setErr(t("auth.errUname"));
       return;
     }
     setErr("");
@@ -57,7 +59,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
       await onSubmit(mode, { username: uname.trim(), email: email.trim(), password: pwd });
       // success: App navigates away; this component unmounts.
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Something went wrong. Try again.");
+      setErr(e instanceof Error ? e.message : t("auth.errGeneric"));
       setBusy(false);
     }
   }
@@ -72,7 +74,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
             disabled={busy}
             style={{ marginBottom: "12px", marginLeft: "-8px", display: "inline-flex", alignItems: "center", gap: "4px" }}
           >
-            <BackIcon size={15} /> Back
+            <BackIcon size={15} /> {t("auth.back")}
           </button>
 
           <div className="p-authcat">
@@ -87,7 +89,7 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               onClick={() => switchMode("login")}
               disabled={busy}
             >
-              Sign in
+              {t("auth.signIn")}
             </button>
             <button
               role="tab"
@@ -96,25 +98,25 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
               onClick={() => switchMode("register")}
               disabled={busy}
             >
-              Create account
+              {t("auth.createAccount")}
             </button>
           </div>
 
           {mode === "register" && (
             <div className="p-field">
-              <label htmlFor="p-uname">Username</label>
+              <label htmlFor="p-uname">{t("auth.username")}</label>
               <input
                 id="p-uname"
                 className="p-input"
                 value={uname}
                 onChange={(e) => setUname(e.target.value)}
-                placeholder="At least 3 characters"
+                placeholder={t("auth.usernamePh")}
                 disabled={busy}
               />
             </div>
           )}
           <div className="p-field">
-            <label htmlFor="p-email">Email</label>
+            <label htmlFor="p-email">{t("auth.email")}</label>
             <input
               id="p-email"
               className="p-input"
@@ -126,14 +128,14 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
             />
           </div>
           <div className="p-field">
-            <label htmlFor="p-pwd">Password</label>
+            <label htmlFor="p-pwd">{t("auth.password")}</label>
             <input
               id="p-pwd"
               className={"p-input" + (err ? " is-error" : "")}
               value={pwd}
               onChange={(e) => setPwd(e.target.value)}
               type="password"
-              placeholder={mode === "register" ? "At least 8 characters" : "••••••••"}
+              placeholder={mode === "register" ? t("auth.passwordPh") : "••••••••"}
               aria-describedby={err ? "p-autherr" : undefined}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               disabled={busy}
@@ -148,24 +150,20 @@ export function AuthScreen({ mode, setMode, googleEnabled, onSubmit, onGoogle, o
           <button className="btn btn--primary btn--full" onClick={submit} disabled={busy}>
             {busy
               ? mode === "login"
-                ? "Signing in…"
-                : "Creating account…"
+                ? t("auth.signingIn")
+                : t("auth.creatingAccount")
               : mode === "login"
-                ? "Sign in"
-                : "Create account"}
+                ? t("auth.signIn")
+                : t("auth.createAccount")}
           </button>
 
-          <div className="p-divider">or</div>
+          <div className="p-divider">{t("auth.or")}</div>
 
           <button className="p-google" onClick={onGoogle} disabled={!googleEnabled || busy}>
             <span className={"p-gmark" + (googleEnabled ? "" : " p-gmark--off")} />
-            Continue with Google
+            {t("auth.google")}
           </button>
-          {!googleEnabled && (
-            <p className="p-note">
-              Google sign-in isn't set up on this build yet — use your email and password.
-            </p>
-          )}
+          {!googleEnabled && <p className="p-note">{t("auth.googleNote")}</p>}
         </div>
       </div>
     </div>

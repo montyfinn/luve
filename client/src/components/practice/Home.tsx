@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUiLanguage } from "../../lib/uiLanguage";
 import { CatCompanion } from "../CatCompanion";
 
 interface Settings {
@@ -25,6 +26,7 @@ export function Home({
   setSettings,
 }: HomeProps) {
   const [open, setOpen] = useState(false);
+  const { t } = useUiLanguage();
   return (
     <div className="p-view p-main">
       <div className="p-wrap p-center">
@@ -36,12 +38,12 @@ export function Home({
             className="p-eyebrow"
             style={{ color: "var(--ink-3)", letterSpacing: ".04em", textTransform: "none", fontSize: "var(--t-sm)" }}
           >
-            Welcome back, {userName}
+            {t("home.welcome", { name: userName })}
           </div>
-          <h2>Ready for a conversation?</h2>
-          <p>Find a quiet spot, allow your microphone, and start talking. The tutor will respond out loud.</p>
+          <h2>{t("home.h2")}</h2>
+          <p>{t("home.lead")}</p>
           <button className="btn btn--primary btn--xl" onClick={onStart} disabled={starting}>
-            {starting ? "Starting…" : "Start practice"}
+            {starting ? t("home.starting") : t("home.start")}
           </button>
           {startError && (
             <p className="p-note" style={{ color: "var(--err-ink)", marginTop: "14px" }} role="alert">
@@ -52,33 +54,33 @@ export function Home({
           <div className="p-settings">
             <button className="p-disclosure" aria-expanded={open} onClick={() => setOpen(!open)}>
               <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }}>⌄</span>{" "}
-              Practice settings
+              {t("home.settings")}
               <span style={{ color: "var(--hairline-2)" }}>·</span>{" "}
-              <span style={{ color: "var(--ink-4)" }}>One session at a time</span>
+              <span style={{ color: "var(--ink-4)" }}>{t("home.oneSession")}</span>
             </button>
             {open && (
               <div className="p-settings__body">
                 <div className="p-toggle-row">
                   <div className="lbl">
-                    <b>Transcript only</b>
-                    <span>Practice without the tutor's voice (STT only).</span>
+                    <b>{t("home.transcriptOnly")}</b>
+                    <span>{t("home.transcriptOnlyDesc")}</span>
                   </div>
                   <button
                     className={"p-switch" + (settings.sttOnly ? " on" : "")}
                     aria-pressed={settings.sttOnly}
-                    aria-label="Transcript only"
+                    aria-label={t("home.transcriptOnly")}
                     onClick={() => setSettings({ ...settings, sttOnly: !settings.sttOnly })}
                   />
                 </div>
                 <div className="p-toggle-row">
                   <div className="lbl">
-                    <b>Mute tutor audio</b>
-                    <span>See replies as text, no spoken audio.</span>
+                    <b>{t("home.muteTutor")}</b>
+                    <span>{t("home.muteTutorDesc")}</span>
                   </div>
                   <button
                     className={"p-switch" + (settings.muteTts ? " on" : "")}
                     aria-pressed={settings.muteTts}
-                    aria-label="Mute tutor audio"
+                    aria-label={t("home.muteTutor")}
                     onClick={() => setSettings({ ...settings, muteTts: !settings.muteTts })}
                   />
                 </div>
