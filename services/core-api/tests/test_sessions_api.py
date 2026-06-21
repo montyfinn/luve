@@ -79,8 +79,18 @@ class _HistoryDb:
         limit = bound.get("limit", len(visible))
         page = visible[offset : offset + limit]
         return _FakeResult(
-            rows=[{field: row[field] for field in _ITEM_FIELDS} for row in page]
+            rows=[
+                {
+                    **{field: row[field] for field in _ITEM_FIELDS},
+                    "raw_backup_json": row.get("raw_backup_json"),
+                }
+                for row in page
+            ]
         )
+
+
+_KEEP_DEFAULT_BACKUP = object()
+_DEFAULT_BACKUP = [{"type": "USER_TURN", "payload": {"text": "private"}}]
 
 
 def _row(
@@ -89,7 +99,9 @@ def _row(
     session_id: UUID,
     started_at: datetime,
     deleted_at: datetime | None = None,
+    raw_backup_json=_KEEP_DEFAULT_BACKUP,
 ) -> dict:
+    backup = _DEFAULT_BACKUP if raw_backup_json is _KEEP_DEFAULT_BACKUP else raw_backup_json
     return {
         "id": session_id,
         "user_id": user_id,
@@ -100,7 +112,7 @@ def _row(
         "started_at": started_at,
         "ended_at": None,
         "deleted_at": deleted_at,
-        "raw_backup_json": [{"type": "USER_TURN", "payload": {"text": "private"}}],
+        "raw_backup_json": backup,
         "metadata": {"secretish": "not-for-history-list"},
     }
 
@@ -192,8 +204,8 @@ def test_list_sessions_limit_offset_work() -> None:
     assert body["offset"] == 1
     assert body["total"] == 3
     assert [item["id"] for item in body["items"]] == [str(SESSION_2)]
-    assert db.calls[-1][1]["limit"] == 1
-    assert db.calls[-1][1]["offset"] == 1
+    # Pagination is applied in Python over the content-filtered set, so limit/
+    # offset are reflected in the response, not in SQL params.
 
 
 def test_list_sessions_clamps_limit_to_safe_max() -> None:
@@ -204,7 +216,6 @@ def test_list_sessions_clamps_limit_to_safe_max() -> None:
 
     assert response.status_code == 200
     assert response.json()["limit"] == 100
-    assert db.calls[-1][1]["limit"] == 100
 
 
 def test_list_sessions_response_shape_is_stable_and_excludes_heavy_fields() -> None:
@@ -224,3 +235,72 @@ def test_list_sessions_response_shape_is_stable_and_excludes_heavy_fields() -> N
     assert "raw_backup_json" not in body["items"][0]
     assert "metadata" not in body["items"][0]
     assert "user_id" not in body["items"][0]
+
+
+def test_empty_session_hidden_from_default_list() -> None:
+    now = datetime(2026, 6, 5, 10, 0, tzinfo=timezone.utc)
+    db = _HistoryDb(
+        [
+            _row(user_id=USER_A, session_id=SESSION_1, started_at=now),  # has content
+            _row(
+                user_id=USER_A,
+                session_id=SESSION_2,
+                started_at=now + timedelta(minutes=1),
+                raw_backup_json=[],  # no user turns
+            ),
+        ]
+    )
+    app = _make_app(db)
+
+    body = _get(app, "/api/v1/sessions").json()
+
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [str(SESSION_1)]
+
+
+def test_zero_student_word_session_hidden_from_default_list() -> None:
+    now = datetime(2026, 6, 5, 10, 0, tzinfo=timezone.utc)
+    db = _HistoryDb(
+        [
+            _row(user_id=USER_A, session_id=SESSION_1, started_at=now),
+            _row(
+                user_id=USER_A,
+                session_id=SESSION_2,
+                started_at=now + timedelta(minutes=1),
+                raw_backup_json=[{"type": "USER_TURN", "payload": {"text": "   "}}],
+            ),
+        ]
+    )
+    app = _make_app(db)
+
+    body = _get(app, "/api/v1/sessions").json()
+
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [str(SESSION_1)]
+
+
+def test_include_incomplete_returns_hidden_sessions() -> None:
+    now = datetime(2026, 6, 5, 10, 0, tzinfo=timezone.utc)
+    db = _HistoryDb(
+        [
+            _row(user_id=USER_A, session_id=SESSION_1, started_at=now),
+            _row(
+                user_id=USER_A,
+                session_id=SESSION_2,
+                started_at=now + timedelta(minutes=1),
+                raw_backup_json=None,  # no backup at all
+            ),
+        ]
+    )
+    app = _make_app(db)
+
+    default_body = _get(app, "/api/v1/sessions").json()
+    assert default_body["total"] == 1
+    assert [item["id"] for item in default_body["items"]] == [str(SESSION_1)]
+
+    incomplete_body = _get(app, "/api/v1/sessions?include_incomplete=true").json()
+    assert incomplete_body["total"] == 2
+    assert {item["id"] for item in incomplete_body["items"]} == {
+        str(SESSION_1),
+        str(SESSION_2),
+    }

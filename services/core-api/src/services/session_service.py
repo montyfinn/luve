@@ -100,27 +100,10 @@ async def list_user_sessions(
     current_user: User,
     limit: int = SESSION_LIST_DEFAULT_LIMIT,
     offset: int = 0,
+    include_incomplete: bool = False,
 ) -> SessionListResponse:
     safe_limit = min(max(limit, 1), SESSION_LIST_MAX_LIMIT)
     safe_offset = max(offset, 0)
-    params = {
-        "user_id": str(current_user.id),
-        "limit": safe_limit,
-        "offset": safe_offset,
-    }
-
-    total_result = await db.execute(
-        text(
-            """
-            SELECT COUNT(*) AS total
-            FROM sessions
-            WHERE user_id = :user_id
-              AND deleted_at IS NULL
-            """
-        ),
-        {"user_id": params["user_id"]},
-    )
-    total = int(total_result.scalar_one())
 
     rows = await db.execute(
         text(
@@ -132,18 +115,48 @@ async def list_user_sessions(
                 total_tokens,
                 manual_stops_count,
                 started_at,
-                ended_at
+                ended_at,
+                raw_backup_json
             FROM sessions
             WHERE user_id = :user_id
               AND deleted_at IS NULL
             ORDER BY started_at DESC, id DESC
-            LIMIT :limit
-            OFFSET :offset
             """
         ),
-        params,
+        {"user_id": str(current_user.id)},
     )
-    items = [SessionListItem(**session_row) for session_row in rows.mappings().all()]
+    all_rows = rows.mappings().all()
+
+    # By default the history list hides sessions with no student content (no
+    # user turns / zero detected student words), so the learner does not keep
+    # opening empty practice runs. Filtering in Python keeps `total` and
+    # pagination consistent with the filtered set and reuses the same
+    # word-count semantics as grading-status. include_incomplete=True (debug)
+    # returns everything; direct read by id (get_user_session) is unaffected.
+    # No rows are deleted or mutated.
+    if include_incomplete:
+        kept = list(all_rows)
+    else:
+        kept = [
+            row
+            for row in all_rows
+            if _session_has_student_content(row["raw_backup_json"])
+        ]
+
+    total = len(kept)
+    page = kept[safe_offset : safe_offset + safe_limit]
+    items = [
+        SessionListItem(
+            id=row["id"],
+            lesson_id=row["lesson_id"],
+            status=row["status"],
+            total_tokens=row["total_tokens"],
+            manual_stops_count=row["manual_stops_count"],
+            started_at=row["started_at"],
+            ended_at=row["ended_at"],
+        )
+        for row in page
+    ]
     return SessionListResponse(
         items=items,
         limit=safe_limit,
@@ -323,6 +336,17 @@ def _compute_student_word_count(raw_backup_json: Any) -> int | None:
         if text_value:
             total += len(text_value.split())
     return total
+
+
+def _session_has_student_content(raw_backup_json: Any) -> bool:
+    """True iff the session has at least one eligible student word.
+
+    Reuses the grading-status word-count semantics, so a session with no user
+    turns, an empty/NULL backup, or only empty/ineligible turns counts as
+    having no useful content and is hidden from the default history list.
+    """
+    word_count = _compute_student_word_count(raw_backup_json)
+    return word_count is not None and word_count > 0
 
 
 def _get_min_student_words() -> int:

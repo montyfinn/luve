@@ -43,6 +43,10 @@ async def create_session(
 async def list_sessions(
     limit: int = Query(SESSION_LIST_DEFAULT_LIMIT, ge=1),
     offset: int = Query(0, ge=0),
+    include_incomplete: bool = Query(
+        False,
+        description="Debug: include sessions with no student content (hidden by default).",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionListResponse:
@@ -51,6 +55,7 @@ async def list_sessions(
         current_user=current_user,
         limit=limit,
         offset=offset,
+        include_incomplete=include_incomplete,
     )
 
 
