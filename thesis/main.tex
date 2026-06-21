@@ -1465,9 +1465,9 @@ bất biến chứ không phải exactly-once. Mở rộng theo chiều ngang kh
 \section{Môi trường phát triển}
 
 Phần này mô tả môi trường phát triển và vận hành được dùng để xây dựng và vận
-hành LUVE. Phần hiện thực backend và lúc vận hành được thảo luận xuyên suốt chương
-này tương ứng với mốc baseline được cố định \texttt{main@6a61bc8}, trong khi các
-ảnh chụp giao diện hiện tại được dán nhãn là bằng chứng trình bày. Theo phạm vi đã thiết lập trước đó, môi trường này nhắm tới một triển khai nguyên mẫu
+hành LUVE. Phần thảo luận thiết kế hệ thống vẫn neo vào mốc \texttt{main@6a61bc8},
+trong khi các bằng chứng vận hành chính của Chương~4 được ghi theo mốc
+\texttt{main@6640171}; các ảnh chụp giao diện hiện tại chỉ là bằng chứng trình bày. Theo phạm vi đã thiết lập trước đó, môi trường này nhắm tới một triển khai nguyên mẫu
 nghiên cứu demo có kiểm soát và chưa sẵn sàng triển khai sản xuất; nó được dự định
 chạy cục bộ để trình diễn chứ không phải được vận hành như một dịch vụ được lưu
 trữ.
@@ -1561,8 +1561,9 @@ phiên trên mỗi nút, và môi trường không đưa ra khẳng định nào
 chiều ngang. Các giả định này nhất quán với phạm vi demo có kiểm soát của nguyên
 mẫu và giới hạn cách diễn giải các kết quả ở phần còn lại của chương này.
 
-\textbf{Ghi chú về các hình.} Các khẳng định về backend và lúc vận hành trong
-chương này vẫn gắn với mốc baseline \texttt{main@6a61bc8}. Các ảnh chụp giao diện
+\textbf{Ghi chú về các hình.} Các khẳng định về thiết kế hệ thống trong
+chương này vẫn neo vào mốc \texttt{main@6a61bc8}, trong khi các bằng chứng vận
+hành chính được ghi theo mốc \texttt{main@6640171}. Các ảnh chụp giao diện
 có thể thể hiện máy khách demo hiện tại và nên được diễn giải là bằng chứng trình
 bày chứ không phải một sự viết lại hoàn toàn mốc thiết kế-hệ-thống.
 
@@ -1572,8 +1573,9 @@ bày chứ không phải một sự viết lại hoàn toàn mốc thiết kế-
 Phần này mô tả cách các mô-đun chính của LUVE được hiện thực và cách chúng phối
 hợp để hệ thống chạy từ đầu đến cuối. Mô tả ở mức hệ thống: nó tập trung vào trách
 nhiệm của mỗi mô-đun và các ranh giới của nó với các mô-đun khác hơn là mã ở mức
-từng dòng. Tất cả các mô-đun tương ứng với mốc baseline được cố định
-\texttt{main@6a61bc8}.
+từng dòng. Mô tả trách nhiệm mô-đun dựa trên mốc thiết kế/hệ thống
+\texttt{main@6a61bc8}; các bằng chứng vận hành trong chương này được ghi riêng theo
+mốc \texttt{main@6640171}.
 
 \textbf{Mô-đun máy khách.} Trong kho mã, mô-đun này là máy khách Vite dưới
 \texttt{client/}, với siêu dữ liệu gói trong \texttt{client/package.json}; trong
@@ -1695,7 +1697,7 @@ sản xuất, và không có khẳng định nào về mở rộng theo chiều 
 Phần này theo dõi dữ liệu khi nó di chuyển qua đường ống vận hành đã hiện thực của
 LUVE, từ đầu vào nói của người học đến kết quả chấm điểm được lưu và việc truy xuất
 nó về sau. Mô tả lần theo các phép biến đổi được thực hiện ở mỗi giai đoạn và
-mô-đun chịu trách nhiệm cho chúng, nằm trong mốc demo có kiểm soát
+mô-đun chịu trách nhiệm cho chúng, nằm trong mốc thiết kế/hệ thống
 \texttt{main@6a61bc8}.
 
 \textbf{Xử lý âm thanh-thành-văn-bản thời gian thực.} Dữ liệu đi vào đường ống
@@ -1795,7 +1797,7 @@ trong Chương~5.
 \section{Kết quả đạt được}
 
 Phần này báo cáo những gì hệ thống LUVE đã hiện thực đạt được ở mức hệ thống. Các
-khẳng định về backend và tích hợp vẫn neo vào mốc demo có kiểm soát
+khẳng định về backend và tích hợp vẫn neo vào mốc thiết kế/hệ thống
 \texttt{main@6a61bc8}; các ảnh chụp giao diện được dùng làm bằng chứng trực quan
 trong bản thảo này được chụp lại từ máy khách demo hiện tại và chỉ được xem là
 bằng chứng trình bày. Các kết quả được nêu như các năng lực đã hiện thực và hành
