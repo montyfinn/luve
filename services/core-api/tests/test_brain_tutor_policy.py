@@ -54,3 +54,20 @@ def test_system_prompt_uses_soft_wording_when_unsure():
     assert "You could try" in p or "A safe idea is" in p
     # prefer suggestions grounded in the conversation over risky factual claims
     assert "grounded" in p.lower()
+
+
+def test_system_prompt_rephrases_on_clarification_request():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    # "What?"/"Sorry?"/"can you repeat" must make the tutor rephrase its
+    # previous question, not answer as if asked a question about itself.
+    assert "rephrase" in p
+    assert "what?" in p or "sorry?" in p or "repeat" in p
+    assert "previous question" in p
+
+
+def test_system_prompt_closes_on_goodbye_without_new_question():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    # goodbye / "I'm tired" must get a short closing, not a new question.
+    assert "goodbye" in p
+    assert "closing" in p
+    assert "do not ask a new question" in p
