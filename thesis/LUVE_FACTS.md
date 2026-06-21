@@ -2,11 +2,12 @@
 
 System-design baseline: **`main@6a61bc8`** (the commit the architecture,
 schema, and flow discussion is anchored to). Final submitted GitHub source:
-**`main@0aa3a8a`**. Evidence/runtime baseline: **`main@6640171`** (the HEAD of
+**`main@b38fe63`**. Evidence/runtime baseline: **`main@6640171`** (the HEAD of
 the worktree `/home/minhthuy/project/luve-code-hygiene` used to run the demo
-and capture Chapter 4 evidence). The commits leading to `0aa3a8a` are
+and capture Chapter 4 evidence). The commits leading to `b38fe63` are
 code-review / documentation / static-copy polish, GPU CUDA runtime support
-(PR #5), and app/UI refinements, and do **not** change the core
+(PR #5), app/UI refinements, and later tutor/STT/grading-prompt polish; they
+do **not** replace the Chapter 4 runtime evidence or change the core
 architecture, component boundaries, schema, or data/control flows.
 Only write claims you can trace to the running system. The constraints
 below are hard limits — do not soften them in the thesis.
@@ -40,7 +41,7 @@ below are hard limits — do not soften them in the thesis.
 - ❌ Do **not** claim horizontal scaling. The realtime hot path is
   **single-session-per-node**.
 - ⚠️ The backend/system-design baseline remains **`main@6a61bc8`**; the
-  final submitted GitHub source is **`main@0aa3a8a`**, while **`main@6640171`**
+  final submitted GitHub source is **`main@b38fe63`**, while **`main@6640171`**
   is the evidence/runtime baseline (GPU runtime added via PR #5,
   no core-architecture change — see header note).
   Current cat-companion/current-UI screenshots may be used only as client
