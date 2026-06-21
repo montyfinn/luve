@@ -755,6 +755,12 @@ class LUVEExtension(ten.Extension):
             return
 
         if self._current_speech_ms() < self._stt_final_min_speech_ms:
+            self._log_stt_suppression(
+                "too_short_for_final",
+                is_final=True,
+                trigger="vad_silence",
+                audio_stats={"speech_ms": self._current_speech_ms()},
+            )
             self._emit_json(
                 "stt_vad_ignored",
                 {
@@ -995,6 +1001,14 @@ class LUVEExtension(ten.Extension):
             self._drop_one_queued_inference()
 
         if self._inference_queue.full():
+            if is_final:
+                # A final could not be enqueued (queue still full) — the
+                # utterance is lost. Surface it so finalization gaps are visible.
+                logger.warning(
+                    "ten.stt.final_dropped_queue_full session_id=%s trigger=%s",
+                    self._session_id,
+                    trigger,
+                )
             return
 
         await self._inference_queue.put(
@@ -1120,6 +1134,12 @@ class LUVEExtension(ten.Extension):
                         },
                     )
                     logger.warning("ten.stt.runtime_error reason=%s", exc)
+                    self._log_stt_suppression(
+                        "stt_runtime_error",
+                        is_final=job.is_final,
+                        trigger=job.trigger,
+                        audio_stats=job.audio_stats,
+                    )
                     if job.is_final:
                         self._reset_current_utterance()
                     continue
@@ -1136,6 +1156,13 @@ class LUVEExtension(ten.Extension):
                     )
                     mixed_language_reasons = mixed_reasons
                     if "mixed_non_english" in mixed_reasons:
+                        self._log_stt_suppression(
+                            "mixed_non_english",
+                            is_final=job.is_final,
+                            trigger=job.trigger,
+                            analysis=analysis,
+                            audio_stats=job.audio_stats,
+                        )
                         self._emit_json(
                             "stt_result_suppressed",
                             {
@@ -1161,6 +1188,13 @@ class LUVEExtension(ten.Extension):
                     audio_stats=job.audio_stats,
                     pcm_bytes=len(job.pcm_bytes),
                 ):
+                    self._log_stt_suppression(
+                        "probable_hallucination",
+                        is_final=job.is_final,
+                        trigger=job.trigger,
+                        analysis=analysis,
+                        audio_stats=job.audio_stats,
+                    )
                     self._emit_json(
                         "stt_result_suppressed",
                         {
@@ -1192,6 +1226,14 @@ class LUVEExtension(ten.Extension):
                         )
                     )
                     if verification_status == "suppressed":
+                        self._log_stt_suppression(
+                            "non_english_verification_failed",
+                            is_final=job.is_final,
+                            trigger=job.trigger,
+                            analysis=analysis,
+                            audio_stats=job.audio_stats,
+                            confidence=confidence,
+                        )
                         self._emit_json(
                             "stt_result_suppressed",
                             {
@@ -1219,6 +1261,14 @@ class LUVEExtension(ten.Extension):
                     audio_stats=job.audio_stats,
                 )
                 if stt_rejection is not None:
+                    self._log_stt_suppression(
+                        stt_rejection,
+                        is_final=job.is_final,
+                        trigger=job.trigger,
+                        analysis=analysis,
+                        audio_stats=job.audio_stats,
+                        confidence=confidence,
+                    )
                     self._emit_json(
                         "stt_result_suppressed",
                         {
@@ -1256,6 +1306,14 @@ class LUVEExtension(ten.Extension):
                         mixed_language_filtered=mixed_language_filtered,
                     )
                     if final_rejection is not None:
+                        self._log_stt_suppression(
+                            final_rejection,
+                            is_final=job.is_final,
+                            trigger=job.trigger,
+                            analysis=analysis,
+                            audio_stats=job.audio_stats,
+                            confidence=confidence,
+                        )
                         self._emit_json(
                             "stt_result_suppressed",
                             {
@@ -2784,6 +2842,78 @@ class LUVEExtension(ten.Extension):
             return True
 
         return False
+
+    @staticmethod
+    def _format_stt_suppression_log(
+        reason: str,
+        *,
+        is_final: bool,
+        trigger: str,
+        text_len: int,
+        word_count: int,
+        avg_logprob: float | None,
+        no_speech_prob: float | None,
+        low_conf_ratio: float | None,
+        speech_ms: float | None,
+        session_id: str | None = None,
+    ) -> str:
+        """Build a server-side diagnostic line for a suppressed/ignored final.
+
+        Logs only safe acoustic metrics and the transcript LENGTH — never the
+        raw transcript text — so we can see WHICH gate dropped a real utterance
+        without leaking user content.
+        """
+        return (
+            "ten.stt.suppressed "
+            f"session_id={session_id} "
+            f"reason={reason} "
+            f"is_final={is_final} "
+            f"trigger={trigger} "
+            f"text_len={text_len} "
+            f"word_count={word_count} "
+            f"avg_logprob={avg_logprob} "
+            f"no_speech_prob={no_speech_prob} "
+            f"low_conf_ratio={low_conf_ratio} "
+            f"speech_ms={speech_ms}"
+        )
+
+    def _log_stt_suppression(
+        self,
+        reason: str,
+        *,
+        is_final: bool,
+        trigger: str,
+        analysis: STTAnalysis | None = None,
+        audio_stats: dict[str, object] | None = None,
+        confidence: dict[str, object] | None = None,
+        text_len: int | None = None,
+        word_count: int | None = None,
+    ) -> None:
+        text = (analysis.raw_text if analysis is not None else "") or ""
+        speech_ms = None
+        if isinstance(audio_stats, dict):
+            value = audio_stats.get("speech_ms")
+            if isinstance(value, (int, float)):
+                speech_ms = float(value)
+        low_conf_ratio = None
+        if isinstance(confidence, dict):
+            value = confidence.get("low_confidence_word_ratio")
+            if isinstance(value, (int, float)):
+                low_conf_ratio = float(value)
+        logger.info(
+            self._format_stt_suppression_log(
+                reason,
+                is_final=is_final,
+                trigger=trigger,
+                text_len=text_len if text_len is not None else len(text),
+                word_count=word_count if word_count is not None else len(text.split()),
+                avg_logprob=analysis.avg_logprob if analysis is not None else None,
+                no_speech_prob=analysis.no_speech_prob if analysis is not None else None,
+                low_conf_ratio=low_conf_ratio,
+                speech_ms=speech_ms,
+                session_id=self._session_id,
+            )
+        )
 
     def _stt_rejection_reason(
         self,
