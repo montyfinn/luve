@@ -71,3 +71,11 @@ def test_system_prompt_closes_on_goodbye_without_new_question():
     assert "goodbye" in p
     assert "closing" in p
     assert "do not ask a new question" in p
+
+
+def test_system_prompt_clarification_restates_tutor_own_question():
+    p = LLMProcessor.SYSTEM_PROMPT.lower()
+    # On "What?"/"Sorry?" the tutor must restate ITS OWN question (e.g. begin
+    # "I asked: ..."), not summarize what the learner previously said.
+    assert "i asked:" in p
+    assert "do not summarize" in p
